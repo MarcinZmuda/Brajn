@@ -106,13 +106,33 @@ class ArticleOrchestrator:
         return text
 
     def run_ymyl_detection(self) -> dict:
-        """Detect YMYL category and update variables."""
+        """Detect YMYL category, then enrich with legal/medical sources."""
         keyword = self.variables.get("HASLO_GLOWNE", "")
         self.ymyl_result = detect_ymyl(keyword)
         category = self.ymyl_result.get("category", "none")
         self.variables["YMYL_KLASYFIKACJA"] = category
-        if self.ymyl_result.get("is_ymyl"):
-            self.variables["PUBMED_CYTAT"] = ""  # placeholder for future PubMed integration
+        self.variables["YMYL_CONTEXT"] = ""  # default empty
+
+        if category == "prawo":
+            try:
+                from src.ymyl.legal_enricher import get_legal_context
+                legal = get_legal_context(keyword)
+                self.ymyl_result["legal"] = legal
+                self.variables["YMYL_CONTEXT"] = legal.get("prompt_block", "")
+                print(f"[YMYL] ⚖️ Legal context: {legal.get('status')} — {len(legal.get('judgments', []))} orzeczeń")
+            except Exception as e:
+                print(f"[YMYL] ⚠️ Legal enricher error: {e}")
+
+        elif category == "zdrowie":
+            try:
+                from src.ymyl.medical_enricher import get_medical_context
+                medical = get_medical_context(keyword)
+                self.ymyl_result["medical"] = medical
+                self.variables["YMYL_CONTEXT"] = medical.get("prompt_block", "")
+                print(f"[YMYL] 🏥 Medical context: {medical.get('status')} — sources: {medical.get('sources_used', [])}")
+            except Exception as e:
+                print(f"[YMYL] ⚠️ Medical enricher error: {e}")
+
         return self.ymyl_result
 
     def run_search_variants(self) -> dict:

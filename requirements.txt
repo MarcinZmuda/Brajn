@@ -36,3 +36,4 @@ gunicorn>=23.0.0
 openai>=1.0.0
 # Gemini Embedding 2 — multimodal semantic analysis
 google-genai>=1.0.0
+scrapling>=0.3.0

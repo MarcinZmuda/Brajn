@@ -72,6 +72,8 @@ def extract_global_variables(s1_data: dict, target_length: int = 2000) -> dict:
         "MARKI_Z_RELATED_SEARCHES": json.dumps(brands, ensure_ascii=False),
         "WZORCE_H2_KONKURENCJI":    json.dumps(h2_patterns, ensure_ascii=False),
         "YMYL_KLASYFIKACJA":        "none",
+        "NW_LUKI":                   "",  # filled by orchestrator if nw_terms provided
+        "YMYL_CONTEXT":              "",  # filled by orchestrator legal/medical enricher
         "PUBMED_CYTAT":             "",
         "PYTANIE_SNIPPETOWE":       (paa_unanswered[0] if paa_unanswered
                                      else paa_standard[0] if paa_standard

@@ -171,6 +171,8 @@ Encje krytyczne: {{ENCJE_KRYTYCZNE}}
 N-gramy z częstotliwościami: {{NGRAMY_Z_CZESTOTLIWOSCIA}}
 Łańcuchy kauzalne: {{LANCUCHY_KAUZALNE}}
 Relacje kauzalne: {{RELACJE_KAUZALNE}}
+
+{{YMYL_CONTEXT}}
 Peryfrazy: {{PERYFRAZY}}
 Warianty potoczne: {{WARIANTY_POTOCZNE}}
 Warianty formalne: {{WARIANTY_FORMALNE}}
@@ -242,6 +244,8 @@ MUSI zawierać: {{ENCJE_BATCH_0}}
 MUSI użyć co najmniej jednej z tych fraz: {{PERYFRAZY_BATCH_0}}
 MUSI wpleść te hard facts z SERP snippets: {{HARD_FACTS_BATCH_0}}
 
+{{NW_LUKI}}
+
 Pierwsze zdanie: zawiera encję główną "{{ENCJA_GLOWNA}}".
 Ostatnie zdanie: pomostowe, prowadzi do pierwszej sekcji H2.
 
@@ -293,6 +297,10 @@ Te liczby, daty i fakty pochodzą z SERP snippets lub danych wejściowych. Użyj
 ━━━ PERYFRAZY I WARIANTY ━━━
 Wpleć naturalnie co najmniej {{MIN_PERYFRAZ}} z poniższych:
 {{PERYFRAZY_BATCH_N}}
+
+{{NW_LUKI}}
+
+{{YMYL_CONTEXT}}
 
 ━━━ INTENCJA TRANSAKCYJNA ━━━
 {{INTENCJA_TRANSAKCYJNA_AKTYWNA}}
