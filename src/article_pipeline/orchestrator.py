@@ -28,6 +28,8 @@ from src.article_pipeline.validators import (
     validate_global,
     check_forbidden_phrases,
 )
+from src.article_pipeline.ymyl_detector import detect_ymyl, get_disclaimer_text
+from src.article_pipeline.search_variants import generate_search_variants
 
 
 def _safe_json_parse(text: str) -> dict | None:
@@ -68,6 +70,8 @@ class ArticleOrchestrator:
         self.bridge_sentences = []
         self.full_article = ""
         self.validation_result = None
+        self.ymyl_result = None
+        self.search_variants_result = None
 
     def _llm_call(self, system_prompt: str, user_prompt: str, max_tokens: int = 4000) -> str:
         """Make LLM call with the configured engine."""
@@ -79,6 +83,35 @@ class ArticleOrchestrator:
             temperature=0.7,
         )
         return text
+
+    def run_ymyl_detection(self) -> dict:
+        """Detect YMYL category and update variables."""
+        keyword = self.variables.get("HASLO_GLOWNE", "")
+        self.ymyl_result = detect_ymyl(keyword)
+        category = self.ymyl_result.get("category", "none")
+        self.variables["YMYL_KLASYFIKACJA"] = category
+        if self.ymyl_result.get("is_ymyl"):
+            self.variables["PUBMED_CYTAT"] = ""  # placeholder for future PubMed integration
+        return self.ymyl_result
+
+    def run_search_variants(self) -> dict:
+        """Generate search variants and update variables."""
+        keyword = self.variables.get("HASLO_GLOWNE", "")
+        ngrams = self.variables.get("_ngrams", [])
+        secondary = [ng.get("ngram", "") for ng in ngrams[:10]]
+        self.search_variants_result = generate_search_variants(keyword, secondary)
+
+        self.variables["PERYFRAZY"] = json.dumps(
+            self.search_variants_result.get("peryfrazy", []), ensure_ascii=False
+        )
+        self.variables["PERYFRAZY_ALL"] = self.variables["PERYFRAZY"]
+        self.variables["WARIANTY_POTOCZNE"] = json.dumps(
+            self.search_variants_result.get("warianty_potoczne", []), ensure_ascii=False
+        )
+        self.variables["WARIANTY_FORMALNE"] = json.dumps(
+            self.search_variants_result.get("warianty_formalne", []), ensure_ascii=False
+        )
+        return self.search_variants_result
 
     def run_pre_batch(self) -> dict:
         """
@@ -286,28 +319,40 @@ class ArticleOrchestrator:
         Run the complete article generation pipeline with SSE-compatible events.
         Yields status events for each step.
         """
-        total_steps = 4 + len(self.variables.get("_h2_plan_list", []))
+        h2_count = len(self.variables.get("_h2_plan_list", []))
+        # Steps: YMYL + variants + pre-batch + batch0 + H2s + FAQ + post-processing
+        total_steps = 6 + h2_count
 
-        # Step 1: Pre-batch
-        yield {"event": "step_start", "step": 1, "total": total_steps, "label": "Pre-Batch: mapa rozmieszczeń"}
+        # Step 1: YMYL detection
+        yield {"event": "step_start", "step": 1, "total": total_steps, "label": "YMYL: detekcja kategorii"}
+        ymyl = self.run_ymyl_detection()
+        yield {"event": "step_done", "step": 1, "data": {"ymyl": ymyl}}
+
+        # Step 2: Search variants
+        yield {"event": "step_start", "step": 2, "total": total_steps, "label": "Warianty wyszukiwania"}
+        variants = self.run_search_variants()
+        yield {"event": "step_done", "step": 2, "data": {"variants_count": sum(len(v) for v in variants.values())}}
+
+        # Step 3: Pre-batch
+        yield {"event": "step_start", "step": 3, "total": total_steps, "label": "Pre-Batch: mapa rozmieszczeń"}
         self.run_pre_batch()
-        yield {"event": "step_done", "step": 1, "data": {"pre_batch_keys": list((self.pre_batch_map or {}).keys())}}
+        yield {"event": "step_done", "step": 3, "data": {"pre_batch_keys": list((self.pre_batch_map or {}).keys())}}
 
-        # Step 2: Batch 0
-        yield {"event": "step_start", "step": 2, "total": total_steps, "label": "Batch 0: H1 + wstęp"}
+        # Step 4: Batch 0
+        yield {"event": "step_start", "step": 4, "total": total_steps, "label": "Batch 0: H1 + wstęp"}
         intro = self.run_batch_0()
-        yield {"event": "step_done", "step": 2, "data": {"text": intro, "word_count": len(intro.split())}}
+        yield {"event": "step_done", "step": 4, "data": {"text": intro, "word_count": len(intro.split())}}
 
-        # Steps 3..N: H2 sections
+        # Steps 5..N: H2 sections
         h2_plan = self.variables.get("_h2_plan_list", [])
         for i, h2 in enumerate(h2_plan):
-            step = 3 + i
+            step = 5 + i
             yield {"event": "step_start", "step": step, "total": total_steps, "label": f"Batch {i+1}: {h2[:50]}"}
             section = self.run_batch_n(i + 1, h2, h2)
             yield {"event": "step_done", "step": step, "data": {"text": section, "word_count": len(section.split())}}
 
         # FAQ
-        faq_step = 3 + len(h2_plan)
+        faq_step = 5 + h2_count
         yield {"event": "step_start", "step": faq_step, "total": total_steps, "label": "Batch FAQ"}
         faq = self.run_batch_faq()
         yield {"event": "step_done", "step": faq_step, "data": {"text": faq, "word_count": len(faq.split())}}
@@ -329,4 +374,5 @@ class ArticleOrchestrator:
             "full_text": article,
             "total_words": len(article.split()),
             "validation_score": validation.get("score", 0) if validation else 0,
+            "ymyl": self.ymyl_result,
         }}
