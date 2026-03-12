@@ -7,21 +7,30 @@ FUZZY_SIMILARITY_THRESHOLD = 90  # próg podobieństwa 0–100
 MAX_FUZZY_WINDOW_EXPANSION = 2   # max ile dodatkowych lematów może wejść „w środek” frazy
 
 
-# --- Ładowanie modelu (v47: shared singleton, sm instead of lg) ---
-try:
-    from src.common.nlp_singleton import get_nlp
-except ImportError:
+# --- Ładowanie modelu (lazy — nie ładuj przy imporcie modułu) ---
+_get_nlp = None
+NLP = None
+
+def _load_nlp():
+    """Lazy singleton — ładowany dopiero przy pierwszym użyciu."""
+    global NLP, _get_nlp
+    if NLP is not None:
+        return NLP
     try:
-        from api.nlp_singleton import get_nlp
+        from src.common.nlp_singleton import get_nlp as _get_nlp
     except ImportError:
-        from nlp_singleton import get_nlp
-NLP = get_nlp()
+        try:
+            from api.nlp_singleton import get_nlp as _get_nlp
+        except ImportError:
+            from nlp_singleton import get_nlp as _get_nlp
+    NLP = _get_nlp()
+    return NLP
 
 
 # --- Funkcja pomocnicza (Lematyzacja) ---
 def _lemmatize_text_to_list(text):
     """Zwraca listę lematów z tekstu (tylko tokeny alfabetyczne)."""
-    doc = NLP(text.lower())
+    doc = _load_nlp()(text.lower())
     return [token.lemma_ for token in doc if token.is_alpha]
 
 
