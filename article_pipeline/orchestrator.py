@@ -60,8 +60,10 @@ def _get_last_sentence(text: str) -> str:
 class ArticleOrchestrator:
     """Orchestrates the full BRAJEN article generation pipeline."""
 
-    def __init__(self, s1_data: dict, engine: str = "claude", model: str = "claude-sonnet-4-5-20251001"):
-        self.s1_data = s1_data
+    def __init__(self, s1_data: dict, engine: str = "claude", model: str = "claude-sonnet-4-6"):
+        # Use LLM-optimized version if available, fallback to full s1_data
+        self.s1_data = s1_data.get("_llm_ready") or s1_data
+        self._s1_full = s1_data  # full version for panel display
         self.engine = engine
         self.model = model
         self.variables = extract_global_variables(s1_data)
@@ -72,16 +74,12 @@ class ArticleOrchestrator:
         self.validation_result = None
         self.ymyl_result = None
         self.search_variants_result = None
-        self.prompt_log: list[dict] = []  # stores all prompts sent to LLM
+        # Logging for "Dane wsadowe" panel tab
+        self.prompt_log = []   # [{label, system, user}]
+        self.input_variables = {}  # snapshot after all variables are ready
 
     def _llm_call(self, system_prompt: str, user_prompt: str, max_tokens: int = 4000, label: str = "") -> str:
-        """Make LLM call with the configured engine and log the prompt."""
-        self.prompt_log.append({
-            "label": label or f"call_{len(self.prompt_log) + 1}",
-            "system": system_prompt,
-            "user": user_prompt,
-            "max_tokens": max_tokens,
-        })
+        """Make LLM call with the configured engine. Logs prompt for Dane wsadowe tab."""
         text, usage = claude_call(
             system_prompt=system_prompt,
             user_prompt=user_prompt,
@@ -89,6 +87,14 @@ class ArticleOrchestrator:
             max_tokens=max_tokens,
             temperature=0.7,
         )
+        # Log prompt for panel
+        if label:
+            self.prompt_log.append({
+                "label": label,
+                "system": system_prompt[:2000] + ("..." if len(system_prompt) > 2000 else ""),
+                "user": user_prompt[:3000] + ("..." if len(user_prompt) > 3000 else ""),
+                "tokens_out": len(text.split()),
+            })
         return text
 
     def run_ymyl_detection(self) -> dict:
@@ -310,7 +316,7 @@ class ArticleOrchestrator:
         system = "Jesteś walidatorem tekstu SEO. Analizujesz artykuły pod kątem zgodności z wytycznymi."
         user = fill_template(POST_PROCESSING_PROMPT, post_vars)
 
-        response = self._llm_call(system, user, max_tokens=3000, label="pre_batch")
+        response = self._llm_call(system, user, max_tokens=3000)
         parsed = _safe_json_parse(response)
 
         if parsed:
@@ -339,6 +345,8 @@ class ArticleOrchestrator:
         yield {"event": "step_start", "step": 2, "total": total_steps, "label": "Warianty wyszukiwania"}
         variants = self.run_search_variants()
         yield {"event": "step_done", "step": 2, "data": {"variants_count": sum(len(v) for v in variants.values())}}
+        # Snapshot all input variables after variants are ready
+        self.input_variables = {k: v for k, v in self.variables.items() if not k.startswith("_")}
 
         # Step 3: Pre-batch
         yield {"event": "step_start", "step": 3, "total": total_steps, "label": "Pre-Batch: mapa rozmieszczeń"}
@@ -383,6 +391,6 @@ class ArticleOrchestrator:
             "validation_score": validation.get("score", 0) if validation else 0,
             "ymyl": self.ymyl_result,
             "prompt_log": self.prompt_log,
-            "input_variables": {k: v for k, v in self.variables.items() if not k.startswith("_")},
-            "pre_batch_map": self.pre_batch_map,
+            "input_variables": self.input_variables,
+            "pre_batch_map": self.pre_batch_map or {},
         }}
