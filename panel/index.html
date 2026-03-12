@@ -224,7 +224,11 @@
                 <textarea id="h2Input" rows="4" placeholder="Jedna sekcja H2 na linie..."></textarea>
 
                 <label class="lbl">Slowa kluczowe (opcjonalnie)</label>
-                <textarea id="kwInput" rows="3" placeholder="Dodatkowe frazy kluczowe..."></textarea>
+                <textarea id="kwInput" rows="6" placeholder="Wklej frazy z NeuronWriter/Surfer (format: fraza: actual/min-max)
+Przykład:
+kurs barberski: 32/7-18
+szkolenia barberskie: 0/2-5
+techniki strzyżenia: 2/3-6"></textarea>
 
                 <button class="btn-primary" id="btnStart" onclick="startWorkflow()">Uruchom workflow</button>
                 <button class="btn-stop" id="btnStop" onclick="stopWorkflow()">Zatrzymaj</button>
@@ -255,6 +259,7 @@
                 <div class="tab" data-tab="h2plan" onclick="switchTab('h2plan')">Plan H2</div>
                 <div class="tab" data-tab="prompts" onclick="switchTab('prompts')">Dane wsadowe</div>
                 <div class="tab" data-tab="optional" onclick="switchTab('optional')">Moduly opcjonalne</div>
+                <div class="tab" data-tab="checklist" onclick="switchTab('checklist')">Checklist</div>
             </div>
 
             <!-- ═══ WORKFLOW TAB ═══ -->
@@ -347,6 +352,15 @@
                     <div id="promptLogContainer"></div>
 
                 </div>
+            </div>
+
+            <!-- ═══ CHECKLIST TAB ═══ -->
+            <div class="tab-content" id="tab-checklist">
+                <div id="checklistEmpty" style="padding:60px 0;text-align:center;color:var(--mg)">
+                    <div style="font-size:48px;margin-bottom:12px">&#9989;</div>
+                    <p style="font-size:14px">Checklist pojawi się po wygenerowaniu artykułu</p>
+                </div>
+                <div id="checklistContent" style="display:none;padding:16px"></div>
             </div>
 
             <!-- ═══ OPTIONAL MODULES TAB ═══ -->
@@ -947,6 +961,245 @@ function buildSection(id, title, count, contentFn, openByDefault) {
         '</div>';
 }
 
+// ── Checklist Render ──
+function renderChecklist(data) {
+    const vars = data.input_variables || {};
+    const art = (data.full_text || articleText || '').toLowerCase();
+    const preBatch = data.pre_batch_map || {};
+    const validation = data.validation || {};
+    const coverage = data.coverage || {};
+
+    if (!art) return;
+
+    // ── helpers ──
+    function countIn(phrase) {
+        if (!phrase) return 0;
+        try { return (art.match(new RegExp(phrase.toLowerCase().replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g')) || []).length; } catch(e) { return 0; }
+    }
+    function has(phrase) { return countIn(phrase) > 0; }
+    function wordsIn(text) { return text ? text.trim().split(/\s+/).filter(Boolean).length : 0; }
+    function parseList(val) {
+        if (!val) return [];
+        if (Array.isArray(val)) return val;
+        return String(val).split(/[,\n]/).map(s => s.trim()).filter(Boolean);
+    }
+    function row(ok, label, detail) {
+        const icon = ok === null ? '⏭' : ok ? '✅' : '❌';
+        const color = ok === null ? 'var(--mg)' : ok ? 'var(--gn)' : 'var(--rd)';
+        return '<tr><td style="font-size:16px;width:28px">' + icon + '</td>' +
+               '<td style="font-size:12px;color:' + color + ';padding:5px 8px">' + esc(label) + '</td>' +
+               '<td style="font-size:11px;color:var(--mg);padding:5px 4px">' + esc(detail || '') + '</td></tr>';
+    }
+    function section(title, rows) {
+        return '<div style="margin-bottom:16px">' +
+               '<div style="font-weight:700;font-size:12px;color:var(--white);margin-bottom:6px;padding:6px 10px;background:var(--s3);border-radius:4px">' + title + '</div>' +
+               '<table style="width:100%;border-collapse:collapse">' + rows.join('') + '</table></div>';
+    }
+
+    const encja = (vars.ENCJA_GLOWNA || '').toLowerCase();
+    const FORBIDDEN = ['warto zaznaczyć','warto podkreślić','należy zaznaczyć','należy podkreślić',
+        'jest to ważne, ponieważ','w dzisiejszym artykule','kluczowym aspektem jest',
+        'podsumowując powyższe','jak wspomniano wcześniej','co więcej,','ponadto,',
+        'niemniej jednak,','w związku z powyższym','mając na uwadze','nie sposób nie wspomnieć',
+        'wiele osób błędnie'];
+
+    // ── H1 check ──
+    const h1Match = art.match(/^#\s+(.+)/m);
+    const h1Text = h1Match ? h1Match[1].toLowerCase() : '';
+
+    // ── BATCH 0 ──
+    const intro = art.split(/\n##\s/)[0] || '';
+    const introWords = wordsIn(intro);
+    const dlugoscIntro = parseInt(vars.DLUGOSC_INTRO) || 120;
+    const introOk = introWords >= dlugoscIntro * 0.85 && introWords <= dlugoscIntro * 1.15;
+
+    const encjeBatch0 = parseList(vars.ENCJE_BATCH_0);
+    const allEncje0Used = encjeBatch0.length === 0 || encjeBatch0.every(e => {
+        const clean = e.replace(/^[-•*]\s*/, '').trim().toLowerCase();
+        return clean.length < 3 || intro.includes(clean);
+    });
+
+    const hardFacts0 = parseList(vars.HARD_FACTS_BATCH_0);
+    const hardFacts0Used = hardFacts0.length === 0 || hardFacts0.some(f => {
+        const nums = f.match(/\d+/g);
+        return nums && nums.some(n => art.includes(n));
+    });
+
+    const forbiddenInIntro = FORBIDDEN.filter(f => intro.includes(f));
+
+    const b0rows = [
+        row(h1Text.includes(encja), 'H1 zawiera encję główną', encja),
+        row(intro.split('\n').find(l => l.trim() && !l.startsWith('#')) ? intro.split('\n').find(l => l.trim() && !l.startsWith('#')).toLowerCase().includes(encja) : false,
+            'Pierwsze zdanie akapitu zawiera encję główną', ''),
+        row(allEncje0Used, 'Encje z ENCJE_BATCH_0 użyte', encjeBatch0.length + ' encji'),
+        row(hardFacts0Used, 'Hard facts z HARD_FACTS_BATCH_0 użyte', hardFacts0.length + ' faktów'),
+        row(introOk, 'Długość intro: ' + introWords + ' słów', 'cel: ' + dlugoscIntro + ' ±15%'),
+        row(forbiddenInIntro.length === 0, 'Brak zakazanych fraz AI w intro', forbiddenInIntro.length > 0 ? forbiddenInIntro.join(', ') : ''),
+    ];
+
+    // ── BATCH 1..N ──
+    const h2Sections = art.split(/\n##\s+/).slice(1);
+    const encjaInAllH2 = h2Sections.length === 0 || h2Sections.every(s => s.toLowerCase().includes(encja));
+
+    const ngramsMissing = (coverage.missing || []).length;
+    const ngramsOver = (coverage.over || []).length;
+    const ngramsUnder = (coverage.under || []).length;
+
+    const forbiddenInBatches = FORBIDDEN.filter(f => art.includes(f));
+    const hasBullets = /\n[\s]*[-*•]\s/.test(data.full_text || '');
+
+    const bridgePattern = /[^.!?]*(?:przejdź|dowiesz się|poznasz|omówimy|sprawdź|kolejna|następna|wróćmy|przyjrzyjmy|zobaczymy)[^.!?]*[.!?]/gi;
+    const bridges = (art.match(bridgePattern) || []).length;
+
+    const dlugoscSekcji = parseInt(vars.DLUGOSC_SEKCJI) || 300;
+    const avgSectionWords = h2Sections.length > 0
+        ? Math.round(h2Sections.reduce((s, sec) => s + wordsIn(sec), 0) / h2Sections.length) : 0;
+    const sectionsOk = avgSectionWords >= dlugoscSekcji * 0.85 && avgSectionWords <= dlugoscSekcji * 1.15;
+
+    const bnrows = [
+        row(encjaInAllH2, 'Encja główna w każdej sekcji H2', h2Sections.length + ' sekcji'),
+        row(ngramsMissing === 0, 'Ngramy pokryte (brak = 0)', ngramsMissing + ' brakujących'),
+        row(ngramsOver === 0, 'Żaden ngram nie przekroczył górnej granicy', ngramsOver + ' przekroczonych'),
+        row(ngramsUnder === 0, 'Ngramy w zakresie min', ngramsUnder + ' za mało'),
+        row(bridges >= Math.max(1, h2Sections.length - 1), 'Zdania pomostowe na końcu sekcji', bridges + ' znalezionych'),
+        row(sectionsOk, 'Śr. długość sekcji: ' + avgSectionWords + ' słów', 'cel: ' + dlugoscSekcji + ' ±15%'),
+        row(forbiddenInBatches.length === 0, 'Brak zakazanych fraz AI w artykule', forbiddenInBatches.length > 0 ? forbiddenInBatches.slice(0,3).join(', ') : ''),
+        row(!hasBullets, 'Brak listy punktowej (poza instrukcjami)', ''),
+    ];
+
+    // ── BATCH FAQ ──
+    const faqSection = art.includes('## faq') || art.includes('## najczęściej') || art.includes('## pytania');
+    const paa = parseList(vars.PAA_BEZ_ODPOWIEDZI);
+    const paaInFaq = paa.length === 0 || paa.some(q => {
+        const words = q.toLowerCase().split(/\s+/).filter(w => w.length > 3);
+        return words.length > 0 && words.every(w => art.includes(w));
+    });
+    const ymyl = (vars.YMYL_KLASYFIKACJA || '').toLowerCase();
+    const needsDisclaimer = ymyl === 'prawo' || ymyl === 'zdrowie' || ymyl === 'finanse';
+    const hasDisclaimer = art.includes('charakter') && (art.includes('informacyjn') || art.includes('porady'));
+    const forbiddenFaq = ['to dobre pytanie', 'odpowiedź nie jest jednoznaczna', 'wiele zależy od', 'każdy przypadek jest inny'];
+    const faqBad = forbiddenFaq.filter(f => art.includes(f));
+
+    const faqrows = [
+        row(faqSection, 'Sekcja FAQ obecna', ''),
+        row(paa.length === 0 ? null : paaInFaq, 'Pytania PAA zawarte w FAQ', paa.length + ' pytań PAA'),
+        row(needsDisclaimer ? hasDisclaimer : null, needsDisclaimer ? 'Disclaimer YMYL obecny' : 'Disclaimer YMYL (N/A — ' + (ymyl||'brak') + ')', ''),
+        row(faqBad.length === 0, 'Brak zakazanych fraz w FAQ', faqBad.join(', ')),
+    ];
+
+    // ── GLOBAL ──
+    const totalWords = wordsIn(data.full_text || articleText || '');
+    const dlugoscCel = parseInt(vars.DLUGOSC_CEL) || 1500;
+    const lengthOk = totalWords >= dlugoscCel * 0.90 && totalWords <= dlugoscCel * 1.10;
+
+    const peryfrazyAll = parseList(vars.PERYFRAZY_ALL || vars.PERYFRAZY_BATCH_0);
+    const peryfrazyUsed = peryfrazyAll.filter(p => p.length > 3 && has(p.toLowerCase())).length;
+
+    const warianty = parseList(vars.WARIANTY_FORMALNE);
+    const wariantyUsed = warianty.filter(w => w.length > 3 && has(w.toLowerCase())).length;
+
+    const marki = parseList(vars.MARKI_Z_RELATED_SEARCHES);
+    const intencja = (vars.INTENCJA || '').toLowerCase();
+    const isTransakcyjna = intencja.includes('transak') || intencja.includes('komercj') || intencja.includes('buy');
+    const markiUsed = marki.filter(m => m.length > 3 && has(m.toLowerCase())).length;
+
+    const score = validation.score || data.validation_score || 0;
+
+    const globalRows = [
+        row(lengthOk, 'Łączna długość: ' + totalWords + ' słów', 'cel: ' + dlugoscCel + ' ±10%'),
+        row(peryfrazyUsed >= 3, 'Min. 3 peryfrazy użyte', peryfrazyUsed + '/' + peryfrazyAll.length),
+        row(wariantyUsed >= 2, 'Min. 2 warianty formalne użyte', wariantyUsed + '/' + warianty.length),
+        row(isTransakcyjna ? markiUsed >= 1 : null, isTransakcyjna ? 'Marka z related searches wpleciona' : 'Marki (N/A — intencja: ' + (intencja||'?') + ')', markiUsed + '/' + marki.length),
+        row(score >= 80, 'Score post-processing ≥ 80', score + '/100'),
+    ];
+
+    // ── Assemble ──
+    let passCount = 0, failCount = 0, skipCount = 0;
+    const allRows = [...b0rows, ...bnrows, ...faqrows, ...globalRows];
+    allRows.forEach(r => {
+        if (r.includes('✅')) passCount++;
+        else if (r.includes('❌')) failCount++;
+        else skipCount++;
+    });
+
+    const totalChecks = passCount + failCount;
+    const pct = totalChecks > 0 ? Math.round(passCount / totalChecks * 100) : 0;
+    const barColor = pct >= 80 ? 'var(--gn)' : pct >= 50 ? 'var(--yl)' : 'var(--rd)';
+
+    let html = '<div style="margin-bottom:16px;padding:12px;background:var(--s3);border-radius:6px;display:flex;align-items:center;gap:16px">';
+    html += '<div style="font-size:28px;font-weight:800;color:' + barColor + '">' + pct + '%</div>';
+    html += '<div style="flex:1"><div style="height:8px;background:var(--b1);border-radius:4px;overflow:hidden"><div style="height:100%;width:' + pct + '%;background:' + barColor + ';border-radius:4px;transition:width .5s"></div></div>';
+    html += '<div style="font-size:11px;color:var(--mg);margin-top:4px">✅ ' + passCount + '  ❌ ' + failCount + '  ⏭ ' + skipCount + ' (N/A)</div></div></div>';
+
+    html += section('BATCH 0 — H1 i wstęp', b0rows);
+    html += section('BATCH 1..N — Sekcje H2', bnrows);
+    html += section('BATCH FAQ', faqrows);
+    html += section('GLOBAL', globalRows);
+
+    document.getElementById('checklistEmpty').style.display = 'none';
+    document.getElementById('checklistContent').style.display = 'block';
+    document.getElementById('checklistContent').innerHTML = html;
+}
+
+// ── Coverage Check Render ──
+function renderCoverage(cov) {
+    const stats = cov.stats || {};
+    const pct = stats.coverage_pct || 0;
+    const color = pct >= 70 ? 'var(--gn)' : pct >= 40 ? 'var(--yl)' : 'var(--rd)';
+
+    let html = '<div style="margin-bottom:16px">';
+    html += '<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:12px">';
+    html += '<span style="color:var(--gn);font-size:13px">✅ OK: ' + (stats.ok||0) + '</span>';
+    html += '<span style="color:var(--rd);font-size:13px">✗ Brakuje: ' + (stats.missing||0) + '</span>';
+    html += '<span style="color:var(--yl);font-size:13px">↑ Za mało: ' + (stats.under||0) + '</span>';
+    html += '<span style="color:var(--mg);font-size:13px">↓ Za dużo: ' + (stats.over||0) + '</span>';
+    html += '<span style="color:' + color + ';font-weight:700;font-size:13px">Pokrycie: ' + pct + '%</span>';
+    html += '</div>';
+
+    if ((cov.missing||[]).length > 0) {
+        html += '<div style="margin-bottom:10px"><div style="font-weight:600;color:var(--rd);font-size:12px;margin-bottom:6px">✗ BRAKUJĄCE frazy (0 użyć w artykule)</div>';
+        html += '<table class="s1-table"><thead><tr><th>Fraza</th><th>Min</th><th>Max</th><th>Waga S1</th></tr></thead><tbody>';
+        (cov.missing||[]).forEach(function(t) {
+            html += '<tr><td style="color:var(--rd)">' + esc(t.term||'') + '</td><td>' + t.min + '</td><td>' + t.max + '</td><td style="color:var(--mg)">' + (t.weight||0).toFixed(2) + '</td></tr>';
+        });
+        html += '</tbody></table></div>';
+    }
+
+    if ((cov.under||[]).length > 0) {
+        html += '<div style="margin-bottom:10px"><div style="font-weight:600;color:var(--yl);font-size:12px;margin-bottom:6px">↑ ZA MAŁO (poniżej min)</div>';
+        html += '<table class="s1-table"><thead><tr><th>Fraza</th><th>Masz</th><th>Min</th><th>Max</th></tr></thead><tbody>';
+        (cov.under||[]).forEach(function(t) {
+            html += '<tr><td style="color:var(--yl)">' + esc(t.term||'') + '</td><td>' + t.actual + '</td><td>' + t.min + '</td><td>' + t.max + '</td></tr>';
+        });
+        html += '</tbody></table></div>';
+    }
+
+    if ((cov.over||[]).length > 0) {
+        html += '<div><div style="font-weight:600;color:var(--mg);font-size:12px;margin-bottom:6px">↓ ZA DUŻO (powyżej max)</div>';
+        html += '<table class="s1-table"><thead><tr><th>Fraza</th><th>Masz</th><th>Max</th></tr></thead><tbody>';
+        (cov.over||[]).forEach(function(t) {
+            html += '<tr><td>' + esc(t.term||'') + '</td><td style="color:var(--rd)">' + t.actual + '</td><td>' + t.max + '</td></tr>';
+        });
+        html += '</tbody></table></div>';
+    }
+
+    html += '</div>';
+
+    // Inject into article tab below article preview
+    const existing = document.getElementById('coverageReport');
+    if (existing) { existing.innerHTML = html; return; }
+    const wrap = document.createElement('div');
+    wrap.id = 'coverageReport';
+    wrap.style.cssText = 'margin-top:16px;padding:12px;background:var(--s2);border-radius:var(--rs);border:1px solid var(--b1)';
+    const title = document.createElement('div');
+    title.style.cssText = 'font-weight:700;font-size:13px;color:var(--white);margin-bottom:10px';
+    title.textContent = 'Coverage ngrams S1';
+    wrap.appendChild(title);
+    wrap.innerHTML = '<div style="font-weight:700;font-size:13px;color:var(--white);margin-bottom:10px">Coverage ngrams S1</div>' + html;
+    const preview = document.getElementById('articlePreview');
+    if (preview && preview.parentNode) preview.parentNode.insertBefore(wrap, preview.nextSibling);
+}
+
 // ── Article Render ──
 function renderArticle(text) {
     articleText = text;
@@ -1062,7 +1315,7 @@ async function startWorkflow() {
         const h2Val = document.getElementById('h2Input').value.trim();
         const kwVal = document.getElementById('kwInput').value.trim();
         if (h2Val) body.h2_structure = h2Val.split('\n').filter(function(l) { return l.trim(); });
-        if (kwVal) body.extra_keywords = kwVal.split('\n').filter(function(l) { return l.trim(); });
+        if (kwVal) body.nw_terms = kwVal.split('\n').filter(function(l) { return l.trim(); });
 
         const startResp = await fetch('/api/start', {
             method: 'POST',
@@ -1103,6 +1356,10 @@ async function startWorkflow() {
                         if (d.data.validation_score !== undefined || d.data.validation) {
                             showValidation(d.data.validation || { score: d.data.validation_score });
                         }
+                        // Render coverage check
+                        if (d.data.coverage) renderCoverage(d.data.coverage);
+                        // Render checklist
+                        if (d.data.input_variables) renderChecklist(d.data);
                         // Render prompt log and input variables
                         renderPrompts(d.data);
                     }
