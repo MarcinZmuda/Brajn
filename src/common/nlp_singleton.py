@@ -1,6 +1,6 @@
 """
 Shared spaCy NLP singleton — prevents loading model multiple times.
-Uses pl_core_news_lg (~85MB) for better NER accuracy. Falls back to sm if lg not installed.
+Tries pl_core_news_lg first (better NER), falls back to sm.
 """
 import spacy
 
@@ -22,11 +22,17 @@ def get_nlp():
             print(f"[NLP] spaCy {model} loaded (singleton)")
             return _nlp
         except OSError:
+            print(f"[NLP] {model} not installed, trying next...")
             continue
 
-    print(f"[NLP] Downloading {_PREFERRED_MODEL}...")
-    from spacy.cli import download
-    download(_PREFERRED_MODEL)  # auto-download lg if missing
-    _nlp = spacy.load(_PREFERRED_MODEL)
-    print(f"[NLP] spaCy {_PREFERRED_MODEL} downloaded and loaded")
+    # Last resort: download sm (always available)
+    print(f"[NLP] Downloading {_FALLBACK_MODEL}...")
+    try:
+        from spacy.cli import download
+        download(_FALLBACK_MODEL)
+        _nlp = spacy.load(_FALLBACK_MODEL)
+        print(f"[NLP] spaCy {_FALLBACK_MODEL} downloaded and loaded")
+    except Exception as e:
+        print(f"[NLP] FATAL: cannot load any spaCy model: {e}")
+        raise RuntimeError(f"spaCy model unavailable: {e}")
     return _nlp
