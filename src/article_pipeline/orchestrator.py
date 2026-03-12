@@ -61,13 +61,20 @@ def _get_last_sentence(text: str) -> str:
 class ArticleOrchestrator:
     """Orchestrates the full BRAJEN article generation pipeline."""
 
-    def __init__(self, s1_data: dict, engine: str = "claude", model: str = "claude-sonnet-4-6"):
+    def __init__(self, s1_data: dict, engine: str = "claude", model: str = "claude-sonnet-4-6", nw_terms: list = None):
         # Use LLM-optimized version if available, fallback to full s1_data
         self.s1_data = s1_data.get("_llm_ready") or s1_data
         self._s1_full = s1_data  # full version for panel display
         self.engine = engine
         self.model = model
         self.variables = extract_global_variables(s1_data)
+        # NW/Surfer coverage analysis
+        from src.article_pipeline.nw_analyzer import analyze_nw_coverage
+        self._nw_analysis = analyze_nw_coverage(nw_terms or [], s1_data)
+        nw_block = self._nw_analysis.get("prompt_block", "")
+        self.variables["NW_LUKI"] = nw_block
+        if self._nw_analysis.get("stats", {}).get("total", 0) > 0:
+            print(f"[NW] Coverage analysis: {self._nw_analysis['stats']}")
         self.pre_batch_map = None
         self.batch_texts = []
         self.bridge_sentences = []
@@ -432,6 +439,72 @@ class ArticleOrchestrator:
         self.full_article = "\n\n".join(self.batch_texts)
         return self.full_article
 
+    def run_coverage_check(self) -> dict:
+        """
+        Porównuje tekst artykułu z zakresami freq_min/freq_max z S1 ngrams.
+        Zwraca raport: missing, under, over, ok.
+        Bez LLM — czysto lokalne liczenie.
+        """
+        import re as _re
+
+        article = self.full_article.lower()
+        if not article:
+            return {}
+
+        s1_full = self._s1_full
+        ngrams = (s1_full.get("ngrams") or []) + (s1_full.get("extended_terms") or [])
+
+        missing, under, over, ok = [], [], [], []
+
+        for ng in ngrams:
+            term = (ng.get("ngram") or ng.get("text") or "").lower().strip()
+            if not term or len(term) < 3:
+                continue
+            freq_min = ng.get("freq_min", 1)
+            freq_max = ng.get("freq_max", 99)
+            weight   = ng.get("weight", 0)
+
+            actual = len(_re.findall(_re.escape(term), article))
+
+            entry = {
+                "term":   ng.get("ngram") or ng.get("text"),
+                "actual": actual,
+                "min":    freq_min,
+                "max":    freq_max,
+                "weight": round(weight, 3),
+            }
+
+            if actual == 0 and freq_min >= 1:
+                missing.append(entry)
+            elif 0 < actual < freq_min:
+                under.append(entry)
+            elif freq_max and actual > freq_max:
+                over.append(entry)
+            else:
+                ok.append(entry)
+
+        missing.sort(key=lambda x: x["weight"], reverse=True)
+        under.sort(key=lambda x: x["min"] - x["actual"], reverse=True)
+        over.sort(key=lambda x: x["actual"] - x["max"], reverse=True)
+
+        result = {
+            "missing": missing,
+            "under":   under,
+            "over":    over,
+            "ok":      ok,
+            "stats": {
+                "total":        len(ngrams),
+                "missing":      len(missing),
+                "under":        len(under),
+                "over":         len(over),
+                "ok":           len(ok),
+                "coverage_pct": round(len(ok) / max(len(ngrams), 1) * 100),
+            }
+        }
+        self.coverage_result = result
+        print(f"[COVERAGE] {result['stats']}")
+        return result
+
     def run_post_processing(self) -> dict:
         """
         Step 5: Validate the full article.
@@ -528,6 +601,10 @@ class ArticleOrchestrator:
         # Post-processing validation
         yield {"event": "step_start", "step": total_steps, "total": total_steps, "label": "Post-Processing: walidacja"}
         validation = self.run_post_processing()
+
+        # Coverage check — bez LLM, czysto lokalne
+        coverage = self.run_coverage_check()
+
         yield {"event": "step_done", "step": total_steps, "data": {"validation": validation}}
 
         yield {"event": "complete", "data": {
@@ -538,4 +615,5 @@ class ArticleOrchestrator:
             "prompt_log": self.prompt_log,
             "input_variables": self.input_variables,
             "pre_batch_map": self.pre_batch_map or {},
+            "coverage": coverage,
         }}
