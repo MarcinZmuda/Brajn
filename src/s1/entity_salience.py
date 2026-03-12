@@ -82,6 +82,9 @@ class SalienceSignals:
     sources_count: int = 0
     total_sources: int = 0
     
+    # Keyword relevance
+    keyword_overlap_score: float = 0.0
+
     # Computed salience
     salience_score: float = 0.0
 

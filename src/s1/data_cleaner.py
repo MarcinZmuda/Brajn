@@ -182,7 +182,8 @@ _NGRAM_GARBAGE_PATTERNS = re.compile(
     r"class=|id=|href=|src=|data-|aria-|ng-|v-bind|"
     r"\bpx\b|\brem\b|\bem\b|\bvh\b|\bvw\b|"
     r"border-radius|background-color|font-size|line-height|"
-    r"margin-top|padding-left|z-index|flex-wrap)",
+    r"margin-top|padding-left|z-index|flex-wrap|"
+    r"\bblock\b|\bcover\b|\bbackground\b|\bglobal\b|\bcolor\b|\bdim\b|\bast\b)",
     re.IGNORECASE
 )
 
@@ -273,6 +274,22 @@ def clean_ngrams(
         kw_overlap = words & kw_words
         if not kw_overlap:
             if weight < min_weight or freq < min_freq:
+                continue
+
+        # ── Outlier freq filter: artefakty jednej strony z nienaturalną częstotliwością ──
+        # Jeśli freq_min == freq_max (identyczna liczba w każdym źródle) to wygląda jak
+        # powtarzający się element szablonu CSS/JS, nie realna treść.
+        # Wyjątek: frazy z main keyword zawsze przepuszczamy.
+        if not kw_overlap:
+            freq_min = ng.get("freq_min", 0)
+            freq_max = ng.get("freq_max", 0)
+            sources_count = ng.get("sources_count", 1)
+            total_sources = ng.get("sources_total", sources_count)
+            # Artefakt: jednoźródłowy z bardzo wysoką freq (CSS klasy powtarzają się setki razy)
+            if sources_count == 1 and freq_min >= 50:
+                continue
+            # Artefakt: freq_min == freq_max i sources_count <= 2 (szablon powielony na kilku stronach)
+            if freq_min > 0 and freq_min == freq_max and freq_min >= 30 and sources_count <= 2:
                 continue
 
         clean.append(ng)
