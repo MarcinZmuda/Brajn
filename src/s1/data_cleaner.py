@@ -277,19 +277,21 @@ def clean_ngrams(
                 continue
 
         # ── Outlier freq filter: artefakty jednej strony z nienaturalną częstotliwością ──
-        # Jeśli freq_min == freq_max (identyczna liczba w każdym źródle) to wygląda jak
-        # powtarzający się element szablonu CSS/JS, nie realna treść.
-        # Wyjątek: frazy z main keyword zawsze przepuszczamy.
+        # Parsujemy sources_count z site_distribution ("1/6" → 1) bo ngram dict
+        # nie ma klucza sources_count — tylko site_distribution jako string.
         if not kw_overlap:
-            freq_min = ng.get("freq_min", 0)
-            freq_max = ng.get("freq_max", 0)
-            sources_count = ng.get("sources_count", 1)
-            total_sources = ng.get("sources_total", sources_count)
-            # Artefakt: jednoźródłowy z bardzo wysoką freq (CSS klasy powtarzają się setki razy)
-            if sources_count == 1 and freq_min >= 50:
+            freq_min_v = ng.get("freq_min", 0)
+            freq_max_v = ng.get("freq_max", 0)
+            site_dist = ng.get("site_distribution", "1/1")
+            try:
+                sources_count_v = int(str(site_dist).split("/")[0])
+            except (ValueError, IndexError):
+                sources_count_v = 1
+            # Artefakt: jednoźródłowy z wysoką powtarzalnością (CSS/JS template)
+            if sources_count_v == 1 and freq_min_v >= 20:
                 continue
-            # Artefakt: freq_min == freq_max i sources_count <= 2 (szablon powielony na kilku stronach)
-            if freq_min > 0 and freq_min == freq_max and freq_min >= 30 and sources_count <= 2:
+            # Artefakt: freq_min == freq_max → identyczna freq we wszystkich źródłach = szablon
+            if freq_min_v > 0 and freq_min_v == freq_max_v and freq_min_v >= 15 and sources_count_v <= 2:
                 continue
 
         clean.append(ng)

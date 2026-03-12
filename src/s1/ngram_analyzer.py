@@ -2,6 +2,7 @@
 N-gram analysis engine — lemma-based with high-signal source boosting.
 Ported from gpt-ngram-api v56.1.
 """
+import re
 from collections import Counter, defaultdict
 from src.common.nlp_singleton import get_nlp
 
@@ -148,6 +149,16 @@ def analyze_ngrams(
             continue
 
         display_ngram = lemma_to_surface.get(ngram, ngram)
+
+        # ── Early CSS/template outlier filter ──
+        # Jednoźródłowy ngram z freq >= 20 to artefakt CSS/JS (szablon powtarza klasę setki razy).
+        # Sprawdzamy tu zanim policzymy weight, żeby nie zaśmiecać puli.
+        page_sources_count = len({s for s in ngram_presence[ngram] if s != HIGH_SIGNAL_LABEL})
+        if page_sources_count <= 1 and page_freq >= 20:
+            _kw_words = set(main_keyword.lower().split()) if main_keyword else set()
+            _ngram_words = set(re.findall(r"[a-ząćęłńóśźż]+", display_ngram.lower()))
+            if not (_ngram_words & _kw_words):
+                continue  # single-source high-freq without keyword overlap = CSS garbage
         page_presence_set = {s for s in ngram_presence[ngram] if s != HIGH_SIGNAL_LABEL}
         freq_norm = page_freq / max_freq if max_freq else 0
         site_score = len(page_presence_set) / num_sources if num_sources else 0
