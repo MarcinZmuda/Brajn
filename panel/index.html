@@ -912,46 +912,25 @@ function renderS1(data) {
         });
     }
 
-    // ── 13. H2 Plan ──
-    if (mustHave.length > 0 || highPriority.length > 0 || allCandidates.length > 0) {
-        html += buildSection('h2plan', 'Plan H2 (scored)', mustHave.length + highPriority.length, function() {
-            let t = '';
-
-            if (mustHave.length > 0) {
-                t += '<div style="margin-bottom:10px"><div style="font-weight:600;color:var(--gn);font-size:12px;margin-bottom:6px">Must Have</div>';
-                mustHave.forEach(function(h, i) {
-                    t += '<div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--b1)">';
-                    t += '<span style="color:var(--gn);font-weight:700;font-size:14px;width:24px">' + (i + 1) + '</span>';
-                    t += '<span style="color:var(--white);font-size:13px;flex:1">' + esc(h.text || '') + '</span>';
-                    if (h.score !== undefined) t += '<span style="color:var(--gn);font-size:12px;font-weight:600">' + h.score.toFixed(1) + '</span>';
-                    t += '</div>';
-                });
-                t += '</div>';
-            }
-
-            if (highPriority.length > 0) {
-                t += '<div style="margin-bottom:10px"><div style="font-weight:600;color:var(--yl);font-size:12px;margin-bottom:6px">High Priority</div>';
-                highPriority.forEach(function(h, i) {
-                    t += '<div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--b1)">';
-                    t += '<span style="color:var(--yl);font-weight:700;font-size:14px;width:24px">' + (i + 1) + '</span>';
-                    t += '<span style="color:var(--white);font-size:13px;flex:1">' + esc(h.text || '') + '</span>';
-                    if (h.score !== undefined) t += '<span style="color:var(--yl);font-size:12px;font-weight:600">' + h.score.toFixed(1) + '</span>';
-                    t += '</div>';
-                });
-                t += '</div>';
-            }
-
-            if (allCandidates.length > 0) {
-                t += '<div><div style="font-weight:600;color:var(--mg);font-size:12px;margin-bottom:6px">All Candidates (' + allCandidates.length + ')</div>';
-                t += '<table class="s1-table"><thead><tr><th>H2</th><th>Score</th></tr></thead><tbody>';
-                allCandidates.forEach(function(h) {
-                    t += '<tr><td>' + esc(h.text || '') + '</td><td style="color:var(--orange)">' + (h.score !== undefined ? h.score.toFixed(1) : '-') + '</td></tr>';
-                });
-                t += '</tbody></table></div>';
-            }
-
+    // ── 13. H2 Kandydaci (input dla Claude Step 3) ──
+    const allCands = (mustHave.length + highPriority.length + allCandidates.length);
+    if (allCands > 0) {
+        html += buildSection('h2plan', 'Kandydaci H2 → input dla Claude', allCands, function() {
+            let t = '<table class="s1-table"><thead><tr><th>H2</th><th>Score</th><th>Źródło</th></tr></thead><tbody>';
+            const allRows = [...mustHave, ...highPriority, ...allCandidates];
+            allRows.forEach(function(h) {
+                const score = h.score !== undefined ? h.score : 0;
+                const color = score >= 0.65 ? 'var(--gn)' : score >= 0.40 ? 'var(--yl)' : 'var(--mg)';
+                const srcLabel = {competitor: 'konkur.', paa_unanswered: 'PAA', content_gap: 'luka', depth_missing: 'głębokość'}[h.source] || h.source || '';
+                t += '<tr>';
+                t += '<td>' + esc(h.text || '') + '</td>';
+                t += '<td style="color:' + color + ';font-weight:600">' + score.toFixed(2) + '</td>';
+                t += '<td style="color:var(--mg);font-size:11px">' + esc(srcLabel) + '</td>';
+                t += '</tr>';
+            });
+            t += '</tbody></table>';
             return t;
-        }, true);
+        }, false);
     }
 
     c.innerHTML = html || '<div class="empty-state"><div class="icon">&#128269;</div><p>Brak danych S1</p></div>';
