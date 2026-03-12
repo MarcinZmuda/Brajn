@@ -61,7 +61,9 @@ class ArticleOrchestrator:
     """Orchestrates the full BRAJEN article generation pipeline."""
 
     def __init__(self, s1_data: dict, engine: str = "claude", model: str = "claude-sonnet-4-6"):
-        self.s1_data = s1_data
+        # Use LLM-optimized version if available, fallback to full s1_data
+        self.s1_data = s1_data.get("_llm_ready") or s1_data
+        self._s1_full = s1_data  # full version for panel display
         self.engine = engine
         self.model = model
         self.variables = extract_global_variables(s1_data)

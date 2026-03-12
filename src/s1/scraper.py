@@ -155,7 +155,17 @@ def _extract_content_from_html(html: str) -> str | None:
         raw = re.sub(r"<[^>]+>", " ", raw)
         content = re.sub(r"\s+", " ", raw).strip()
 
-    return content[:MAX_CONTENT_SIZE] if content else None
+    if not content:
+        return None
+
+    # Apply data_cleaner for deeper boilerplate removal
+    try:
+        from src.s1.data_cleaner import clean_scraped_content
+        content = clean_scraped_content(content, max_chars=MAX_CONTENT_SIZE)
+    except ImportError:
+        content = content[:MAX_CONTENT_SIZE]
+
+    return content if content else None
 
 
 def scrape_one(url: str, title: str = "") -> dict | None:

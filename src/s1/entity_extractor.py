@@ -361,8 +361,20 @@ def extract_entities(
         entities.append(entity)
     
     entities.sort(key=lambda x: x.importance, reverse=True)
-    
-    return entities[:50]
+
+    # ── Clean entities — remove NLP garbage ──
+    try:
+        from src.s1.data_cleaner import clean_entities as _clean_entities
+        raw_dicts = [e.to_dict() for e in entities[:80]]
+        cleaned_dicts = _clean_entities(raw_dicts, main_keyword="")
+        # Reconstruct: only keep entities that passed cleaning
+        clean_texts = {d["text"].lower() for d in cleaned_dicts}
+        entities = [e for e in entities if e.text.lower() in clean_texts][:50]
+        print(f"[ENTITY] After cleaning: {len(entities)} entities (from {len(raw_dicts)})")
+    except Exception:
+        entities = entities[:50]
+
+    return entities
 
 
 def extract_entity_relationships(

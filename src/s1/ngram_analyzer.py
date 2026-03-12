@@ -213,7 +213,17 @@ def analyze_ngrams(
         extended_terms.sort(key=lambda x: (x["sources_count"], x["weight"]), reverse=True)
         extended_terms = extended_terms[:15]
 
-    unique_h2_patterns = list(dict.fromkeys(h2_patterns))[:30]
+    unique_h2_patterns = list(dict.fromkeys(h2_patterns))[:60]  # more before cleaning
+
+    # ── Data cleaning pass ──
+    try:
+        from src.s1.data_cleaner import clean_h2_patterns, clean_ngrams
+        unique_h2_patterns = clean_h2_patterns(unique_h2_patterns, main_keyword)[:30]
+        basic_terms = clean_ngrams(basic_terms, main_keyword)
+        extended_terms = clean_ngrams(extended_terms, main_keyword)
+        print(f"[NGRAM] After cleaning: {len(basic_terms)} basic, {len(extended_terms)} extended, {len(unique_h2_patterns)} H2")
+    except ImportError:
+        unique_h2_patterns = unique_h2_patterns[:30]
 
     return {
         "ngrams": basic_terms,
