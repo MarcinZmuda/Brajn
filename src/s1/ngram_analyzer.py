@@ -262,10 +262,28 @@ def analyze_ngrams(
     unique_h2_patterns.sort(key=lambda x: x["count"], reverse=True)
     print(f"[NGRAM] H2 after source-count filter (min {MIN_H2_SOURCES}): {len(unique_h2_patterns)} headings")
 
+    # Build raw H2 list (before MIN_H2_SOURCES filter) for fallback scoring
+    h2_patterns_raw = []
+    seen_raw = set()
+    for h in unique_h2_strings:
+        key = h.strip().lower()
+        if key in seen_raw:
+            continue
+        seen_raw.add(key)
+        src_count = len(h2_source_counter.get(key, set()))
+        h2_patterns_raw.append({
+            "text": h,
+            "count": src_count,
+            "sources_total": num_sources_total,
+            "site_distribution": f"{src_count}/{num_sources_total}",
+        })
+    h2_patterns_raw.sort(key=lambda x: x["count"], reverse=True)
+
     return {
         "ngrams": basic_terms,
         "extended_terms": extended_terms,
         "h2_patterns": unique_h2_patterns,
+        "h2_patterns_raw": h2_patterns_raw,    # przed filtrem MIN_H2_SOURCES
         "all_text_content": all_text_content,
     }
 

@@ -246,8 +246,20 @@ def run_s1_analysis(
     # H2 scoring
     try:
         h2_scored = score_h2_candidates(response, main_keyword)
-        if h2_scored and h2_scored.get("all_candidates"):
+        if h2_scored:
             response["h2_scored_candidates"] = h2_scored
+            print(f"[S1] H2 scored: {h2_scored.get('stats', {})}")
+        # Fallback: if filtered pool was empty, retry with raw h2_patterns (before MIN_H2_SOURCES)
+        if not (h2_scored or {}).get("all_candidates"):
+            raw_h2 = ngram_result.get("h2_patterns_raw") or []
+            if raw_h2:
+                import copy
+                response_with_raw = copy.deepcopy(response)
+                response_with_raw.setdefault("serp_analysis", {})["competitor_h2_patterns"] = raw_h2
+                h2_scored_raw = score_h2_candidates(response_with_raw, main_keyword)
+                if h2_scored_raw and h2_scored_raw.get("all_candidates"):
+                    response["h2_scored_candidates"] = h2_scored_raw
+                    print(f"[S1] H2 scored (raw fallback): {h2_scored_raw.get('stats', {})}")
     except Exception as e:
         print(f"[S1] H2 scoring error: {e}")
 
