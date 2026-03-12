@@ -102,43 +102,28 @@ def extract_global_variables(s1_data: dict, target_length: int = 2000) -> dict:
 def _extract_main_entity(s1_data):
     """
     Wyciąga encję główną z S1.
-    
-    Waliduje czy encja nie jest śmieciem (concatenated brands, CSS, liczby).
-    Fallback → main_keyword jeśli encja jest garbage.
+    Garbage filtering delegated to web_garbage_filter.is_entity_garbage (Level 1-11).
+    Fallback → main_keyword jeśli lista jest pusta lub same garbage.
     """
     entity_seo = s1_data.get("entity_seo") or {}
     main_keyword = s1_data.get("main_keyword") or ""
 
-    def _is_entity_garbage(text: str, keyword: str) -> bool:
-        """Sprawdza czy encja jest śmieciem."""
-        import re
+    try:
+        try:
+            from src.s1.web_garbage_filter import is_entity_garbage
+        except ImportError:
+            from web_garbage_filter import is_entity_garbage
+    except ImportError:
+        is_entity_garbage = None
+
+    def _is_garbage(text):
         if not text:
             return True
-        # Za długa (concatenated list)
-        if len(text) > 60:
-            return True
-        # Za dużo słów (lista brandów: "Dodge Eagle Ferrari Fiat Ford")
-        words = text.split()
-        if len(words) > 4:
-            return True
-        # Same wielkie litery — lista brandów lub CSS
-        upper_words = [w for w in words if w[0].isupper() and w.isalpha()]
-        if len(upper_words) == len(words) and len(words) >= 3:
-            return True
-        # Duplikaty słów ("Ford Ford", "Toyota Toyota")
-        if len(words) != len(set(w.lower() for w in words)):
-            return True
-        # Brak żadnego słowa z keywordu (encja kompletnie off-topic)
-        kw_words = set(keyword.lower().split())
-        ent_words = set(text.lower().split())
-        # Jeśli keyword ma 2+ słów i żadne nie pasuje — podejrzane
-        if len(kw_words) >= 2 and not (kw_words & ent_words):
-            # Ale przepuść jeśli to istotna encja (osoba, miejsce)
-            # Na razie tylko filtrujemy concatenated brand lists
-            pass
+        if is_entity_garbage:
+            return is_entity_garbage(text)
         return False
 
-    # 1. entity_salience list
+    # 1. entity_salience list (already filtered by entity_salience.py v3.1)
     salience_list = entity_seo.get("entity_salience") or []
     if salience_list and isinstance(salience_list, list):
         for item in salience_list:
@@ -146,7 +131,7 @@ def _extract_main_entity(s1_data):
                 continue
             text = item.get("entity") or item.get("text") or ""
             score = float(item.get("salience") or item.get("score") or 0.5)
-            if text and not _is_entity_garbage(text, main_keyword):
+            if text and not _is_garbage(text):
                 return text, score
 
     # 2. entities sorted by importance
@@ -160,7 +145,7 @@ def _extract_main_entity(s1_data):
         for top in sorted_ents:
             text = top.get("text") or ""
             score = float(top.get("importance") or top.get("salience") or 0.5)
-            if text and not _is_entity_garbage(text, main_keyword):
+            if text and not _is_garbage(text):
                 return text, score
 
     # 3. fallback → main_keyword

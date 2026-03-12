@@ -41,6 +41,17 @@ try:
 except ImportError:
     _clean_text_for_nlp = None  # Fallback: no cleaning
 
+# v3.1: Import garbage filter — same as entity_extractor & topical_entity_extractor
+try:
+    try:
+        from .web_garbage_filter import is_entity_garbage as _is_entity_garbage
+    except ImportError:
+        from web_garbage_filter import is_entity_garbage as _is_entity_garbage
+    _GARBAGE_FILTER_AVAILABLE = True
+except ImportError:
+    _is_entity_garbage = None
+    _GARBAGE_FILTER_AVAILABLE = False
+
 
 # ================================================================
 # 📦 DATA STRUCTURES
@@ -154,8 +165,14 @@ def compute_salience(
     ]
     
     # Build entity lookup
+    # v3.1: Filter garbage entities BEFORE building signals
+    # (same approach as entity_extractor.py and topical_entity_extractor.py)
     entity_signals: Dict[str, SalienceSignals] = {}
+    skipped_garbage = 0
     for e in entities:
+        if _GARBAGE_FILTER_AVAILABLE and _is_entity_garbage and _is_entity_garbage(e.text):
+            skipped_garbage += 1
+            continue
         key = e.text.lower()
         entity_signals[key] = SalienceSignals(
             entity_text=e.text,
@@ -164,6 +181,8 @@ def compute_salience(
             sources_count=e.sources_count,
             total_sources=total_sources,
         )
+    if skipped_garbage:
+        print(f"[SALIENCE] 🗑️ Skipped {skipped_garbage} garbage entities before scoring")
     
     # ── PASS 1: Position + Grammatical role ──
     for src_idx, text in enumerate(texts):

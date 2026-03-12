@@ -782,7 +782,23 @@ def is_entity_garbage(text: str) -> bool:
     # v2.1: Text starting with lowercase + comma = fragment: "unkiem, że opiera się..."
     if re.match(r'^[a-ząćęłńóśźż]{2,8},\s', t):
         return True
-    
+
+    # ---- LEVEL 11: Brand list / concatenated SERP title garbage ----
+    # spaCy NER picks up SERP titles like "Dodge Eagle Ferrari Fiat Ford Ford"
+    # as a single ORG entity. Heuristics to catch concatenated brand lists:
+    words = t.split()
+    # a) Duplicate words anywhere ("Ford Ford", "Toyota Toyota")
+    if len(words) != len(set(w.lower() for w in words)):
+        return True
+    # b) 5+ words — too long for a real entity
+    if len(words) >= 5:
+        return True
+    # c) 4+ consecutive capitalized single-token words → likely brand list
+    # (3 is too aggressive: "Ford Motor Company", "Bank Pekao SA" are legit)
+    cap_words = [w for w in words if w and w[0].isupper() and w.isalpha()]
+    if len(cap_words) >= 4 and len(cap_words) == len(words):
+        return True
+
     return False
 
 

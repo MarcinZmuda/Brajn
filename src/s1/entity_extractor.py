@@ -658,30 +658,8 @@ def perform_entity_seo_analysis(
                 h1_patterns=all_h1,
                 main_keyword=main_keyword,
             )
-            salience_data_raw = [s.to_dict() for s in salience_results[:30]]
-            # Filter garbage entities from salience (concatenated brands, CSS, etc.)
-            _kw_words = set(main_keyword.lower().split()) if main_keyword else set()
-            salience_data = []
-            for _s in salience_data_raw:
-                _txt = _s.get("entity") or _s.get("text") or ""
-                _words = _txt.split()
-                # Skip: too many words (brand lists like "Dodge Eagle Ferrari Fiat Ford")
-                if len(_words) > 4:
-                    continue
-                # Skip: all capitalized words with duplicates ("Ford Ford")
-                if len(_words) != len(set(w.lower() for w in _words)):
-                    continue
-                # Skip: 3+ consecutive capitalized words (likely brand list)
-                _cap = [w for w in _words if w[0].isupper() and w.isalpha()]
-                if len(_cap) >= 3 and len(_cap) == len(_words):
-                    continue
-                # Skip: longer than 60 chars
-                if len(_txt) > 60:
-                    continue
-                salience_data.append(_s)
-                if len(salience_data) >= 20:
-                    break
-            print(f"[ENTITY] ✅ Salience: computed for {len(salience_data)} entities (filtered from {len(salience_data_raw)})")
+            salience_data = [s.to_dict() for s in salience_results[:20]]
+            print(f"[ENTITY] ✅ Salience: computed for {len(salience_data)} entities (top: {salience_data[0].get('entity', '')}={salience_data[0].get('salience_score', 0):.3f})" if salience_data else "[ENTITY] ✅ Salience: 0 entities")
             
             # 6b. Co-occurrence pairs
             cooccurrence_results = extract_cooccurrence(
