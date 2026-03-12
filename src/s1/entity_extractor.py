@@ -128,9 +128,9 @@ except ImportError:
 # 🆕 v3.0: Entity Salience + Co-occurrence + Placement Instructions
 try:
     try:
-        from .entity_salience import compute_salience, extract_cooccurrence, generate_placement_instructions
+        from .entity_salience import compute_salience, compute_salience_topical, extract_cooccurrence, generate_placement_instructions
     except ImportError:
-        from entity_salience import compute_salience, extract_cooccurrence, generate_placement_instructions
+        from entity_salience import compute_salience, compute_salience_topical, extract_cooccurrence, generate_placement_instructions
     SALIENCE_ENABLED = True
     print("[ENTITY] ✅ Entity salience module loaded")
 except ImportError:
@@ -585,6 +585,7 @@ def perform_entity_seo_analysis(
     
     # 2️⃣ 🆕 Topical/Concept Entities (before relationships, so we can feed them)
     concept_entities = []
+    concept_entities_obj = []   # TopicalEntity objects — used for salience
     topical_entities_data = {}
     if TOPICAL_ENABLED:
         try:
@@ -648,24 +649,36 @@ def perform_entity_seo_analysis(
                 if isinstance(h2_list_src, list):
                     all_h2.extend(h2_list_src)
             
-            # 6a. Salience scoring
-            salience_results = compute_salience(
-                nlp=nlp,
-                texts=texts,
-                urls=urls,
-                entities=entities,
-                h2_patterns=all_h2,
-                h1_patterns=all_h1,
-                main_keyword=main_keyword,
-            )
+            # 6a. Salience scoring — na Topical Entities (noun chunks / koncepty)
+            # NIE na named entities (spaCy NER) — topical lepiej oddają "o czym jest temat"
+            salience_input = concept_entities_obj if concept_entities_obj else entities
+            if concept_entities_obj:
+                salience_results = compute_salience_topical(
+                    entities=salience_input,
+                    texts=texts,
+                    urls=urls,
+                    h2_patterns=all_h2,
+                    h1_patterns=all_h1,
+                    main_keyword=main_keyword,
+                )
+            else:
+                salience_results = compute_salience(
+                    nlp=nlp,
+                    texts=texts,
+                    urls=urls,
+                    entities=salience_input,
+                    h2_patterns=all_h2,
+                    h1_patterns=all_h1,
+                    main_keyword=main_keyword,
+                )
             salience_data = [s.to_dict() for s in salience_results[:20]]
-            print(f"[ENTITY] ✅ Salience: computed for {len(salience_data)} entities (top: {salience_data[0].get('entity', '')}={salience_data[0].get('salience_score', 0):.3f})" if salience_data else "[ENTITY] ✅ Salience: 0 entities")
+            print(f"[ENTITY] ✅ Salience: computed for {len(salience_data)} topical entities (top: {salience_data[0].get('entity', '')}={salience_data[0].get('salience_score', 0):.3f})" if salience_data else "[ENTITY] ✅ Salience: 0 entities")
             
-            # 6b. Co-occurrence pairs
+            # 6b. Co-occurrence pairs — też na Topical Entities
             cooccurrence_results = extract_cooccurrence(
                 nlp=nlp,
                 texts=texts,
-                entities=entities,
+                entities=salience_input,
                 max_pairs=20,
                 min_cooccurrences=2,
             )

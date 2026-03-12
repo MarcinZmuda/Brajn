@@ -636,3 +636,119 @@ def generate_placement_instructions(
         "must_cover_concepts": must_concepts,
         "placement_instruction": instruction_text,
     }
+
+
+# ================================================================
+# TOPICAL SALIENCE — substring matching (dla TopicalEntity)
+# Zamiast doc.ents (NER) używa prostego wyszukiwania frazy w tekście
+# ================================================================
+
+def compute_salience_topical(
+    entities: List,          # TopicalEntity objects
+    texts: List[str],
+    urls: List[str],
+    h2_patterns: List[str] = None,
+    h1_patterns: List[str] = None,
+    main_keyword: str = "",
+) -> List[SalienceSignals]:
+    """
+    Salience scoring dla TopicalEntity (noun chunks / koncepty).
+    Używa substring matching zamiast spaCy NER spans.
+    """
+    if not entities or not texts:
+        return []
+
+    total_sources = len(texts)
+    h2_patterns = h2_patterns or []
+    h1_patterns = h1_patterns or []
+
+    h2_lower = [(h["text"].lower() if isinstance(h, dict) else h.lower()) for h in h2_patterns]
+    h1_lower = [(h["text"].lower() if isinstance(h, dict) else h.lower()) for h in h1_patterns]
+
+    # Init signals
+    entity_signals: Dict[str, SalienceSignals] = {}
+    for e in entities:
+        key = e.text.lower()
+        if not key or len(key) < 3:
+            continue
+        entity_signals[key] = SalienceSignals(
+            entity_text=e.text,
+            entity_type=getattr(e, "type", "CONCEPT"),
+            frequency=e.frequency,
+            sources_count=e.sources_count,
+            total_sources=total_sources,
+        )
+        # Also index display_text variant if different
+        display = getattr(e, "display_text", "")
+        if display and display.lower() != key:
+            entity_signals[display.lower()] = entity_signals[key]
+
+    # ── PASS 1: Position via substring search ──
+    for src_idx, text in enumerate(texts):
+        if not text or len(text) < 100:
+            continue
+        text_lower = text[:50000].lower()
+        text_len = len(text_lower)
+        first_positions_this_source: Dict[str, float] = {}
+
+        for key, signals in entity_signals.items():
+            pos = text_lower.find(key)
+            if pos == -1:
+                continue
+            if key not in first_positions_this_source:
+                first_positions_this_source[key] = pos / max(text_len, 1)
+                if pos < 1500:
+                    signals.early_mention_count += 1
+
+        for key, pos in first_positions_this_source.items():
+            if key in entity_signals:
+                signals = entity_signals[key]
+                prev_count = max(signals.sources_count - 1, 0)
+                old_total = signals.avg_first_position * prev_count
+                signals.avg_first_position = (old_total + pos) / max(prev_count + 1, 1)
+
+    # ── PASS 2: Heading presence ──
+    for key, signals in entity_signals.items():
+        for h in h1_lower:
+            if key in h:
+                signals.in_h1_count += 1
+                signals.heading_texts.append(h[:80])
+        for h in h2_lower:
+            if key in h:
+                signals.in_h2_count += 1
+                signals.heading_texts.append(h[:80])
+
+    # ── PASS 3: Keyword overlap ──
+    kw_lower = main_keyword.lower()
+    kw_words = set(kw_lower.split())
+    for key, signals in entity_signals.items():
+        ent_words = set(key.split())
+        overlap = len(kw_words & ent_words)
+        if overlap:
+            signals.keyword_overlap_score = min(1.0, overlap / max(len(kw_words), 1))
+
+    # ── PASS 4: Final score (same formula as compute_salience) ──
+    for key, signals in entity_signals.items():
+        score = 0.0
+        if total_sources > 0:
+            score += (signals.sources_count / total_sources) * 0.25
+        score += (1.0 - signals.avg_first_position) * 0.20
+        if signals.early_mention_count > 0:
+            score += min(signals.early_mention_count / max(total_sources, 1), 1.0) * 0.15
+        if signals.in_h1_count > 0:
+            score += min(signals.in_h1_count / max(total_sources, 1), 1.0) * 0.15
+        if signals.in_h2_count > 0:
+            score += min(signals.in_h2_count / max(total_sources, 1), 1.0) * 0.15
+        score += signals.keyword_overlap_score * 0.10
+        signals.salience_score = min(1.0, score)
+
+    # Deduplicate (display_text aliases) and sort
+    seen = set()
+    results = []
+    for key, signals in entity_signals.items():
+        eid = id(signals)
+        if eid not in seen:
+            seen.add(eid)
+            results.append(signals)
+
+    return sorted(results, key=lambda s: s.salience_score, reverse=True)
