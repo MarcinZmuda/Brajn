@@ -1,9 +1,16 @@
 """
 Firebase/Firestore initialization — shared across all modules.
+Gracefully degrades if firebase_admin is not installed.
 """
 import json
-import firebase_admin
-from firebase_admin import credentials, firestore
+
+try:
+    import firebase_admin
+    from firebase_admin import credentials, firestore
+    _FIREBASE_AVAILABLE = True
+except ImportError:
+    _FIREBASE_AVAILABLE = False
+
 from src.common.config import GOOGLE_APPLICATION_CREDENTIALS, FIREBASE_CREDS_JSON
 
 _db = None
@@ -11,6 +18,8 @@ _db = None
 def get_db():
     """Lazy-init Firestore client. Returns firestore.Client or None."""
     global _db
+    if not _FIREBASE_AVAILABLE:
+        return None
     if _db is not None:
         return _db
 
