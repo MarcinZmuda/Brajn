@@ -1,0 +1,29 @@
+services:
+  - type: web
+    name: brajn-seo
+    runtime: python
+    plan: starter
+    buildCommand: |
+      pip install --no-cache-dir -r requirements.txt
+      python -m spacy download pl_core_news_sm
+    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT --workers 2
+    envVars:
+      - key: PORT
+        value: "10000"
+      - key: API_KEY
+        sync: false
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: SERPAPI_KEY
+        sync: false
+      - key: GOOGLE_APPLICATION_CREDENTIALS
+        sync: false
+      - key: CF_BROWSER_RENDERING_URL
+        sync: false
+      - key: CF_BROWSER_RENDERING_TOKEN
+        sync: false
+      - key: DEBUG_MODE
+        value: "false"
+      - key: ENTITY_SEO_ENABLED
+        value: "true"
+    healthCheckPath: /health

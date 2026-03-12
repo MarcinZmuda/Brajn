@@ -1,0 +1,441 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BRAJN SEO</title>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --black: #000; --mg: #565656; --lg: #9e9e9e; --orange: #fba92c; --white: #fff;
+            --bg: #050505; --s1: #0c0c0c; --s2: #111; --s3: #181818; --s4: #1e1e1e;
+            --b1: #1a1a1a; --b2: #252525; --b3: #333;
+            --og: rgba(251,169,44,.08); --og2: rgba(251,169,44,.15); --og3: rgba(251,169,44,.25);
+            --gn: #34d399; --gnd: rgba(52,211,153,.1); --rd: #f87171; --rdd: rgba(248,113,113,.1);
+            --yl: #fbbf24; --yld: rgba(251,191,36,.1);
+            --r: 12px; --rs: 8px;
+        }
+        *,*::before,*::after{margin:0;padding:0;box-sizing:border-box}
+        body{font-family:'Outfit',sans-serif;background:var(--bg);color:var(--white);min-height:100vh;-webkit-font-smoothing:antialiased}
+        ::-webkit-scrollbar{width:5px}::-webkit-scrollbar-track{background:transparent}::-webkit-scrollbar-thumb{background:var(--b2);border-radius:3px}
+
+        .hd{display:flex;align-items:center;justify-content:space-between;padding:0 28px;height:52px;background:var(--black);border-bottom:1px solid var(--b1);position:relative;z-index:99}
+        .hd::after{content:'';position:absolute;bottom:0;left:0;right:0;height:1px;background:linear-gradient(90deg,transparent,var(--orange),transparent);opacity:.15}
+        .hd-l{display:flex;align-items:center;gap:12px}
+        .hd-l h1{font-size:17px;font-weight:700;letter-spacing:-.4px}
+        .hd-l h1 b{color:var(--orange);font-weight:800}
+        .hd-badge{font-size:13px;color:var(--orange);background:var(--og);padding:3px 10px;border-radius:99px;font-weight:600;border:1px solid rgba(251,169,44,.15)}
+        .hd-r{display:flex;align-items:center;gap:14px;font-size:14px;color:var(--lg)}
+
+        .layout{display:grid;grid-template-columns:320px 1fr;height:calc(100vh - 52px)}
+        @media(max-width:960px){.layout{grid-template-columns:1fr}}
+
+        .sidebar{padding:16px;border-right:1px solid var(--b1);overflow-y:auto;background:var(--s1)}
+        .lbl{font-size:11px;font-weight:700;color:var(--mg);text-transform:uppercase;letter-spacing:1px;margin:12px 0 4px}
+        .lbl:first-child{margin-top:0}
+        input[type="text"],textarea{width:100%;padding:8px 10px;background:var(--s2);border:1px solid var(--b1);border-radius:var(--rs);color:var(--white);font-size:13px;font-family:inherit;outline:none;transition:all .2s}
+        input::placeholder,textarea::placeholder{color:var(--mg)}
+        input:focus,textarea:focus{border-color:rgba(251,169,44,.4);box-shadow:0 0 0 3px var(--og)}
+        textarea{resize:vertical;min-height:60px;line-height:1.4}
+
+        .modes{display:grid;grid-template-columns:repeat(2,1fr);gap:6px;margin:6px 0}
+        .mbtn{padding:8px;background:var(--s2);border:1px solid var(--b1);border-radius:var(--rs);color:var(--mg);cursor:pointer;text-align:center;transition:all .2s;font-family:inherit;font-size:12px}
+        .mbtn.on{border-color:var(--orange);color:var(--orange);background:var(--og)}
+        .mbtn:hover:not(.on){border-color:var(--b3)}
+        .mbtn strong{display:block;font-weight:700}
+        .mbtn small{font-size:11px;opacity:.7}
+
+        .btn-primary{width:100%;padding:12px;background:var(--orange);color:var(--black);border:none;border-radius:var(--rs);font-size:14px;font-weight:700;cursor:pointer;font-family:inherit;margin-top:12px;transition:opacity .2s}
+        .btn-primary:hover{opacity:.9}
+        .btn-primary:disabled{opacity:.4;cursor:not-allowed}
+        .btn-secondary{width:100%;padding:10px;background:var(--s2);color:var(--white);border:1px solid var(--b1);border-radius:var(--rs);font-size:13px;cursor:pointer;font-family:inherit;margin-top:8px;transition:all .2s}
+        .btn-secondary:hover{border-color:var(--b3)}
+        .btn-stop{width:100%;padding:10px;background:var(--rdd);color:var(--rd);border:1px solid rgba(248,113,113,.2);border-radius:var(--rs);font-size:13px;cursor:pointer;font-family:inherit;margin-top:8px;display:none}
+
+        .main{overflow-y:auto;padding:24px}
+        .tabs{display:flex;gap:0;border-bottom:1px solid var(--b1);margin-bottom:16px}
+        .tab{padding:10px 20px;cursor:pointer;color:var(--mg);font-size:13px;font-weight:600;border-bottom:2px solid transparent;transition:all .2s}
+        .tab.on{color:var(--orange);border-bottom-color:var(--orange)}
+        .tab:hover:not(.on){color:var(--white)}
+        .tab-content{display:none}.tab-content.on{display:block}
+
+        .card{background:var(--s2);border:1px solid var(--b1);border-radius:var(--r);padding:16px;margin-bottom:12px}
+        .card-title{font-size:14px;font-weight:700;color:var(--orange);margin-bottom:8px}
+        .card-body{font-size:13px;color:var(--lg);line-height:1.6}
+
+        .step{display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid var(--b1)}
+        .step:last-child{border-bottom:none}
+        .step-num{width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;flex-shrink:0}
+        .step-num.pending{background:var(--s3);color:var(--mg)}
+        .step-num.running{background:var(--og);color:var(--orange);animation:pulse 1.5s infinite}
+        .step-num.done{background:var(--gnd);color:var(--gn)}
+        .step-num.error{background:var(--rdd);color:var(--rd)}
+        .step-name{font-size:13px;font-weight:500}
+        .step-detail{font-size:12px;color:var(--mg)}
+        @keyframes pulse{0%,100%{opacity:1}50%{opacity:.5}}
+
+        .log{background:var(--black);border:1px solid var(--b1);border-radius:var(--rs);padding:8px;max-height:200px;overflow-y:auto;font-family:'JetBrains Mono',monospace;font-size:11px;line-height:1.5}
+        .log-line{padding:1px 0;color:var(--lg)}
+        .log-line.ok{color:var(--gn)}.log-line.err{color:var(--rd)}.log-line.warn{color:var(--yl)}
+        .ts{color:var(--mg);margin-right:6px}
+
+        .article-preview{background:var(--s2);border:1px solid var(--b1);border-radius:var(--r);padding:24px;font-size:15px;line-height:1.7;max-height:calc(100vh - 200px);overflow-y:auto}
+        .article-preview h1{font-size:1.8em;margin-bottom:.5em;color:var(--white)}
+        .article-preview h2{font-size:1.4em;margin:1.2em 0 .4em;color:var(--orange)}
+        .article-preview h3{font-size:1.1em;margin:1em 0 .3em}
+        .article-preview p{margin-bottom:.8em;color:var(--lg)}
+
+        .s1-section{background:var(--s3);border:1px solid var(--b1);border-radius:var(--rs);margin-bottom:8px;overflow:hidden}
+        .s1-header{display:flex;align-items:center;gap:8px;padding:10px 12px;cursor:pointer;font-size:13px;font-weight:600}
+        .s1-header:hover{background:var(--s4)}
+        .s1-body{display:none;padding:12px;font-size:12px;border-top:1px solid var(--b1)}
+        .s1-section.open .s1-body{display:block}
+        .chip{display:inline-block;padding:2px 8px;border-radius:4px;font-size:11px;margin:2px;background:var(--og);color:var(--orange);border:1px solid rgba(251,169,44,.1)}
+        .chip.green{background:var(--gnd);color:var(--gn);border-color:rgba(52,211,153,.1)}
+        .chip.red{background:var(--rdd);color:var(--rd);border-color:rgba(248,113,113,.1)}
+
+        .quality-bar{height:6px;border-radius:3px;background:var(--b1);overflow:hidden;margin-top:8px}
+        .quality-fill{height:100%;border-radius:3px;transition:width .5s}
+        .score-badge{display:inline-block;padding:4px 12px;border-radius:99px;font-size:14px;font-weight:700}
+
+        .optional-module{display:flex;align-items:center;justify-content:space-between;padding:12px;background:var(--s3);border:1px solid var(--b1);border-radius:var(--rs);margin-bottom:6px}
+        .opt-name{font-size:13px;font-weight:600}
+        .opt-btn{padding:6px 16px;border-radius:var(--rs);border:1px solid var(--orange);color:var(--orange);background:transparent;cursor:pointer;font-size:12px;font-family:inherit;transition:all .2s}
+        .opt-btn:hover{background:var(--og)}
+        .opt-btn:disabled{opacity:.3;cursor:not-allowed}
+    </style>
+</head>
+<body>
+    <div class="hd">
+        <div class="hd-l">
+            <h1><b>BRAJN</b> SEO</h1>
+            <span class="hd-badge" id="vBadge">v1.0</span>
+        </div>
+        <div class="hd-r">
+            <span id="engineLabel">Claude</span>
+        </div>
+    </div>
+
+    <div class="layout">
+        <div class="sidebar">
+            <label class="lbl">Haslo glowne</label>
+            <input type="text" id="keyword" placeholder="np. sucha skóra głowy">
+
+            <label class="lbl">Tryb</label>
+            <div class="modes">
+                <div class="mbtn on" data-mode="auto" onclick="selMode('auto')"><strong>Auto</strong><small>S1 + artykuł</small></div>
+                <div class="mbtn" data-mode="s1_only" onclick="selMode('s1_only')"><strong>Tylko S1</strong><small>Analiza SERP</small></div>
+            </div>
+
+            <label class="lbl">Silnik</label>
+            <div class="modes">
+                <div class="mbtn on" data-engine="claude" onclick="selEngine('claude')"><strong>Claude</strong><small>Sonnet 4.5</small></div>
+                <div class="mbtn" data-engine="openai" onclick="selEngine('openai')"><strong>OpenAI</strong><small>GPT-4o</small></div>
+            </div>
+
+            <label class="lbl">Struktura H2 (opcjonalnie)</label>
+            <textarea id="h2Input" rows="4" placeholder="Jedna sekcja H2 na linię..."></textarea>
+
+            <label class="lbl">Slowa kluczowe (opcjonalnie)</label>
+            <textarea id="kwInput" rows="3" placeholder="Dodatkowe frazy kluczowe..."></textarea>
+
+            <button class="btn-primary" id="btnStart" onclick="startWorkflow()">Uruchom workflow</button>
+            <button class="btn-stop" id="btnStop" onclick="stopWorkflow()">Zatrzymaj</button>
+
+            <div style="margin-top:16px">
+                <label class="lbl">Log</label>
+                <div class="log" id="logC"></div>
+            </div>
+        </div>
+
+        <div class="main">
+            <div class="tabs">
+                <div class="tab on" data-tab="workflow" onclick="switchTab('workflow')">Workflow</div>
+                <div class="tab" data-tab="s1" onclick="switchTab('s1')">Analiza S1</div>
+                <div class="tab" data-tab="article" onclick="switchTab('article')">Artykuł</div>
+                <div class="tab" data-tab="optional" onclick="switchTab('optional')">Moduły opcjonalne</div>
+            </div>
+
+            <!-- WORKFLOW TAB -->
+            <div class="tab-content on" id="tab-workflow">
+                <div class="card">
+                    <div class="card-title">Pipeline BRAJEN_PROMPTS v1.0</div>
+                    <div id="stepsC">
+                        <!-- Steps rendered dynamically -->
+                    </div>
+                </div>
+                <div class="card" id="qualityCard" style="display:none">
+                    <div class="card-title">Wynik walidacji</div>
+                    <div style="display:flex;align-items:center;gap:16px">
+                        <span class="score-badge" id="scoreBadge">—</span>
+                        <div style="flex:1">
+                            <div class="quality-bar"><div class="quality-fill" id="qualityFill" style="width:0"></div></div>
+                        </div>
+                    </div>
+                    <div id="validationDetails" style="margin-top:12px;font-size:12px;color:var(--lg)"></div>
+                </div>
+            </div>
+
+            <!-- S1 TAB -->
+            <div class="tab-content" id="tab-s1">
+                <div id="s1Content">
+                    <div class="card"><div class="card-body" style="text-align:center;color:var(--mg)">Uruchom workflow aby zobaczyć analizę S1</div></div>
+                </div>
+            </div>
+
+            <!-- ARTICLE TAB -->
+            <div class="tab-content" id="tab-article">
+                <div id="articleActions" style="display:none;margin-bottom:12px;display:flex;gap:8px">
+                    <button class="btn-secondary" onclick="exportArticle('html')" style="width:auto;padding:8px 16px">Export HTML</button>
+                    <button class="btn-secondary" onclick="exportArticle('txt')" style="width:auto;padding:8px 16px">Export TXT</button>
+                    <button class="btn-secondary" onclick="copyArticle()" style="width:auto;padding:8px 16px">Kopiuj</button>
+                </div>
+                <div class="article-preview" id="articlePreview">
+                    <p style="color:var(--mg);text-align:center">Artykuł pojawi się tutaj po wygenerowaniu</p>
+                </div>
+            </div>
+
+            <!-- OPTIONAL MODULES TAB -->
+            <div class="tab-content" id="tab-optional">
+                <div class="card">
+                    <div class="card-title">Moduły opcjonalne</div>
+                    <div class="card-body">Po wygenerowaniu artykułu możesz uruchomić dodatkowe sprawdzenia:</div>
+                </div>
+                <div id="optModules">
+                    <div class="optional-module">
+                        <div><div class="opt-name">AI Detection Check</div><small style="color:var(--mg)">Sprawdza tekst pod kątem wzorców AI</small></div>
+                        <button class="opt-btn" id="optAiDet" onclick="runOptional('ai_detection')" disabled>Uruchom</button>
+                    </div>
+                    <div class="optional-module">
+                        <div><div class="opt-name">Editorial Review</div><small style="color:var(--mg)">Recenzja redaktorska artykułu</small></div>
+                        <button class="opt-btn" id="optEdit" onclick="runOptional('editorial_review')" disabled>Uruchom</button>
+                    </div>
+                    <div class="optional-module">
+                        <div><div class="opt-name">Compliance Report</div><small style="color:var(--mg)">Raport zgodności słów kluczowych</small></div>
+                        <button class="opt-btn" id="optComp" onclick="runOptional('compliance_report')" disabled>Uruchom</button>
+                    </div>
+                </div>
+                <div id="optResult" class="card" style="display:none;margin-top:12px">
+                    <div class="card-title" id="optResultTitle">Wynik</div>
+                    <div class="card-body"><pre id="optResultBody" style="white-space:pre-wrap;font-family:'JetBrains Mono',monospace;font-size:11px"></pre></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+<script>
+let mode = 'auto', engine = 'claude', es = null, jobId = null;
+let articleText = '', s1Data = null;
+
+const STEPS = [
+    'S1 Analysis (SERP + n-gramy)',
+    'Pre-Batch (mapa rozmieszczeń)',
+    'Batch 0 (H1 + wstęp)',
+    'Batche H2...',
+    'Batch FAQ',
+    'Post-Processing (walidacja)'
+];
+
+function esc(s){if(!s)return'';const d=document.createElement('div');d.textContent=s;return d.innerHTML}
+function selMode(m){mode=m;document.querySelectorAll('.mbtn[data-mode]').forEach(b=>b.classList.toggle('on',b.dataset.mode===m))}
+function selEngine(e){engine=e;document.querySelectorAll('.mbtn[data-engine]').forEach(b=>b.classList.toggle('on',b.dataset.engine===e));document.getElementById('engineLabel').textContent=e==='claude'?'Claude':'OpenAI'}
+function switchTab(t){document.querySelectorAll('.tab').forEach(b=>b.classList.toggle('on',b.dataset.tab===t));document.querySelectorAll('.tab-content').forEach(c=>c.classList.toggle('on',c.id==='tab-'+t))}
+function log(m,cls){const c=document.getElementById('logC');if(!cls)cls=m.includes('error')?'err':m.includes('warning')?'warn':m.includes('done')||m.includes('ok')?'ok':'';c.innerHTML+=`<div class="log-line ${cls}"><span class="ts">${new Date().toLocaleTimeString('pl-PL')}</span> ${esc(m)}</div>`;c.scrollTop=c.scrollHeight}
+
+function initSteps(){
+    const c=document.getElementById('stepsC');
+    c.innerHTML=STEPS.map((s,i)=>`<div class="step" id="step${i}"><div class="step-num pending" id="sn${i}">${i+1}</div><div><div class="step-name">${esc(s)}</div><div class="step-detail" id="sd${i}">—</div></div></div>`).join('');
+}
+function updateStep(idx, status, detail){
+    const n=document.getElementById('sn'+idx);
+    const d=document.getElementById('sd'+idx);
+    if(n){n.className='step-num '+status}
+    if(d&&detail){d.textContent=detail}
+}
+
+function renderS1(data){
+    const c=document.getElementById('s1Content');
+    let html='';
+    const ngrams=data.ngrams||[];
+    const ext=data.extended_terms||[];
+    const serp=data.serp_analysis||{};
+    const paa=serp.paa_questions||[];
+    const related=serp.related_searches||[];
+    const h2p=serp.competitor_h2_patterns||[];
+    const gaps=data.content_gaps||{};
+    const summary=data.summary||{};
+
+    html+=`<div class="card"><div class="card-title">Podsumowanie S1</div><div class="card-body">
+        Źródła: <b>${summary.total_sources||0}</b> | PAA: <b>${summary.paa_count||0}</b> | Related: <b>${summary.related_searches_count||0}</b> | H2 patterns: <b>${summary.h2_patterns_found||0}</b> | Encje: <b>${summary.entities_found||0}</b> | Triplety: <b>${summary.causal_triplets_found||0}</b> | Luki: <b>${summary.content_gaps_found||0}</b>
+    </div></div>`;
+
+    html+=`<div class="s1-section open"><div class="s1-header" onclick="this.parentElement.classList.toggle('open')">N-gramy (${ngrams.length})</div><div class="s1-body">${ngrams.map(n=>`<span class="chip">${esc(n.ngram)} <small>${n.freq_min}-${n.freq_max}x</small></span>`).join('')}</div></div>`;
+    if(ext.length)html+=`<div class="s1-section"><div class="s1-header" onclick="this.parentElement.classList.toggle('open')">Extended terms (${ext.length})</div><div class="s1-body">${ext.map(e=>`<span class="chip">${esc(e.term)} <small>${e.site_distribution}</small></span>`).join('')}</div></div>`;
+    if(paa.length)html+=`<div class="s1-section"><div class="s1-header" onclick="this.parentElement.classList.toggle('open')">PAA (${paa.length})</div><div class="s1-body">${paa.map(q=>`<div style="margin-bottom:6px"><b>${esc(q.question||q)}</b><br><span style="color:var(--mg)">${esc((q.answer||'').substring(0,200))}</span></div>`).join('')}</div></div>`;
+    if(related.length)html+=`<div class="s1-section"><div class="s1-header" onclick="this.parentElement.classList.toggle('open')">Related Searches (${related.length})</div><div class="s1-body">${related.map(r=>`<span class="chip green">${esc(typeof r==='string'?r:r.query||'')}</span>`).join('')}</div></div>`;
+    if(h2p.length)html+=`<div class="s1-section"><div class="s1-header" onclick="this.parentElement.classList.toggle('open')">H2 Patterns (${h2p.length})</div><div class="s1-body">${h2p.map(h=>`<span class="chip">${esc(typeof h==='string'?h:h.text||'')}</span>`).join('')}</div></div>`;
+
+    c.innerHTML=html;
+}
+
+function renderArticle(text){
+    articleText=text;
+    const preview=document.getElementById('articlePreview');
+    let html=text;
+    html=html.replace(/^# (.+)$/gm,'<h1>$1</h1>');
+    html=html.replace(/^## (.+)$/gm,'<h2>$1</h2>');
+    html=html.replace(/^### (.+)$/gm,'<h3>$1</h3>');
+    html=html.replace(/\*\*(.+?)\*\*/g,'<strong>$1</strong>');
+    const paras=html.split('\n\n');
+    html=paras.map(p=>{p=p.trim();if(!p)return'';if(p.startsWith('<h'))return p;return'<p>'+p+'</p>'}).join('\n');
+    preview.innerHTML=html;
+    document.getElementById('articleActions').style.display='flex';
+    document.querySelectorAll('.opt-btn').forEach(b=>b.disabled=false);
+}
+
+function showValidation(v){
+    document.getElementById('qualityCard').style.display='';
+    const score=v.score||0;
+    const badge=document.getElementById('scoreBadge');
+    badge.textContent=score+'/100';
+    badge.style.background=score>=80?'var(--gnd)':score>=60?'var(--yld)':'var(--rdd)';
+    badge.style.color=score>=80?'var(--gn)':score>=60?'var(--yl)':'var(--rd)';
+    document.getElementById('qualityFill').style.width=score+'%';
+    document.getElementById('qualityFill').style.background=score>=80?'var(--gn)':score>=60?'var(--yl)':'var(--rd)';
+    const det=document.getElementById('validationDetails');
+    let html='';
+    if(v.errors&&v.errors.length)html+='<div style="color:var(--rd);margin-bottom:4px">Errors: '+v.errors.map(e=>esc(e.type||'')).join(', ')+'</div>';
+    if(v.warnings&&v.warnings.length)html+='<div style="color:var(--yl);margin-bottom:4px">Warnings: '+v.warnings.map(w=>esc(w.type||'')).join(', ')+'</div>';
+    if(v.passed&&v.passed.length)html+='<div style="color:var(--gn)">Passed: '+v.passed.join(', ')+'</div>';
+    det.innerHTML=html;
+}
+
+async function startWorkflow(){
+    const kw=document.getElementById('keyword').value.trim();
+    if(!kw){alert('Wpisz hasło główne');return}
+
+    initSteps();
+    document.getElementById('btnStart').disabled=true;
+    document.getElementById('btnStop').style.display='block';
+    log('Starting workflow for: '+kw);
+
+    try{
+        // Step 1: S1 Analysis
+        updateStep(0,'running','Pobieranie danych SERP...');
+        log('Running S1 analysis...');
+
+        const s1Resp=await fetch('/api/s1_analysis',{
+            method:'POST',
+            headers:{'Content-Type':'application/json','Authorization':'Bearer '+getApiKey()},
+            body:JSON.stringify({main_keyword:kw})
+        });
+        if(!s1Resp.ok){const e=await s1Resp.json();throw new Error(e.detail||'S1 failed')}
+        s1Data=await s1Resp.json();
+        updateStep(0,'done',`${s1Data.summary?.total_sources||0} źródeł, ${(s1Data.ngrams||[]).length} n-gramów`);
+        log('S1 done: '+JSON.stringify(s1Data.summary),'ok');
+        renderS1(s1Data);
+
+        if(mode==='s1_only'){
+            log('Mode: S1 only — done','ok');
+            switchTab('s1');
+            document.getElementById('btnStart').disabled=false;
+            document.getElementById('btnStop').style.display='none';
+            return;
+        }
+
+        // Step 2+: Article pipeline via SSE
+        updateStep(1,'running','Generowanie mapy rozmieszczeń...');
+        log('Starting article pipeline...');
+
+        const startResp=await fetch('/api/start',{
+            method:'POST',
+            headers:{'Content-Type':'application/json','Authorization':'Bearer '+getApiKey()},
+            body:JSON.stringify({main_keyword:kw, s1_data:s1Data, engine:engine})
+        });
+        if(!startResp.ok){const e=await startResp.json();throw new Error(e.detail||'Start failed')}
+        const startData=await startResp.json();
+        jobId=startData.job_id;
+        log('Job started: '+jobId);
+
+        // SSE streaming
+        es=new EventSource('/api/stream/'+jobId);
+        es.onmessage=function(e){
+            try{
+                const d=JSON.parse(e.data);
+                if(d.event==='step_start'){
+                    const stepIdx=Math.min(d.step, STEPS.length-1);
+                    updateStep(stepIdx,'running',d.label||'...');
+                    log('Step '+d.step+': '+d.label);
+                }
+                else if(d.event==='step_done'){
+                    const stepIdx=Math.min(d.step, STEPS.length-1);
+                    const wc=d.data?.word_count;
+                    updateStep(stepIdx,'done',wc?wc+' słów':'done');
+                    log('Step '+d.step+' done'+(wc?' ('+wc+' words)':''),'ok');
+                }
+                else if(d.event==='article_assembled'){
+                    renderArticle(d.data.full_text);
+                    log('Article assembled: '+d.data.total_words+' words','ok');
+                    switchTab('article');
+                }
+                else if(d.event==='complete'){
+                    if(d.data?.validation_score!==undefined) showValidation(d.data);
+                    log('Pipeline complete! Score: '+(d.data?.validation_score||'?'),'ok');
+                    cleanup();
+                }
+                else if(d.event==='error'){
+                    log('Error: '+(d.data?.message||'unknown'),'err');
+                    cleanup();
+                }
+                else if(d.event==='stream_end'){
+                    cleanup();
+                }
+            }catch(err){log('SSE parse error: '+err,'err')}
+        };
+        es.onerror=function(){log('SSE connection error','err');cleanup()};
+
+    }catch(err){
+        log('Error: '+err.message,'err');
+        cleanup();
+    }
+}
+
+function cleanup(){
+    if(es){es.close();es=null}
+    document.getElementById('btnStart').disabled=false;
+    document.getElementById('btnStop').style.display='none';
+}
+function stopWorkflow(){log('Stopped by user','warn');cleanup()}
+function getApiKey(){return localStorage.getItem('brajn_api_key')||prompt('Podaj API key:')||''}
+
+async function runOptional(moduleId){
+    if(!articleText){alert('Najpierw wygeneruj artykuł');return}
+    log('Running optional: '+moduleId);
+    try{
+        const resp=await fetch('/api/optional/'+moduleId,{
+            method:'POST',
+            headers:{'Content-Type':'application/json','Authorization':'Bearer '+getApiKey()},
+            body:JSON.stringify({text:articleText,s1_data:s1Data})
+        });
+        const data=await resp.json();
+        document.getElementById('optResult').style.display='';
+        document.getElementById('optResultTitle').textContent=moduleId.replace('_',' ').toUpperCase();
+        document.getElementById('optResultBody').textContent=JSON.stringify(data,null,2);
+        log('Optional '+moduleId+' done','ok');
+    }catch(err){log('Optional error: '+err.message,'err')}
+}
+
+async function exportArticle(fmt){
+    if(!jobId){alert('Brak artykułu');return}
+    window.open('/api/export/'+jobId+'/'+fmt,'_blank');
+}
+function copyArticle(){
+    navigator.clipboard.writeText(articleText).then(()=>log('Skopiowano do schowka','ok'));
+}
+
+// Init
+initSteps();
+(async()=>{try{const r=await fetch('/health');if(r.ok){const d=await r.json();document.getElementById('vBadge').textContent='v'+d.version}}catch(e){}})();
+</script>
+</body>
+</html>
