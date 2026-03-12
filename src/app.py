@@ -136,7 +136,7 @@ async def start_workflow(req: ArticleStartRequest):
         if "error" in s1_data:
             raise HTTPException(status_code=400, detail=s1_data["error"])
 
-    model = req.model or "claude-sonnet-4-5-20251001"
+    model = req.model or "claude-sonnet-4-6"
     orchestrator = ArticleOrchestrator(s1_data=s1_data, engine=req.engine, model=model)
 
     with _jobs_lock:

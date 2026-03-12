@@ -60,7 +60,7 @@ def _get_last_sentence(text: str) -> str:
 class ArticleOrchestrator:
     """Orchestrates the full BRAJEN article generation pipeline."""
 
-    def __init__(self, s1_data: dict, engine: str = "claude", model: str = "claude-sonnet-4-5-20251001"):
+    def __init__(self, s1_data: dict, engine: str = "claude", model: str = "claude-sonnet-4-6"):
         self.s1_data = s1_data
         self.engine = engine
         self.model = model

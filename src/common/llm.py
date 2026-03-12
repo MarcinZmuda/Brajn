@@ -29,7 +29,7 @@ def get_openai_client():
 def claude_call(
     system_prompt: str,
     user_prompt: str,
-    model: str = "claude-sonnet-4-5-20251001",
+    model: str = "claude-sonnet-4-6",
     max_tokens: int = 8000,
     temperature: float = 0.7,
     timeout: int = 120,
