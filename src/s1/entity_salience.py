@@ -88,8 +88,10 @@ class SalienceSignals:
     def to_dict(self) -> Dict:
         return {
             "entity": self.entity_text,
+            "entity_text": self.entity_text,       # alias for panel
             "type": self.entity_type,
             "salience": round(self.salience_score, 3),
+            "salience_score": round(self.salience_score, 3),  # alias for panel
             "signals": {
                 "position": round(1.0 - self.avg_first_position, 3),  # Higher = earlier
                 "early_mentions": self.early_mention_count,
