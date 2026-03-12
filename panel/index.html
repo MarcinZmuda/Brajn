@@ -875,14 +875,20 @@ function renderS1(data) {
         html += buildSection('coverage', 'Pokrycie tematyczne', topicalCoverage.length, function() {
             let t = '';
             topicalCoverage.forEach(function(tc) {
-                const total = tc.total_sources || 1;
-                const covered = tc.covered_by || 0;
-                const pct = Math.round((covered / total) * 100);
+                // coverage_percent już obliczony w backendzie; fallback na ręczne liczenie
+                let pct = tc.coverage_percent;
+                if (pct === undefined || pct === null || isNaN(pct)) {
+                    const total = typeof tc.total_sources === 'number' ? tc.total_sources : 1;
+                    const covered = typeof tc.covered_by === 'number' ? tc.covered_by : 0;
+                    pct = total > 0 ? Math.round((covered / total) * 100) : 0;
+                }
+                pct = Math.min(100, Math.max(0, pct || 0));
                 const color = pct >= 70 ? 'var(--gn)' : pct >= 40 ? 'var(--yl)' : 'var(--rd)';
+                const label = tc.covered_by_label || (tc.covered_by + '/' + (tc.total_sources || '?'));
                 t += '<div class="coverage-row">';
                 t += '<div class="coverage-label">' + esc(tc.subtopic || '') + '</div>';
                 t += '<div class="coverage-track"><div class="coverage-fill" style="width:' + pct + '%;background:' + color + '"></div></div>';
-                t += '<div class="coverage-pct" style="color:' + color + '">' + pct + '%</div>';
+                t += '<div class="coverage-pct" style="color:' + color + '">' + pct + '% <span style="font-size:10px;opacity:.6">' + esc(label) + '</span></div>';
                 t += '</div>';
             });
             return t;
