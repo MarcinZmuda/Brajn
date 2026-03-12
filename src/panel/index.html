@@ -13,12 +13,14 @@
             --og: rgba(251,169,44,.08); --og2: rgba(251,169,44,.15); --og3: rgba(251,169,44,.25);
             --gn: #34d399; --gnd: rgba(52,211,153,.1); --rd: #f87171; --rdd: rgba(248,113,113,.1);
             --yl: #fbbf24; --yld: rgba(251,191,36,.1);
+            --bl: #60a5fa; --bld: rgba(96,165,250,.1);
             --r: 12px; --rs: 8px;
         }
         *,*::before,*::after{margin:0;padding:0;box-sizing:border-box}
         body{font-family:'Outfit',sans-serif;background:var(--bg);color:var(--white);min-height:100vh;-webkit-font-smoothing:antialiased}
         ::-webkit-scrollbar{width:5px}::-webkit-scrollbar-track{background:transparent}::-webkit-scrollbar-thumb{background:var(--b2);border-radius:3px}
 
+        /* ── Header ── */
         .hd{display:flex;align-items:center;justify-content:space-between;padding:0 28px;height:52px;background:var(--black);border-bottom:1px solid var(--b1);position:relative;z-index:99}
         .hd::after{content:'';position:absolute;bottom:0;left:0;right:0;height:1px;background:linear-gradient(90deg,transparent,var(--orange),transparent);opacity:.15}
         .hd-l{display:flex;align-items:center;gap:12px}
@@ -27,13 +29,17 @@
         .hd-badge{font-size:13px;color:var(--orange);background:var(--og);padding:3px 10px;border-radius:99px;font-weight:600;border:1px solid rgba(251,169,44,.15)}
         .hd-r{display:flex;align-items:center;gap:14px;font-size:14px;color:var(--lg)}
 
+        /* ── Layout ── */
         .layout{display:grid;grid-template-columns:320px 1fr;height:calc(100vh - 52px)}
         @media(max-width:960px){.layout{grid-template-columns:1fr}}
 
-        .sidebar{padding:16px;border-right:1px solid var(--b1);overflow-y:auto;background:var(--s1)}
+        /* ── Sidebar ── */
+        .sidebar{display:flex;flex-direction:column;border-right:1px solid var(--b1);overflow-y:auto;background:var(--s1)}
+        .sidebar-main{padding:16px;flex:1;overflow-y:auto}
+        .sidebar-settings{padding:12px 16px;border-top:1px solid var(--b1);background:var(--black)}
         .lbl{font-size:11px;font-weight:700;color:var(--mg);text-transform:uppercase;letter-spacing:1px;margin:12px 0 4px}
         .lbl:first-child{margin-top:0}
-        input[type="text"],textarea{width:100%;padding:8px 10px;background:var(--s2);border:1px solid var(--b1);border-radius:var(--rs);color:var(--white);font-size:13px;font-family:inherit;outline:none;transition:all .2s}
+        input[type="text"],input[type="password"],textarea{width:100%;padding:8px 10px;background:var(--s2);border:1px solid var(--b1);border-radius:var(--rs);color:var(--white);font-size:13px;font-family:inherit;outline:none;transition:all .2s}
         input::placeholder,textarea::placeholder{color:var(--mg)}
         input:focus,textarea:focus{border-color:rgba(251,169,44,.4);box-shadow:0 0 0 3px var(--og)}
         textarea{resize:vertical;min-height:60px;line-height:1.4}
@@ -48,61 +54,140 @@
         .btn-primary{width:100%;padding:12px;background:var(--orange);color:var(--black);border:none;border-radius:var(--rs);font-size:14px;font-weight:700;cursor:pointer;font-family:inherit;margin-top:12px;transition:opacity .2s}
         .btn-primary:hover{opacity:.9}
         .btn-primary:disabled{opacity:.4;cursor:not-allowed}
-        .btn-secondary{width:100%;padding:10px;background:var(--s2);color:var(--white);border:1px solid var(--b1);border-radius:var(--rs);font-size:13px;cursor:pointer;font-family:inherit;margin-top:8px;transition:all .2s}
+        .btn-secondary{padding:10px 16px;background:var(--s2);color:var(--white);border:1px solid var(--b1);border-radius:var(--rs);font-size:13px;cursor:pointer;font-family:inherit;transition:all .2s}
         .btn-secondary:hover{border-color:var(--b3)}
         .btn-stop{width:100%;padding:10px;background:var(--rdd);color:var(--rd);border:1px solid rgba(248,113,113,.2);border-radius:var(--rs);font-size:13px;cursor:pointer;font-family:inherit;margin-top:8px;display:none}
 
+        /* ── Main content ── */
         .main{overflow-y:auto;padding:24px}
-        .tabs{display:flex;gap:0;border-bottom:1px solid var(--b1);margin-bottom:16px}
-        .tab{padding:10px 20px;cursor:pointer;color:var(--mg);font-size:13px;font-weight:600;border-bottom:2px solid transparent;transition:all .2s}
+        .tabs{display:flex;gap:0;border-bottom:1px solid var(--b1);margin-bottom:16px;flex-wrap:wrap}
+        .tab{padding:10px 20px;cursor:pointer;color:var(--mg);font-size:13px;font-weight:600;border-bottom:2px solid transparent;transition:all .2s;white-space:nowrap}
         .tab.on{color:var(--orange);border-bottom-color:var(--orange)}
         .tab:hover:not(.on){color:var(--white)}
         .tab-content{display:none}.tab-content.on{display:block}
 
+        /* ── Cards ── */
         .card{background:var(--s2);border:1px solid var(--b1);border-radius:var(--r);padding:16px;margin-bottom:12px}
-        .card-title{font-size:14px;font-weight:700;color:var(--orange);margin-bottom:8px}
+        .card-title{font-size:14px;font-weight:700;color:var(--orange);margin-bottom:8px;display:flex;align-items:center;gap:8px}
         .card-body{font-size:13px;color:var(--lg);line-height:1.6}
 
+        /* ── Steps (workflow) ── */
         .step{display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid var(--b1)}
         .step:last-child{border-bottom:none}
-        .step-num{width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;flex-shrink:0}
-        .step-num.pending{background:var(--s3);color:var(--mg)}
-        .step-num.running{background:var(--og);color:var(--orange);animation:pulse 1.5s infinite}
-        .step-num.done{background:var(--gnd);color:var(--gn)}
-        .step-num.error{background:var(--rdd);color:var(--rd)}
+        .step-icon{width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;flex-shrink:0}
+        .step-icon.pending{background:var(--s3);color:var(--mg)}
+        .step-icon.running{background:var(--og);color:var(--orange);animation:pulse 1.5s infinite}
+        .step-icon.done{background:var(--gnd);color:var(--gn)}
+        .step-icon.error{background:var(--rdd);color:var(--rd)}
+        .step-info{flex:1;min-width:0}
         .step-name{font-size:13px;font-weight:500}
-        .step-detail{font-size:12px;color:var(--mg)}
+        .step-detail{font-size:12px;color:var(--mg);margin-top:2px}
         @keyframes pulse{0%,100%{opacity:1}50%{opacity:.5}}
+        @keyframes spin{to{transform:rotate(360deg)}}
 
-        .log{background:var(--black);border:1px solid var(--b1);border-radius:var(--rs);padding:8px;max-height:200px;overflow-y:auto;font-family:'JetBrains Mono',monospace;font-size:11px;line-height:1.5}
+        /* ── Log ── */
+        .log{background:var(--black);border:1px solid var(--b1);border-radius:var(--rs);padding:8px;max-height:180px;overflow-y:auto;font-family:'JetBrains Mono',monospace;font-size:11px;line-height:1.5}
         .log-line{padding:1px 0;color:var(--lg)}
         .log-line.ok{color:var(--gn)}.log-line.err{color:var(--rd)}.log-line.warn{color:var(--yl)}
         .ts{color:var(--mg);margin-right:6px}
 
-        .article-preview{background:var(--s2);border:1px solid var(--b1);border-radius:var(--r);padding:24px;font-size:15px;line-height:1.7;max-height:calc(100vh - 200px);overflow-y:auto}
-        .article-preview h1{font-size:1.8em;margin-bottom:.5em;color:var(--white)}
-        .article-preview h2{font-size:1.4em;margin:1.2em 0 .4em;color:var(--orange)}
-        .article-preview h3{font-size:1.1em;margin:1em 0 .3em}
+        /* ── Article preview ── */
+        .article-bar{display:flex;align-items:center;gap:12px;margin-bottom:12px;flex-wrap:wrap}
+        .article-bar .wc{font-size:13px;color:var(--lg);font-weight:600}
+        .article-preview{background:var(--s2);border:1px solid var(--b1);border-radius:var(--r);padding:28px 32px;font-size:15px;line-height:1.75;max-height:calc(100vh - 200px);overflow-y:auto}
+        .article-preview h1{font-size:1.8em;margin-bottom:.5em;color:var(--white);line-height:1.25}
+        .article-preview h2{font-size:1.4em;margin:1.4em 0 .5em;color:var(--orange);line-height:1.3}
+        .article-preview h3{font-size:1.15em;margin:1.1em 0 .4em;color:var(--white)}
         .article-preview p{margin-bottom:.8em;color:var(--lg)}
+        .article-preview strong{color:var(--white)}
+        .article-preview ul,.article-preview ol{margin:0 0 .8em 1.4em;color:var(--lg)}
+        .article-preview li{margin-bottom:.3em}
 
+        /* ── S1 sections ── */
         .s1-section{background:var(--s3);border:1px solid var(--b1);border-radius:var(--rs);margin-bottom:8px;overflow:hidden}
-        .s1-header{display:flex;align-items:center;gap:8px;padding:10px 12px;cursor:pointer;font-size:13px;font-weight:600}
+        .s1-header{display:flex;align-items:center;gap:8px;padding:12px 14px;cursor:pointer;font-size:13px;font-weight:600;user-select:none;transition:background .15s}
         .s1-header:hover{background:var(--s4)}
-        .s1-body{display:none;padding:12px;font-size:12px;border-top:1px solid var(--b1)}
+        .s1-header .arrow{transition:transform .2s;font-size:10px;color:var(--mg)}
+        .s1-section.open .s1-header .arrow{transform:rotate(90deg)}
+        .s1-header .count{margin-left:auto;font-size:11px;color:var(--mg);font-weight:400}
+        .s1-body{display:none;padding:14px;font-size:12px;border-top:1px solid var(--b1)}
         .s1-section.open .s1-body{display:block}
-        .chip{display:inline-block;padding:2px 8px;border-radius:4px;font-size:11px;margin:2px;background:var(--og);color:var(--orange);border:1px solid rgba(251,169,44,.1)}
+
+        /* ── Chips ── */
+        .chip{display:inline-block;padding:3px 10px;border-radius:5px;font-size:11px;margin:2px;background:var(--og);color:var(--orange);border:1px solid rgba(251,169,44,.1)}
         .chip.green{background:var(--gnd);color:var(--gn);border-color:rgba(52,211,153,.1)}
         .chip.red{background:var(--rdd);color:var(--rd);border-color:rgba(248,113,113,.1)}
+        .chip.blue{background:var(--bld);color:var(--bl);border-color:rgba(96,165,250,.1)}
+        .chip.yellow{background:var(--yld);color:var(--yl);border-color:rgba(251,191,36,.1)}
 
+        /* ── Stats grid ── */
+        .stats-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:10px;margin-bottom:14px}
+        .stat-card{background:var(--s3);border:1px solid var(--b1);border-radius:var(--rs);padding:12px;text-align:center}
+        .stat-val{font-size:24px;font-weight:800;color:var(--orange);line-height:1}
+        .stat-lbl{font-size:11px;color:var(--mg);margin-top:4px;text-transform:uppercase;letter-spacing:.5px}
+
+        /* ── Bar chart ── */
+        .bar-chart{margin-top:12px}
+        .bar-row{display:flex;align-items:center;gap:8px;margin-bottom:4px}
+        .bar-label{font-size:11px;color:var(--lg);width:140px;text-overflow:ellipsis;overflow:hidden;white-space:nowrap;flex-shrink:0}
+        .bar-track{flex:1;height:18px;background:var(--b1);border-radius:3px;overflow:hidden;position:relative}
+        .bar-fill{height:100%;border-radius:3px;background:var(--orange);transition:width .4s;min-width:2px}
+        .bar-val{font-size:11px;color:var(--mg);width:50px;text-align:right;flex-shrink:0}
+
+        /* ── Table ── */
+        .s1-table{width:100%;border-collapse:collapse;font-size:12px}
+        .s1-table th{text-align:left;color:var(--mg);font-weight:600;padding:6px 8px;border-bottom:1px solid var(--b1);text-transform:uppercase;font-size:10px;letter-spacing:.5px}
+        .s1-table td{padding:6px 8px;border-bottom:1px solid rgba(26,26,26,.5);color:var(--lg)}
+        .s1-table tr:hover td{background:rgba(255,255,255,.02)}
+        .s1-table a{color:var(--bl);text-decoration:none}
+        .s1-table a:hover{text-decoration:underline}
+
+        /* ── Priority badges ── */
+        .badge{display:inline-block;padding:2px 8px;border-radius:4px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px}
+        .badge.high{background:var(--rdd);color:var(--rd)}
+        .badge.medium{background:var(--yld);color:var(--yl)}
+        .badge.low{background:var(--gnd);color:var(--gn)}
+
+        /* ── Quality card ── */
         .quality-bar{height:6px;border-radius:3px;background:var(--b1);overflow:hidden;margin-top:8px}
         .quality-fill{height:100%;border-radius:3px;transition:width .5s}
-        .score-badge{display:inline-block;padding:4px 12px;border-radius:99px;font-size:14px;font-weight:700}
+        .score-badge{display:inline-flex;align-items:center;justify-content:center;min-width:80px;padding:8px 16px;border-radius:99px;font-size:18px;font-weight:700}
 
+        /* ── Causal arrows ── */
+        .causal-item{display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid rgba(26,26,26,.5);flex-wrap:wrap}
+        .causal-item:last-child{border-bottom:none}
+        .causal-cause,.causal-effect{background:var(--s4);padding:4px 10px;border-radius:var(--rs);font-size:12px;color:var(--lg)}
+        .causal-arrow{color:var(--orange);font-size:14px;font-weight:700}
+        .causal-type{font-size:10px;color:var(--mg);text-transform:uppercase}
+
+        /* ── Optional modules ── */
         .optional-module{display:flex;align-items:center;justify-content:space-between;padding:12px;background:var(--s3);border:1px solid var(--b1);border-radius:var(--rs);margin-bottom:6px}
         .opt-name{font-size:13px;font-weight:600}
         .opt-btn{padding:6px 16px;border-radius:var(--rs);border:1px solid var(--orange);color:var(--orange);background:transparent;cursor:pointer;font-size:12px;font-family:inherit;transition:all .2s}
         .opt-btn:hover{background:var(--og)}
         .opt-btn:disabled{opacity:.3;cursor:not-allowed}
+
+        /* ── Settings key visibility ── */
+        .key-wrap{position:relative}
+        .key-wrap input{padding-right:36px}
+        .key-toggle{position:absolute;right:8px;top:50%;transform:translateY(-50%);background:none;border:none;color:var(--mg);cursor:pointer;font-size:14px;padding:2px}
+        .key-toggle:hover{color:var(--lg)}
+
+        /* ── Entity item ── */
+        .entity-item{display:inline-flex;align-items:center;gap:4px;padding:3px 10px;margin:2px;border-radius:5px;font-size:11px;background:var(--s4);border:1px solid var(--b1)}
+        .entity-type{font-size:9px;color:var(--mg);text-transform:uppercase;font-weight:700}
+
+        /* ── Coverage bar ── */
+        .coverage-row{display:flex;align-items:center;gap:8px;margin-bottom:6px}
+        .coverage-label{font-size:12px;color:var(--lg);width:200px;flex-shrink:0}
+        .coverage-track{flex:1;height:12px;background:var(--b1);border-radius:3px;overflow:hidden}
+        .coverage-fill{height:100%;border-radius:3px;transition:width .4s}
+        .coverage-pct{font-size:11px;color:var(--mg);width:40px;text-align:right;flex-shrink:0}
+
+        /* ── Empty state ── */
+        .empty-state{text-align:center;padding:48px 24px;color:var(--mg)}
+        .empty-state .icon{font-size:40px;margin-bottom:12px;opacity:.3}
+        .empty-state p{font-size:14px}
     </style>
 </head>
 <body>
@@ -117,57 +202,74 @@
     </div>
 
     <div class="layout">
+        <!-- ═══ SIDEBAR ═══ -->
         <div class="sidebar">
-            <label class="lbl">Haslo glowne</label>
-            <input type="text" id="keyword" placeholder="np. sucha skóra głowy">
+            <div class="sidebar-main">
+                <label class="lbl">Haslo glowne</label>
+                <input type="text" id="keyword" placeholder="np. sucha skora glowy">
 
-            <label class="lbl">Tryb</label>
-            <div class="modes">
-                <div class="mbtn on" data-mode="auto" onclick="selMode('auto')"><strong>Auto</strong><small>S1 + artykuł</small></div>
-                <div class="mbtn" data-mode="s1_only" onclick="selMode('s1_only')"><strong>Tylko S1</strong><small>Analiza SERP</small></div>
+                <label class="lbl">Tryb</label>
+                <div class="modes">
+                    <div class="mbtn on" data-mode="auto" onclick="selMode('auto')"><strong>Auto</strong><small>S1 + artykul</small></div>
+                    <div class="mbtn" data-mode="s1_only" onclick="selMode('s1_only')"><strong>Tylko S1</strong><small>Analiza SERP</small></div>
+                </div>
+
+                <label class="lbl">Silnik</label>
+                <div class="modes">
+                    <div class="mbtn on" data-engine="claude" onclick="selEngine('claude')"><strong>Claude</strong><small>Sonnet 4.5</small></div>
+                    <div class="mbtn" data-engine="openai" onclick="selEngine('openai')"><strong>OpenAI</strong><small>GPT-4o</small></div>
+                </div>
+
+                <label class="lbl">Struktura H2 (opcjonalnie)</label>
+                <textarea id="h2Input" rows="4" placeholder="Jedna sekcja H2 na linie..."></textarea>
+
+                <label class="lbl">Slowa kluczowe (opcjonalnie)</label>
+                <textarea id="kwInput" rows="3" placeholder="Dodatkowe frazy kluczowe..."></textarea>
+
+                <button class="btn-primary" id="btnStart" onclick="startWorkflow()">Uruchom workflow</button>
+                <button class="btn-stop" id="btnStop" onclick="stopWorkflow()">Zatrzymaj</button>
+
+                <div style="margin-top:16px">
+                    <label class="lbl">Log</label>
+                    <div class="log" id="logC"></div>
+                </div>
             </div>
 
-            <label class="lbl">Silnik</label>
-            <div class="modes">
-                <div class="mbtn on" data-engine="claude" onclick="selEngine('claude')"><strong>Claude</strong><small>Sonnet 4.5</small></div>
-                <div class="mbtn" data-engine="openai" onclick="selEngine('openai')"><strong>OpenAI</strong><small>GPT-4o</small></div>
-            </div>
-
-            <label class="lbl">Struktura H2 (opcjonalnie)</label>
-            <textarea id="h2Input" rows="4" placeholder="Jedna sekcja H2 na linię..."></textarea>
-
-            <label class="lbl">Slowa kluczowe (opcjonalnie)</label>
-            <textarea id="kwInput" rows="3" placeholder="Dodatkowe frazy kluczowe..."></textarea>
-
-            <button class="btn-primary" id="btnStart" onclick="startWorkflow()">Uruchom workflow</button>
-            <button class="btn-stop" id="btnStop" onclick="stopWorkflow()">Zatrzymaj</button>
-
-            <div style="margin-top:16px">
-                <label class="lbl">Log</label>
-                <div class="log" id="logC"></div>
+            <!-- Settings section at bottom -->
+            <div class="sidebar-settings">
+                <label class="lbl" style="margin-top:0">API Key</label>
+                <div class="key-wrap">
+                    <input type="password" id="apiKeyInput" placeholder="Wpisz klucz API..." value="">
+                    <button class="key-toggle" onclick="toggleKeyVisibility()" title="Pokaz/ukryj klucz">&#128065;</button>
+                </div>
+                <div style="font-size:10px;color:var(--mg);margin-top:4px">Przechowywany lokalnie w przegladarce</div>
             </div>
         </div>
 
+        <!-- ═══ MAIN ═══ -->
         <div class="main">
             <div class="tabs">
                 <div class="tab on" data-tab="workflow" onclick="switchTab('workflow')">Workflow</div>
                 <div class="tab" data-tab="s1" onclick="switchTab('s1')">Analiza S1</div>
-                <div class="tab" data-tab="article" onclick="switchTab('article')">Artykuł</div>
-                <div class="tab" data-tab="optional" onclick="switchTab('optional')">Moduły opcjonalne</div>
+                <div class="tab" data-tab="article" onclick="switchTab('article')">Artykul</div>
+                <div class="tab" data-tab="optional" onclick="switchTab('optional')">Moduly opcjonalne</div>
             </div>
 
-            <!-- WORKFLOW TAB -->
+            <!-- ═══ WORKFLOW TAB ═══ -->
             <div class="tab-content on" id="tab-workflow">
                 <div class="card">
                     <div class="card-title">Pipeline BRAJEN_PROMPTS v1.0</div>
                     <div id="stepsC">
-                        <!-- Steps rendered dynamically -->
+                        <div class="empty-state">
+                            <div class="icon">&#9881;</div>
+                            <p>Uruchom workflow, aby zobaczyc kroki pipeline</p>
+                        </div>
                     </div>
                 </div>
                 <div class="card" id="qualityCard" style="display:none">
                     <div class="card-title">Wynik walidacji</div>
                     <div style="display:flex;align-items:center;gap:16px">
-                        <span class="score-badge" id="scoreBadge">—</span>
+                        <span class="score-badge" id="scoreBadge">&mdash;</span>
                         <div style="flex:1">
                             <div class="quality-bar"><div class="quality-fill" id="qualityFill" style="width:0"></div></div>
                         </div>
@@ -176,42 +278,49 @@
                 </div>
             </div>
 
-            <!-- S1 TAB -->
+            <!-- ═══ S1 TAB ═══ -->
             <div class="tab-content" id="tab-s1">
                 <div id="s1Content">
-                    <div class="card"><div class="card-body" style="text-align:center;color:var(--mg)">Uruchom workflow aby zobaczyć analizę S1</div></div>
+                    <div class="empty-state">
+                        <div class="icon">&#128269;</div>
+                        <p>Uruchom workflow, aby zobaczyc analize S1</p>
+                    </div>
                 </div>
             </div>
 
-            <!-- ARTICLE TAB -->
+            <!-- ═══ ARTICLE TAB ═══ -->
             <div class="tab-content" id="tab-article">
-                <div id="articleActions" style="display:none;margin-bottom:12px;display:flex;gap:8px">
-                    <button class="btn-secondary" onclick="exportArticle('html')" style="width:auto;padding:8px 16px">Export HTML</button>
-                    <button class="btn-secondary" onclick="exportArticle('txt')" style="width:auto;padding:8px 16px">Export TXT</button>
-                    <button class="btn-secondary" onclick="copyArticle()" style="width:auto;padding:8px 16px">Kopiuj</button>
+                <div class="article-bar" id="articleActions" style="display:none">
+                    <button class="btn-secondary" onclick="exportArticle('html')">Export HTML</button>
+                    <button class="btn-secondary" onclick="exportArticle('txt')">Export TXT</button>
+                    <button class="btn-secondary" onclick="copyArticle()">Kopiuj</button>
+                    <span class="wc" id="articleWC"></span>
                 </div>
                 <div class="article-preview" id="articlePreview">
-                    <p style="color:var(--mg);text-align:center">Artykuł pojawi się tutaj po wygenerowaniu</p>
+                    <div class="empty-state">
+                        <div class="icon">&#128196;</div>
+                        <p>Artykul pojawi sie tutaj po wygenerowaniu</p>
+                    </div>
                 </div>
             </div>
 
-            <!-- OPTIONAL MODULES TAB -->
+            <!-- ═══ OPTIONAL MODULES TAB ═══ -->
             <div class="tab-content" id="tab-optional">
                 <div class="card">
-                    <div class="card-title">Moduły opcjonalne</div>
-                    <div class="card-body">Po wygenerowaniu artykułu możesz uruchomić dodatkowe sprawdzenia:</div>
+                    <div class="card-title">Moduly opcjonalne</div>
+                    <div class="card-body">Po wygenerowaniu artykulu mozesz uruchomic dodatkowe sprawdzenia:</div>
                 </div>
                 <div id="optModules">
                     <div class="optional-module">
-                        <div><div class="opt-name">AI Detection Check</div><small style="color:var(--mg)">Sprawdza tekst pod kątem wzorców AI</small></div>
+                        <div><div class="opt-name">AI Detection Check</div><small style="color:var(--mg)">Sprawdza tekst pod katem wzorc&oacute;w AI</small></div>
                         <button class="opt-btn" id="optAiDet" onclick="runOptional('ai_detection')" disabled>Uruchom</button>
                     </div>
                     <div class="optional-module">
-                        <div><div class="opt-name">Editorial Review</div><small style="color:var(--mg)">Recenzja redaktorska artykułu</small></div>
+                        <div><div class="opt-name">Editorial Review</div><small style="color:var(--mg)">Recenzja redaktorska artykulu</small></div>
                         <button class="opt-btn" id="optEdit" onclick="runOptional('editorial_review')" disabled>Uruchom</button>
                     </div>
                     <div class="optional-module">
-                        <div><div class="opt-name">Compliance Report</div><small style="color:var(--mg)">Raport zgodności słów kluczowych</small></div>
+                        <div><div class="opt-name">Compliance Report</div><small style="color:var(--mg)">Raport zgodnosci slow kluczowych</small></div>
                         <button class="opt-btn" id="optComp" onclick="runOptional('compliance_report')" disabled>Uruchom</button>
                     </div>
                 </div>
@@ -224,218 +333,877 @@
     </div>
 
 <script>
+/* ═══════════════════════════════════════════════════════════════
+   BRAJN SEO Panel — Full Client Logic
+   ═══════════════════════════════════════════════════════════════ */
+
 let mode = 'auto', engine = 'claude', es = null, jobId = null;
 let articleText = '', s1Data = null;
+let pipelineSteps = {};  // step_number -> {label, status, detail}
+let totalSteps = 0;
 
-const STEPS = [
-    'S1 Analysis (SERP + n-gramy)',
-    'Pre-Batch (mapa rozmieszczeń)',
-    'Batch 0 (H1 + wstęp)',
-    'Batche H2...',
-    'Batch FAQ',
-    'Post-Processing (walidacja)'
-];
-
-function esc(s){if(!s)return'';const d=document.createElement('div');d.textContent=s;return d.innerHTML}
-function selMode(m){mode=m;document.querySelectorAll('.mbtn[data-mode]').forEach(b=>b.classList.toggle('on',b.dataset.mode===m))}
-function selEngine(e){engine=e;document.querySelectorAll('.mbtn[data-engine]').forEach(b=>b.classList.toggle('on',b.dataset.engine===e));document.getElementById('engineLabel').textContent=e==='claude'?'Claude':'OpenAI'}
-function switchTab(t){document.querySelectorAll('.tab').forEach(b=>b.classList.toggle('on',b.dataset.tab===t));document.querySelectorAll('.tab-content').forEach(c=>c.classList.toggle('on',c.id==='tab-'+t))}
-function log(m,cls){const c=document.getElementById('logC');if(!cls)cls=m.includes('error')?'err':m.includes('warning')?'warn':m.includes('done')||m.includes('ok')?'ok':'';c.innerHTML+=`<div class="log-line ${cls}"><span class="ts">${new Date().toLocaleTimeString('pl-PL')}</span> ${esc(m)}</div>`;c.scrollTop=c.scrollHeight}
-
-function initSteps(){
-    const c=document.getElementById('stepsC');
-    c.innerHTML=STEPS.map((s,i)=>`<div class="step" id="step${i}"><div class="step-num pending" id="sn${i}">${i+1}</div><div><div class="step-name">${esc(s)}</div><div class="step-detail" id="sd${i}">—</div></div></div>`).join('');
-}
-function updateStep(idx, status, detail){
-    const n=document.getElementById('sn'+idx);
-    const d=document.getElementById('sd'+idx);
-    if(n){n.className='step-num '+status}
-    if(d&&detail){d.textContent=detail}
+// ── Helpers ──
+function esc(s) {
+    if (!s) return '';
+    const d = document.createElement('div');
+    d.textContent = s;
+    return d.innerHTML;
 }
 
-function renderS1(data){
-    const c=document.getElementById('s1Content');
-    let html='';
-    const ngrams=data.ngrams||[];
-    const ext=data.extended_terms||[];
-    const serp=data.serp_analysis||{};
-    const paa=serp.paa_questions||[];
-    const related=serp.related_searches||[];
-    const h2p=serp.competitor_h2_patterns||[];
-    const gaps=data.content_gaps||{};
-    const summary=data.summary||{};
-
-    html+=`<div class="card"><div class="card-title">Podsumowanie S1</div><div class="card-body">
-        Źródła: <b>${summary.total_sources||0}</b> | PAA: <b>${summary.paa_count||0}</b> | Related: <b>${summary.related_searches_count||0}</b> | H2 patterns: <b>${summary.h2_patterns_found||0}</b> | Encje: <b>${summary.entities_found||0}</b> | Triplety: <b>${summary.causal_triplets_found||0}</b> | Luki: <b>${summary.content_gaps_found||0}</b>
-    </div></div>`;
-
-    html+=`<div class="s1-section open"><div class="s1-header" onclick="this.parentElement.classList.toggle('open')">N-gramy (${ngrams.length})</div><div class="s1-body">${ngrams.map(n=>`<span class="chip">${esc(n.ngram)} <small>${n.freq_min}-${n.freq_max}x</small></span>`).join('')}</div></div>`;
-    if(ext.length)html+=`<div class="s1-section"><div class="s1-header" onclick="this.parentElement.classList.toggle('open')">Extended terms (${ext.length})</div><div class="s1-body">${ext.map(e=>`<span class="chip">${esc(e.term)} <small>${e.site_distribution}</small></span>`).join('')}</div></div>`;
-    if(paa.length)html+=`<div class="s1-section"><div class="s1-header" onclick="this.parentElement.classList.toggle('open')">PAA (${paa.length})</div><div class="s1-body">${paa.map(q=>`<div style="margin-bottom:6px"><b>${esc(q.question||q)}</b><br><span style="color:var(--mg)">${esc((q.answer||'').substring(0,200))}</span></div>`).join('')}</div></div>`;
-    if(related.length)html+=`<div class="s1-section"><div class="s1-header" onclick="this.parentElement.classList.toggle('open')">Related Searches (${related.length})</div><div class="s1-body">${related.map(r=>`<span class="chip green">${esc(typeof r==='string'?r:r.query||'')}</span>`).join('')}</div></div>`;
-    if(h2p.length)html+=`<div class="s1-section"><div class="s1-header" onclick="this.parentElement.classList.toggle('open')">H2 Patterns (${h2p.length})</div><div class="s1-body">${h2p.map(h=>`<span class="chip">${esc(typeof h==='string'?h:h.text||'')}</span>`).join('')}</div></div>`;
-
-    c.innerHTML=html;
+function selMode(m) {
+    mode = m;
+    document.querySelectorAll('.mbtn[data-mode]').forEach(b => b.classList.toggle('on', b.dataset.mode === m));
 }
 
-function renderArticle(text){
-    articleText=text;
-    const preview=document.getElementById('articlePreview');
-    let html=text;
-    html=html.replace(/^# (.+)$/gm,'<h1>$1</h1>');
-    html=html.replace(/^## (.+)$/gm,'<h2>$1</h2>');
-    html=html.replace(/^### (.+)$/gm,'<h3>$1</h3>');
-    html=html.replace(/\*\*(.+?)\*\*/g,'<strong>$1</strong>');
-    const paras=html.split('\n\n');
-    html=paras.map(p=>{p=p.trim();if(!p)return'';if(p.startsWith('<h'))return p;return'<p>'+p+'</p>'}).join('\n');
-    preview.innerHTML=html;
-    document.getElementById('articleActions').style.display='flex';
-    document.querySelectorAll('.opt-btn').forEach(b=>b.disabled=false);
+function selEngine(e) {
+    engine = e;
+    document.querySelectorAll('.mbtn[data-engine]').forEach(b => b.classList.toggle('on', b.dataset.engine === e));
+    document.getElementById('engineLabel').textContent = e === 'claude' ? 'Claude' : 'OpenAI';
 }
 
-function showValidation(v){
-    document.getElementById('qualityCard').style.display='';
-    const score=v.score||0;
-    const badge=document.getElementById('scoreBadge');
-    badge.textContent=score+'/100';
-    badge.style.background=score>=80?'var(--gnd)':score>=60?'var(--yld)':'var(--rdd)';
-    badge.style.color=score>=80?'var(--gn)':score>=60?'var(--yl)':'var(--rd)';
-    document.getElementById('qualityFill').style.width=score+'%';
-    document.getElementById('qualityFill').style.background=score>=80?'var(--gn)':score>=60?'var(--yl)':'var(--rd)';
-    const det=document.getElementById('validationDetails');
-    let html='';
-    if(v.errors&&v.errors.length)html+='<div style="color:var(--rd);margin-bottom:4px">Errors: '+v.errors.map(e=>esc(e.type||'')).join(', ')+'</div>';
-    if(v.warnings&&v.warnings.length)html+='<div style="color:var(--yl);margin-bottom:4px">Warnings: '+v.warnings.map(w=>esc(w.type||'')).join(', ')+'</div>';
-    if(v.passed&&v.passed.length)html+='<div style="color:var(--gn)">Passed: '+v.passed.join(', ')+'</div>';
-    det.innerHTML=html;
+function switchTab(t) {
+    document.querySelectorAll('.tab').forEach(b => b.classList.toggle('on', b.dataset.tab === t));
+    document.querySelectorAll('.tab-content').forEach(c => c.classList.toggle('on', c.id === 'tab-' + t));
 }
 
-async function startWorkflow(){
-    const kw=document.getElementById('keyword').value.trim();
-    if(!kw){alert('Wpisz hasło główne');return}
+function log(m, cls) {
+    const c = document.getElementById('logC');
+    if (!cls) cls = m.includes('error') ? 'err' : m.includes('warning') ? 'warn' : (m.includes('done') || m.includes('ok')) ? 'ok' : '';
+    c.innerHTML += '<div class="log-line ' + cls + '"><span class="ts">' + new Date().toLocaleTimeString('pl-PL') + '</span> ' + esc(m) + '</div>';
+    c.scrollTop = c.scrollHeight;
+}
 
-    initSteps();
-    document.getElementById('btnStart').disabled=true;
-    document.getElementById('btnStop').style.display='block';
-    log('Starting workflow for: '+kw);
+// ── API Key ──
+function getApiKey() {
+    return localStorage.getItem('brajn_api_key') || '';
+}
 
-    try{
-        // Step 1: S1 Analysis
-        updateStep(0,'running','Pobieranie danych SERP...');
+function saveApiKey(key) {
+    localStorage.setItem('brajn_api_key', key);
+}
+
+function toggleKeyVisibility() {
+    const inp = document.getElementById('apiKeyInput');
+    inp.type = inp.type === 'password' ? 'text' : 'password';
+}
+
+function initApiKey() {
+    const inp = document.getElementById('apiKeyInput');
+    inp.value = getApiKey();
+    inp.addEventListener('change', function() {
+        saveApiKey(this.value.trim());
+    });
+    inp.addEventListener('blur', function() {
+        saveApiKey(this.value.trim());
+    });
+}
+
+// ── Dynamic Steps ──
+function resetSteps() {
+    pipelineSteps = {};
+    totalSteps = 0;
+    document.getElementById('stepsC').innerHTML = '<div class="empty-state"><div class="icon">&#9881;</div><p>Uruchamianie pipeline...</p></div>';
+}
+
+function renderSteps() {
+    const c = document.getElementById('stepsC');
+    if (Object.keys(pipelineSteps).length === 0) return;
+
+    const sorted = Object.keys(pipelineSteps).map(Number).sort((a, b) => a - b);
+    let html = '';
+    for (const idx of sorted) {
+        const s = pipelineSteps[idx];
+        const status = s.status || 'pending';
+        let icon = '';
+        if (status === 'pending') icon = '<span style="color:var(--mg)">&#9675;</span>';
+        else if (status === 'running') icon = '<span style="color:var(--orange)">&#9881;</span>';
+        else if (status === 'done') icon = '<span style="color:var(--gn)">&#10003;</span>';
+        else if (status === 'error') icon = '<span style="color:var(--rd)">&#10007;</span>';
+
+        html += '<div class="step">';
+        html += '<div class="step-icon ' + status + '">' + icon + '</div>';
+        html += '<div class="step-info">';
+        html += '<div class="step-name">' + esc(s.label || 'Step ' + idx) + '</div>';
+        html += '<div class="step-detail">' + esc(s.detail || '') + '</div>';
+        html += '</div></div>';
+    }
+    c.innerHTML = html;
+}
+
+function setStepRunning(step, total, label) {
+    if (total) totalSteps = total;
+    // Ensure all previous steps up to this one exist
+    for (let i = 0; i < step; i++) {
+        if (!pipelineSteps[i]) {
+            pipelineSteps[i] = { label: 'Step ' + i, status: 'done', detail: '' };
+        } else if (pipelineSteps[i].status === 'running') {
+            pipelineSteps[i].status = 'done';
+        }
+    }
+    // Mark current as running, preserve label if already exists
+    if (!pipelineSteps[step]) {
+        pipelineSteps[step] = { label: label || 'Step ' + step, status: 'running', detail: 'W toku...' };
+    } else {
+        pipelineSteps[step].status = 'running';
+        pipelineSteps[step].detail = 'W toku...';
+        if (label) pipelineSteps[step].label = label;
+    }
+    // Add placeholders for remaining
+    if (total) {
+        for (let i = step + 1; i < total; i++) {
+            if (!pipelineSteps[i]) {
+                pipelineSteps[i] = { label: 'Krok ' + (i + 1), status: 'pending', detail: '' };
+            }
+        }
+    }
+    renderSteps();
+}
+
+function setStepDone(step, data) {
+    if (!pipelineSteps[step]) {
+        pipelineSteps[step] = { label: 'Step ' + step, status: 'done', detail: '' };
+    }
+    pipelineSteps[step].status = 'done';
+
+    // Build detail string from data
+    let details = [];
+    if (data) {
+        if (data.word_count) details.push(data.word_count + ' slow');
+        if (data.ymyl !== undefined) details.push('YMYL: ' + (data.ymyl ? 'TAK' : 'NIE'));
+        if (data.variants_count) details.push(data.variants_count + ' wariantow');
+        if (data.pre_batch_keys) details.push(data.pre_batch_keys + ' kluczy');
+        if (data.validation) {
+            const vs = data.validation.score || data.validation.validation_score;
+            if (vs !== undefined) details.push('Score: ' + vs);
+        }
+    }
+    pipelineSteps[step].detail = details.length > 0 ? details.join(' | ') : 'Gotowe';
+
+    // Append text to article preview if present
+    if (data && data.text) {
+        articleText += (articleText ? '\n\n' : '') + data.text;
+        renderArticle(articleText);
+    }
+
+    renderSteps();
+}
+
+function setStepError(step, message) {
+    if (pipelineSteps[step]) {
+        pipelineSteps[step].status = 'error';
+        pipelineSteps[step].detail = message || 'Blad';
+    }
+    renderSteps();
+}
+
+// ── S1 Render ──
+function renderS1(data) {
+    s1Data = data;
+    const c = document.getElementById('s1Content');
+    let html = '';
+
+    const ngrams = data.ngrams || [];
+    const ext = data.extended_terms || [];
+    const serp = data.serp_analysis || {};
+    const competitors = serp.competitors || [];
+    const h2p = serp.competitor_h2_patterns || [];
+    const titles = serp.competitor_titles || [];
+    const snippets = serp.competitor_snippets || [];
+    const paa = serp.paa_questions || [];
+    const related = serp.related_searches || [];
+    const featured = serp.featured_snippet || {};
+    const aiOverview = serp.ai_overview || {};
+    const entitySeo = data.entity_seo || {};
+    const entities = entitySeo.entities || [];
+    const topicalEntities = entitySeo.topical_entities || [];
+    const salience = entitySeo.entity_salience || [];
+    const cooccurrence = entitySeo.cooccurrence_pairs || [];
+    const placement = entitySeo.placement_instructions || {};
+    const mustCover = entitySeo.must_cover_concepts || [];
+    const shouldCover = entitySeo.should_cover_concepts || [];
+    const topicalCoverage = entitySeo.topical_coverage || [];
+    const relationships = entitySeo.relationships || [];
+    const causal = data.causal_triplets || {};
+    const chains = causal.chains || [];
+    const singles = causal.singles || [];
+    const causalInstruction = causal.agent_instruction || '';
+    const gaps = data.content_gaps || {};
+    const gapList = gaps.gaps || [];
+    const h2scored = data.h2_scored_candidates || {};
+    const mustHave = h2scored.must_have || [];
+    const highPriority = h2scored.high_priority || [];
+    const allCandidates = h2scored.all_candidates || [];
+    const summary = data.summary || {};
+
+    // ── 1. Summary stats ──
+    const wordCounts = competitors.map(c => c.word_count || 0).filter(w => w > 0);
+    const avgWC = wordCounts.length > 0 ? Math.round(wordCounts.reduce((a, b) => a + b, 0) / wordCounts.length) : 0;
+    const medianWC = wordCounts.length > 0 ? (function() {
+        const s = [...wordCounts].sort((a, b) => a - b);
+        const mid = Math.floor(s.length / 2);
+        return s.length % 2 ? s[mid] : Math.round((s[mid - 1] + s[mid]) / 2);
+    })() : 0;
+    const recommended = Math.round(avgWC * 1.1);
+
+    html += '<div class="stats-grid">';
+    html += '<div class="stat-card"><div class="stat-val">' + recommended + '</div><div class="stat-lbl">Rekomendacja (110%)</div></div>';
+    html += '<div class="stat-card"><div class="stat-val">' + medianWC + '</div><div class="stat-lbl">Mediana</div></div>';
+    html += '<div class="stat-card"><div class="stat-val">' + avgWC + '</div><div class="stat-lbl">Srednia</div></div>';
+    html += '<div class="stat-card"><div class="stat-val">' + competitors.length + '</div><div class="stat-lbl">Stron</div></div>';
+    html += '<div class="stat-card"><div class="stat-val">' + h2p.length + '</div><div class="stat-lbl">Wzorcow H2</div></div>';
+    html += '<div class="stat-card"><div class="stat-val">' + (summary.entities_found || entities.length || 0) + '</div><div class="stat-lbl">Encji</div></div>';
+    html += '<div class="stat-card"><div class="stat-val">' + (summary.paa_count || paa.length || 0) + '</div><div class="stat-lbl">PAA</div></div>';
+    html += '<div class="stat-card"><div class="stat-val">' + (summary.content_gaps_found || gapList.length || 0) + '</div><div class="stat-lbl">Luki</div></div>';
+    html += '</div>';
+
+    // Word count bar chart
+    if (wordCounts.length > 0) {
+        const maxWC = Math.max(...wordCounts, 1);
+        html += '<div class="card"><div class="card-title">Dlugosc artykulow konkurencji</div>';
+        html += '<div class="bar-chart">';
+        competitors.forEach(function(comp) {
+            const wc = comp.word_count || 0;
+            const pct = Math.round((wc / maxWC) * 100);
+            const domain = (function() { try { return new URL(comp.url).hostname.replace('www.', ''); } catch(e) { return comp.url || ''; } })();
+            html += '<div class="bar-row">';
+            html += '<div class="bar-label" title="' + esc(comp.url) + '">' + esc(domain) + '</div>';
+            html += '<div class="bar-track"><div class="bar-fill" style="width:' + pct + '%"></div></div>';
+            html += '<div class="bar-val">' + wc + '</div>';
+            html += '</div>';
+        });
+        html += '<div class="bar-row" style="margin-top:6px">';
+        html += '<div class="bar-label" style="color:var(--orange);font-weight:700">Rekomendacja</div>';
+        html += '<div class="bar-track"><div class="bar-fill" style="width:' + Math.round((recommended / Math.max(...wordCounts, 1)) * 100) + '%;background:var(--gn);opacity:.6"></div></div>';
+        html += '<div class="bar-val" style="color:var(--gn)">' + recommended + '</div>';
+        html += '</div>';
+        html += '</div></div>';
+    }
+
+    // ── 2. Competitor SERP table ──
+    if (competitors.length > 0) {
+        html += buildSection('competitors', 'Tabela SERP konkurencji', competitors.length, function() {
+            let t = '<table class="s1-table"><thead><tr><th>#</th><th>URL / Tytul</th><th>Slowa</th><th>H2</th></tr></thead><tbody>';
+            competitors.forEach(function(comp, i) {
+                const domain = (function() { try { return new URL(comp.url).hostname.replace('www.', ''); } catch(e) { return ''; } })();
+                t += '<tr>';
+                t += '<td>' + (i + 1) + '</td>';
+                t += '<td><a href="' + esc(comp.url) + '" target="_blank" title="' + esc(comp.url) + '">' + esc(domain) + '</a>';
+                if (comp.title) t += '<div style="color:var(--mg);font-size:11px;margin-top:1px">' + esc(comp.title) + '</div>';
+                t += '</td>';
+                t += '<td>' + (comp.word_count || '-') + '</td>';
+                t += '<td>' + (comp.h2_count !== undefined ? comp.h2_count : '-') + '</td>';
+                t += '</tr>';
+            });
+            t += '</tbody></table>';
+            return t;
+        }, true);
+    }
+
+    // ── 3. H2 Patterns ──
+    if (h2p.length > 0) {
+        html += buildSection('h2patterns', 'Wzorce H2 konkurencji', h2p.length, function() {
+            let t = '<div style="line-height:2">';
+            h2p.forEach(function(h) {
+                const text = typeof h === 'string' ? h : (h.text || h.pattern || '');
+                const freq = (typeof h === 'object' && h.frequency) ? h.frequency : null;
+                t += '<span class="chip">' + esc(text);
+                if (freq) t += ' <small>(' + freq + 'x)</small>';
+                t += '</span>';
+            });
+            t += '</div>';
+            return t;
+        }, true);
+    }
+
+    // ── 4. SERP Snippets ──
+    if (snippets.length > 0) {
+        html += buildSection('snippets', 'SERP Snippets', snippets.length, function() {
+            let t = '';
+            snippets.forEach(function(s) {
+                const text = typeof s === 'string' ? s : (s.snippet || s.text || '');
+                t += '<div style="margin-bottom:8px;padding:8px;background:var(--s4);border-radius:6px;color:var(--lg);font-size:12px;line-height:1.5">' + esc(text) + '</div>';
+            });
+            return t;
+        });
+    }
+
+    // Featured snippet
+    if (featured && featured.answer) {
+        html += buildSection('featured', 'Featured Snippet', 1, function() {
+            let t = '<div style="padding:10px;background:var(--og);border:1px solid rgba(251,169,44,.15);border-radius:8px;font-size:13px;line-height:1.6;color:var(--white)">';
+            t += esc(featured.answer);
+            if (featured.link) t += '<div style="margin-top:6px"><a href="' + esc(featured.link) + '" target="_blank" style="color:var(--bl);font-size:11px">' + esc(featured.link) + '</a></div>';
+            t += '</div>';
+            return t;
+        });
+    }
+
+    // AI Overview
+    if (aiOverview && aiOverview.text) {
+        html += buildSection('aioverview', 'AI Overview', 1, function() {
+            return '<div style="padding:10px;background:var(--bld);border:1px solid rgba(96,165,250,.15);border-radius:8px;font-size:13px;line-height:1.6;color:var(--lg)">' + esc(aiOverview.text) + '</div>';
+        });
+    }
+
+    // ── 5. Related Searches ──
+    if (related.length > 0) {
+        html += buildSection('related', 'Powiazane wyszukiwania', related.length, function() {
+            let t = '<div style="line-height:2">';
+            related.forEach(function(r) {
+                const text = typeof r === 'string' ? r : (r.query || r.text || '');
+                t += '<span class="chip green">' + esc(text) + '</span>';
+            });
+            t += '</div>';
+            return t;
+        }, true);
+    }
+
+    // ── 6. PAA Questions ──
+    if (paa.length > 0) {
+        html += buildSection('paa', 'People Also Ask', paa.length, function() {
+            let t = '';
+            paa.forEach(function(q) {
+                const question = typeof q === 'string' ? q : (q.question || '');
+                const answer = typeof q === 'object' ? (q.answer || '') : '';
+                t += '<div style="margin-bottom:10px;padding:10px;background:var(--s4);border-radius:6px">';
+                t += '<div style="font-weight:600;color:var(--white);font-size:13px;margin-bottom:4px">' + esc(question) + '</div>';
+                if (answer) t += '<div style="color:var(--lg);font-size:12px;line-height:1.5">' + esc(answer.substring(0, 300)) + (answer.length > 300 ? '...' : '') + '</div>';
+                t += '</div>';
+            });
+            return t;
+        }, true);
+    }
+
+    // ── 7. N-grams ──
+    if (ngrams.length > 0) {
+        html += buildSection('ngrams', 'N-gramy', ngrams.length, function() {
+            // Sort by weight descending
+            const sorted = [...ngrams].sort(function(a, b) { return (b.weight || 0) - (a.weight || 0); });
+            let t = '<table class="s1-table"><thead><tr><th>N-gram</th><th>Freq</th><th>Waga</th><th>Dystr.</th></tr></thead><tbody>';
+            sorted.forEach(function(n) {
+                const weightColor = (n.weight || 0) >= 0.7 ? 'var(--gn)' : (n.weight || 0) >= 0.4 ? 'var(--yl)' : 'var(--lg)';
+                t += '<tr>';
+                t += '<td style="color:var(--white);font-weight:500">' + esc(n.ngram) + '</td>';
+                t += '<td>' + (n.freq_min !== undefined ? n.freq_min + '-' + n.freq_max : '-') + '</td>';
+                t += '<td style="color:' + weightColor + ';font-weight:600">' + (n.weight !== undefined ? n.weight.toFixed(2) : '-') + '</td>';
+                t += '<td>' + (n.site_distribution !== undefined ? n.site_distribution : '-') + '</td>';
+                t += '</tr>';
+            });
+            t += '</tbody></table>';
+            return t;
+        }, true);
+    }
+
+    // Extended terms
+    if (ext.length > 0) {
+        html += buildSection('extended', 'Extended Terms', ext.length, function() {
+            let t = '<div style="line-height:2">';
+            ext.forEach(function(e) {
+                t += '<span class="chip blue">' + esc(e.term || '') + ' <small>(' + (e.site_distribution || 0) + ' stron)</small></span>';
+            });
+            t += '</div>';
+            return t;
+        });
+    }
+
+    // ── 8. Causal Relations ──
+    if (chains.length > 0 || singles.length > 0) {
+        const allCausal = [...chains, ...singles];
+        html += buildSection('causal', 'Relacje przyczynowe', allCausal.length, function() {
+            let t = '';
+            if (causalInstruction) {
+                t += '<div style="margin-bottom:12px;padding:10px;background:var(--og);border-radius:6px;font-size:12px;color:var(--orange);line-height:1.5">' + esc(causalInstruction) + '</div>';
+            }
+            allCausal.forEach(function(c) {
+                t += '<div class="causal-item">';
+                t += '<span class="causal-cause">' + esc(c.cause || '') + '</span>';
+                t += '<span class="causal-arrow">&rarr;</span>';
+                t += '<span class="causal-effect">' + esc(c.effect || '') + '</span>';
+                if (c.relation_type) t += '<span class="causal-type">' + esc(c.relation_type) + '</span>';
+                t += '</div>';
+            });
+            return t;
+        }, true);
+    }
+
+    // ── 9. Content Gaps ──
+    if (gapList.length > 0) {
+        html += buildSection('gaps', 'Luki w tresci', gapList.length, function() {
+            let t = '';
+            gapList.forEach(function(g) {
+                const priorityClass = (g.priority || 'medium').toLowerCase();
+                t += '<div style="margin-bottom:8px;padding:10px;background:var(--s4);border-radius:6px;display:flex;align-items:flex-start;gap:10px">';
+                t += '<span class="badge ' + priorityClass + '">' + esc(g.priority || '') + '</span>';
+                t += '<div style="flex:1">';
+                t += '<div style="font-weight:600;color:var(--white);font-size:12px">' + esc(g.topic || '') + '</div>';
+                if (g.gap_type) t += '<div style="font-size:11px;color:var(--mg);margin-top:2px">' + esc(g.gap_type.replace(/_/g, ' ')) + '</div>';
+                if (g.suggested_h2) t += '<div style="font-size:11px;color:var(--orange);margin-top:3px">H2: ' + esc(g.suggested_h2) + '</div>';
+                t += '</div></div>';
+            });
+            return t;
+        }, true);
+    }
+
+    // ── 10. Entity SEO ──
+    if (entities.length > 0 || topicalEntities.length > 0) {
+        html += buildSection('entities', 'Entity SEO', entities.length + topicalEntities.length, function() {
+            let t = '';
+
+            // Named entities
+            if (entities.length > 0) {
+                t += '<div style="margin-bottom:12px"><div style="font-weight:600;color:var(--white);font-size:12px;margin-bottom:6px">Named Entities (' + entities.length + ')</div>';
+                const sortedE = [...entities].sort(function(a, b) { return (b.importance || 0) - (a.importance || 0); });
+                sortedE.forEach(function(e) {
+                    t += '<span class="entity-item"><span style="color:var(--white)">' + esc(e.text || '') + '</span>';
+                    if (e.type) t += ' <span class="entity-type">' + esc(e.type) + '</span>';
+                    if (e.importance) t += ' <small style="color:var(--orange)">' + e.importance.toFixed(1) + '</small>';
+                    t += '</span>';
+                });
+                t += '</div>';
+            }
+
+            // Topical entities
+            if (topicalEntities.length > 0) {
+                t += '<div style="margin-bottom:12px"><div style="font-weight:600;color:var(--white);font-size:12px;margin-bottom:6px">Topical Entities (' + topicalEntities.length + ')</div>';
+                topicalEntities.forEach(function(e) {
+                    t += '<span class="entity-item"><span style="color:var(--bl)">' + esc(e.text || '') + '</span>';
+                    if (e.type) t += ' <span class="entity-type">' + esc(e.type) + '</span>';
+                    if (e.sources_count) t += ' <small style="color:var(--mg)">' + e.sources_count + ' src</small>';
+                    t += '</span>';
+                });
+                t += '</div>';
+            }
+
+            // Must cover / Should cover
+            if (mustCover.length > 0) {
+                t += '<div style="margin-bottom:8px"><div style="font-weight:600;color:var(--gn);font-size:12px;margin-bottom:4px">Must Cover (' + mustCover.length + ')</div>';
+                t += '<div style="line-height:2">';
+                mustCover.forEach(function(c) { t += '<span class="chip green">' + esc(c) + '</span>'; });
+                t += '</div></div>';
+            }
+
+            if (shouldCover.length > 0) {
+                t += '<div style="margin-bottom:8px"><div style="font-weight:600;color:var(--yl);font-size:12px;margin-bottom:4px">Should Cover (' + shouldCover.length + ')</div>';
+                t += '<div style="line-height:2">';
+                shouldCover.forEach(function(c) { t += '<span class="chip yellow">' + esc(c) + '</span>'; });
+                t += '</div></div>';
+            }
+
+            // Placement instruction
+            if (placement && placement.instruction_text) {
+                t += '<div style="margin-top:8px;padding:10px;background:var(--og);border-radius:6px;font-size:12px;color:var(--orange);line-height:1.5">';
+                t += '<strong>Instrukcja rozmieszczenia:</strong><br>' + esc(placement.instruction_text);
+                t += '</div>';
+            }
+
+            // Entity salience
+            if (salience.length > 0) {
+                t += '<div style="margin-top:12px"><div style="font-weight:600;color:var(--white);font-size:12px;margin-bottom:6px">Entity Salience</div>';
+                t += '<table class="s1-table"><thead><tr><th>Encja</th><th>Salience</th></tr></thead><tbody>';
+                const sortedSal = [...salience].sort(function(a, b) { return (b.salience_score || 0) - (a.salience_score || 0); });
+                sortedSal.forEach(function(s) {
+                    t += '<tr><td>' + esc(s.entity_text || '') + '</td><td style="color:var(--orange)">' + (s.salience_score !== undefined ? s.salience_score.toFixed(3) : '-') + '</td></tr>';
+                });
+                t += '</tbody></table></div>';
+            }
+
+            // Relationships (SPO triples)
+            if (relationships.length > 0) {
+                t += '<div style="margin-top:12px"><div style="font-weight:600;color:var(--white);font-size:12px;margin-bottom:6px">Relacje (SPO)</div>';
+                relationships.forEach(function(r) {
+                    t += '<div style="font-size:12px;color:var(--lg);padding:3px 0">';
+                    t += '<span style="color:var(--white)">' + esc(r.subject || '') + '</span>';
+                    t += ' <span style="color:var(--orange)">' + esc(r.verb || '') + '</span> ';
+                    t += '<span style="color:var(--white)">' + esc(r.object || '') + '</span>';
+                    t += '</div>';
+                });
+                t += '</div>';
+            }
+
+            return t;
+        }, true);
+    }
+
+    // ── 11. Topical Coverage ──
+    if (topicalCoverage.length > 0) {
+        html += buildSection('coverage', 'Pokrycie tematyczne', topicalCoverage.length, function() {
+            let t = '';
+            topicalCoverage.forEach(function(tc) {
+                const total = tc.total_sources || 1;
+                const covered = tc.covered_by || 0;
+                const pct = Math.round((covered / total) * 100);
+                const color = pct >= 70 ? 'var(--gn)' : pct >= 40 ? 'var(--yl)' : 'var(--rd)';
+                t += '<div class="coverage-row">';
+                t += '<div class="coverage-label">' + esc(tc.subtopic || '') + '</div>';
+                t += '<div class="coverage-track"><div class="coverage-fill" style="width:' + pct + '%;background:' + color + '"></div></div>';
+                t += '<div class="coverage-pct" style="color:' + color + '">' + pct + '%</div>';
+                t += '</div>';
+            });
+            return t;
+        }, true);
+    }
+
+    // ── 12. Co-occurrence Pairs ──
+    if (cooccurrence.length > 0) {
+        html += buildSection('cooccurrence', 'Pary wspolwystepowania', cooccurrence.length, function() {
+            let t = '<table class="s1-table"><thead><tr><th>Encja A</th><th>Encja B</th><th>Sila</th></tr></thead><tbody>';
+            const sorted = [...cooccurrence].sort(function(a, b) { return (b.strength || 0) - (a.strength || 0); });
+            sorted.forEach(function(p) {
+                t += '<tr>';
+                t += '<td style="color:var(--white)">' + esc(p.entity_a || '') + '</td>';
+                t += '<td style="color:var(--white)">' + esc(p.entity_b || '') + '</td>';
+                t += '<td style="color:var(--orange)">' + (p.strength !== undefined ? p.strength.toFixed(2) : '-') + '</td>';
+                t += '</tr>';
+            });
+            t += '</tbody></table>';
+            return t;
+        });
+    }
+
+    // ── 13. H2 Plan ──
+    if (mustHave.length > 0 || highPriority.length > 0 || allCandidates.length > 0) {
+        html += buildSection('h2plan', 'Plan H2 (scored)', mustHave.length + highPriority.length, function() {
+            let t = '';
+
+            if (mustHave.length > 0) {
+                t += '<div style="margin-bottom:10px"><div style="font-weight:600;color:var(--gn);font-size:12px;margin-bottom:6px">Must Have</div>';
+                mustHave.forEach(function(h, i) {
+                    t += '<div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--b1)">';
+                    t += '<span style="color:var(--gn);font-weight:700;font-size:14px;width:24px">' + (i + 1) + '</span>';
+                    t += '<span style="color:var(--white);font-size:13px;flex:1">' + esc(h.text || '') + '</span>';
+                    if (h.score !== undefined) t += '<span style="color:var(--gn);font-size:12px;font-weight:600">' + h.score.toFixed(1) + '</span>';
+                    t += '</div>';
+                });
+                t += '</div>';
+            }
+
+            if (highPriority.length > 0) {
+                t += '<div style="margin-bottom:10px"><div style="font-weight:600;color:var(--yl);font-size:12px;margin-bottom:6px">High Priority</div>';
+                highPriority.forEach(function(h, i) {
+                    t += '<div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--b1)">';
+                    t += '<span style="color:var(--yl);font-weight:700;font-size:14px;width:24px">' + (i + 1) + '</span>';
+                    t += '<span style="color:var(--white);font-size:13px;flex:1">' + esc(h.text || '') + '</span>';
+                    if (h.score !== undefined) t += '<span style="color:var(--yl);font-size:12px;font-weight:600">' + h.score.toFixed(1) + '</span>';
+                    t += '</div>';
+                });
+                t += '</div>';
+            }
+
+            if (allCandidates.length > 0) {
+                t += '<div><div style="font-weight:600;color:var(--mg);font-size:12px;margin-bottom:6px">All Candidates (' + allCandidates.length + ')</div>';
+                t += '<table class="s1-table"><thead><tr><th>H2</th><th>Score</th></tr></thead><tbody>';
+                allCandidates.forEach(function(h) {
+                    t += '<tr><td>' + esc(h.text || '') + '</td><td style="color:var(--orange)">' + (h.score !== undefined ? h.score.toFixed(1) : '-') + '</td></tr>';
+                });
+                t += '</tbody></table></div>';
+            }
+
+            return t;
+        }, true);
+    }
+
+    c.innerHTML = html || '<div class="empty-state"><div class="icon">&#128269;</div><p>Brak danych S1</p></div>';
+}
+
+function buildSection(id, title, count, contentFn, openByDefault) {
+    const openClass = openByDefault ? ' open' : '';
+    return '<div class="s1-section' + openClass + '" id="s1-' + id + '">' +
+        '<div class="s1-header" onclick="this.parentElement.classList.toggle(\'open\')">' +
+        '<span class="arrow">&#9654;</span> ' + esc(title) +
+        '<span class="count">' + count + '</span>' +
+        '</div>' +
+        '<div class="s1-body">' + contentFn() + '</div>' +
+        '</div>';
+}
+
+// ── Article Render ──
+function renderArticle(text) {
+    articleText = text;
+    const preview = document.getElementById('articlePreview');
+    let html = text;
+
+    // Markdown to HTML conversion
+    html = html.replace(/^### (.+)$/gm, '<h3>$1</h3>');
+    html = html.replace(/^## (.+)$/gm, '<h2>$1</h2>');
+    html = html.replace(/^# (.+)$/gm, '<h1>$1</h1>');
+    html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+    html = html.replace(/\*(.+?)\*/g, '<em>$1</em>');
+
+    // Unordered lists
+    html = html.replace(/^- (.+)$/gm, '<li>$1</li>');
+    html = html.replace(/(<li>.*<\/li>\n?)+/g, function(m) { return '<ul>' + m + '</ul>'; });
+
+    // Ordered lists
+    html = html.replace(/^\d+\. (.+)$/gm, '<li>$1</li>');
+
+    // Paragraphs
+    const paras = html.split('\n\n');
+    html = paras.map(function(p) {
+        p = p.trim();
+        if (!p) return '';
+        if (p.startsWith('<h') || p.startsWith('<ul') || p.startsWith('<ol')) return p;
+        if (p.startsWith('<li')) return '<ul>' + p + '</ul>';
+        return '<p>' + p.replace(/\n/g, '<br>') + '</p>';
+    }).join('\n');
+
+    preview.innerHTML = html;
+
+    // Word count
+    const wc = text.trim().split(/\s+/).filter(function(w) { return w.length > 0; }).length;
+    document.getElementById('articleWC').textContent = wc + ' slow';
+    document.getElementById('articleActions').style.display = 'flex';
+    document.querySelectorAll('.opt-btn').forEach(function(b) { b.disabled = false; });
+}
+
+// ── Validation ──
+function showValidation(v) {
+    document.getElementById('qualityCard').style.display = '';
+    const score = v.score || v.validation_score || 0;
+    const badge = document.getElementById('scoreBadge');
+    badge.textContent = score + '/100';
+    badge.style.background = score >= 80 ? 'var(--gnd)' : score >= 60 ? 'var(--yld)' : 'var(--rdd)';
+    badge.style.color = score >= 80 ? 'var(--gn)' : score >= 60 ? 'var(--yl)' : 'var(--rd)';
+    document.getElementById('qualityFill').style.width = score + '%';
+    document.getElementById('qualityFill').style.background = score >= 80 ? 'var(--gn)' : score >= 60 ? 'var(--yl)' : 'var(--rd)';
+    const det = document.getElementById('validationDetails');
+    let html = '';
+    if (v.errors && v.errors.length) html += '<div style="color:var(--rd);margin-bottom:4px">Errors: ' + v.errors.map(function(e) { return esc(e.type || e.message || JSON.stringify(e)); }).join(', ') + '</div>';
+    if (v.warnings && v.warnings.length) html += '<div style="color:var(--yl);margin-bottom:4px">Warnings: ' + v.warnings.map(function(w) { return esc(w.type || w.message || JSON.stringify(w)); }).join(', ') + '</div>';
+    if (v.passed && v.passed.length) html += '<div style="color:var(--gn)">Passed: ' + v.passed.join(', ') + '</div>';
+    det.innerHTML = html;
+}
+
+// ── Workflow ──
+async function startWorkflow() {
+    const kw = document.getElementById('keyword').value.trim();
+    if (!kw) { alert('Wpisz haslo glowne'); return; }
+
+    const apiKey = getApiKey();
+    if (!apiKey) {
+        alert('Wpisz klucz API w sekcji ustawien na dole panelu bocznego');
+        return;
+    }
+
+    resetSteps();
+    articleText = '';
+    document.getElementById('articlePreview').innerHTML = '<div class="empty-state"><div class="icon">&#128196;</div><p>Generowanie w toku...</p></div>';
+    document.getElementById('articleActions').style.display = 'none';
+    document.getElementById('qualityCard').style.display = 'none';
+    document.getElementById('btnStart').disabled = true;
+    document.getElementById('btnStop').style.display = 'block';
+    switchTab('workflow');
+    log('Starting workflow for: ' + kw);
+
+    try {
+        // Step 0: S1 Analysis
+        setStepRunning(0, 7, 'S1 Analysis (SERP + n-gramy)');
         log('Running S1 analysis...');
 
-        const s1Resp=await fetch('/api/s1_analysis',{
-            method:'POST',
-            headers:{'Content-Type':'application/json','Authorization':'Bearer '+getApiKey()},
-            body:JSON.stringify({main_keyword:kw})
+        const s1Resp = await fetch('/api/s1_analysis', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + apiKey },
+            body: JSON.stringify({ main_keyword: kw })
         });
-        if(!s1Resp.ok){const e=await s1Resp.json();throw new Error(e.detail||'S1 failed')}
-        s1Data=await s1Resp.json();
-        updateStep(0,'done',`${s1Data.summary?.total_sources||0} źródeł, ${(s1Data.ngrams||[]).length} n-gramów`);
-        log('S1 done: '+JSON.stringify(s1Data.summary),'ok');
+        if (!s1Resp.ok) { const e = await s1Resp.json(); throw new Error(e.detail || 'S1 failed'); }
+        s1Data = await s1Resp.json();
+        setStepDone(0, {});
+        pipelineSteps[0].detail = (s1Data.summary ? s1Data.summary.total_sources || 0 : 0) + ' zrodel, ' + (s1Data.ngrams || []).length + ' n-gramow';
+        renderSteps();
+        log('S1 done: ' + (s1Data.summary ? JSON.stringify(s1Data.summary) : 'ok'), 'ok');
         renderS1(s1Data);
 
-        if(mode==='s1_only'){
-            log('Mode: S1 only — done','ok');
+        if (mode === 's1_only') {
+            log('Mode: S1 only - done', 'ok');
             switchTab('s1');
-            document.getElementById('btnStart').disabled=false;
-            document.getElementById('btnStop').style.display='none';
+            cleanup();
             return;
         }
 
-        // Step 2+: Article pipeline via SSE
-        updateStep(1,'running','Generowanie mapy rozmieszczeń...');
+        // Steps 1+: Article pipeline via SSE
         log('Starting article pipeline...');
 
-        const startResp=await fetch('/api/start',{
-            method:'POST',
-            headers:{'Content-Type':'application/json','Authorization':'Bearer '+getApiKey()},
-            body:JSON.stringify({main_keyword:kw, s1_data:s1Data, engine:engine})
+        const body = {
+            main_keyword: kw,
+            s1_data: s1Data,
+            engine: engine
+        };
+        // Add optional H2 structure and keywords if provided
+        const h2Val = document.getElementById('h2Input').value.trim();
+        const kwVal = document.getElementById('kwInput').value.trim();
+        if (h2Val) body.h2_structure = h2Val.split('\n').filter(function(l) { return l.trim(); });
+        if (kwVal) body.extra_keywords = kwVal.split('\n').filter(function(l) { return l.trim(); });
+
+        const startResp = await fetch('/api/start', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + apiKey },
+            body: JSON.stringify(body)
         });
-        if(!startResp.ok){const e=await startResp.json();throw new Error(e.detail||'Start failed')}
-        const startData=await startResp.json();
-        jobId=startData.job_id;
-        log('Job started: '+jobId);
+        if (!startResp.ok) { const e = await startResp.json(); throw new Error(e.detail || 'Start failed'); }
+        const startData = await startResp.json();
+        jobId = startData.job_id;
+        log('Job started: ' + jobId);
 
         // SSE streaming
-        es=new EventSource('/api/stream/'+jobId);
-        es.onmessage=function(e){
-            try{
-                const d=JSON.parse(e.data);
-                if(d.event==='step_start'){
-                    const stepIdx=Math.min(d.step, STEPS.length-1);
-                    updateStep(stepIdx,'running',d.label||'...');
-                    log('Step '+d.step+': '+d.label);
+        es = new EventSource('/api/stream/' + jobId);
+
+        es.onmessage = function(e) {
+            try {
+                const d = JSON.parse(e.data);
+
+                if (d.event === 'step_start') {
+                    setStepRunning(d.step, d.total || null, d.label || null);
+                    log('Step ' + d.step + ': ' + (d.label || ''));
                 }
-                else if(d.event==='step_done'){
-                    const stepIdx=Math.min(d.step, STEPS.length-1);
-                    const wc=d.data?.word_count;
-                    updateStep(stepIdx,'done',wc?wc+' słów':'done');
-                    log('Step '+d.step+' done'+(wc?' ('+wc+' words)':''),'ok');
+                else if (d.event === 'step_done') {
+                    setStepDone(d.step, d.data || {});
+                    const wc = d.data ? d.data.word_count : null;
+                    log('Step ' + d.step + ' done' + (wc ? ' (' + wc + ' slow)' : ''), 'ok');
                 }
-                else if(d.event==='article_assembled'){
-                    renderArticle(d.data.full_text);
-                    log('Article assembled: '+d.data.total_words+' words','ok');
+                else if (d.event === 'article_assembled') {
+                    if (d.data && d.data.full_text) {
+                        renderArticle(d.data.full_text);
+                    }
+                    log('Article assembled: ' + (d.data ? d.data.total_words : '?') + ' slow', 'ok');
                     switchTab('article');
                 }
-                else if(d.event==='complete'){
-                    if(d.data?.validation_score!==undefined) showValidation(d.data);
-                    log('Pipeline complete! Score: '+(d.data?.validation_score||'?'),'ok');
+                else if (d.event === 'complete') {
+                    if (d.data) {
+                        if (d.data.full_text) renderArticle(d.data.full_text);
+                        if (d.data.validation_score !== undefined || d.data.validation) {
+                            showValidation(d.data.validation || { score: d.data.validation_score });
+                        }
+                    }
+                    // Mark all remaining steps as done
+                    Object.keys(pipelineSteps).forEach(function(k) {
+                        if (pipelineSteps[k].status === 'running' || pipelineSteps[k].status === 'pending') {
+                            pipelineSteps[k].status = 'done';
+                            if (!pipelineSteps[k].detail || pipelineSteps[k].detail === 'W toku...') pipelineSteps[k].detail = 'Gotowe';
+                        }
+                    });
+                    renderSteps();
+                    log('Pipeline complete! Score: ' + (d.data ? (d.data.validation_score || '?') : '?'), 'ok');
                     cleanup();
                 }
-                else if(d.event==='error'){
-                    log('Error: '+(d.data?.message||'unknown'),'err');
+                else if (d.event === 'error') {
+                    const msg = d.data ? d.data.message : 'unknown';
+                    log('Error: ' + msg, 'err');
+                    // Mark running step as error
+                    Object.keys(pipelineSteps).forEach(function(k) {
+                        if (pipelineSteps[k].status === 'running') setStepError(parseInt(k), msg);
+                    });
                     cleanup();
                 }
-                else if(d.event==='stream_end'){
+                else if (d.event === 'stream_end') {
                     cleanup();
                 }
-            }catch(err){log('SSE parse error: '+err,'err')}
+            } catch (err) {
+                log('SSE parse error: ' + err, 'err');
+            }
         };
-        es.onerror=function(){log('SSE connection error','err');cleanup()};
 
-    }catch(err){
-        log('Error: '+err.message,'err');
+        es.onerror = function() {
+            log('SSE connection error', 'err');
+            cleanup();
+        };
+
+    } catch (err) {
+        log('Error: ' + err.message, 'err');
+        // Mark running steps as error
+        Object.keys(pipelineSteps).forEach(function(k) {
+            if (pipelineSteps[k].status === 'running') setStepError(parseInt(k), err.message);
+        });
         cleanup();
     }
 }
 
-function cleanup(){
-    if(es){es.close();es=null}
-    document.getElementById('btnStart').disabled=false;
-    document.getElementById('btnStop').style.display='none';
+function cleanup() {
+    if (es) { es.close(); es = null; }
+    document.getElementById('btnStart').disabled = false;
+    document.getElementById('btnStop').style.display = 'none';
 }
-function stopWorkflow(){log('Stopped by user','warn');cleanup()}
-function getApiKey(){return localStorage.getItem('brajn_api_key')||prompt('Podaj API key:')||''}
 
-async function runOptional(moduleId){
-    if(!articleText){alert('Najpierw wygeneruj artykuł');return}
-    log('Running optional: '+moduleId);
-    try{
-        const resp=await fetch('/api/optional/'+moduleId,{
-            method:'POST',
-            headers:{'Content-Type':'application/json','Authorization':'Bearer '+getApiKey()},
-            body:JSON.stringify({text:articleText,s1_data:s1Data})
+function stopWorkflow() {
+    log('Stopped by user', 'warn');
+    Object.keys(pipelineSteps).forEach(function(k) {
+        if (pipelineSteps[k].status === 'running') {
+            pipelineSteps[k].status = 'error';
+            pipelineSteps[k].detail = 'Przerwane';
+        }
+    });
+    renderSteps();
+    cleanup();
+}
+
+// ── Optional Modules ──
+async function runOptional(moduleId) {
+    if (!articleText) { alert('Najpierw wygeneruj artykul'); return; }
+    const apiKey = getApiKey();
+    if (!apiKey) { alert('Wpisz klucz API'); return; }
+
+    log('Running optional: ' + moduleId);
+    try {
+        const resp = await fetch('/api/optional/' + moduleId, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + apiKey },
+            body: JSON.stringify({ text: articleText, s1_data: s1Data })
         });
-        const data=await resp.json();
-        document.getElementById('optResult').style.display='';
-        document.getElementById('optResultTitle').textContent=moduleId.replace('_',' ').toUpperCase();
-        document.getElementById('optResultBody').textContent=JSON.stringify(data,null,2);
-        log('Optional '+moduleId+' done','ok');
-    }catch(err){log('Optional error: '+err.message,'err')}
+        const data = await resp.json();
+        document.getElementById('optResult').style.display = '';
+        document.getElementById('optResultTitle').textContent = moduleId.replace(/_/g, ' ').toUpperCase();
+        document.getElementById('optResultBody').textContent = JSON.stringify(data, null, 2);
+        log('Optional ' + moduleId + ' done', 'ok');
+    } catch (err) {
+        log('Optional error: ' + err.message, 'err');
+    }
 }
 
-async function exportArticle(fmt){
-    if(!jobId){alert('Brak artykułu');return}
-    window.open('/api/export/'+jobId+'/'+fmt,'_blank');
-}
-function copyArticle(){
-    navigator.clipboard.writeText(articleText).then(()=>log('Skopiowano do schowka','ok'));
+// ── Export ──
+async function exportArticle(fmt) {
+    if (!jobId && !articleText) { alert('Brak artykulu'); return; }
+    if (jobId) {
+        window.open('/api/export/' + jobId + '/' + fmt, '_blank');
+    } else if (fmt === 'txt') {
+        downloadText(articleText, 'article.txt', 'text/plain');
+    } else if (fmt === 'html') {
+        const html = document.getElementById('articlePreview').innerHTML;
+        downloadText(html, 'article.html', 'text/html');
+    }
 }
 
-// Init
-initSteps();
-(async()=>{try{const r=await fetch('/health');if(r.ok){const d=await r.json();document.getElementById('vBadge').textContent='v'+d.version}}catch(e){}})();
+function downloadText(text, filename, mime) {
+    const blob = new Blob([text], { type: mime });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(url);
+}
+
+function copyArticle() {
+    navigator.clipboard.writeText(articleText).then(function() { log('Skopiowano do schowka', 'ok'); });
+}
+
+// ── Init ──
+initApiKey();
+
+// Fetch version
+(async function() {
+    try {
+        const r = await fetch('/health');
+        if (r.ok) {
+            const d = await r.json();
+            if (d.version) document.getElementById('vBadge').textContent = 'v' + d.version;
+        }
+    } catch (e) {}
+})();
+
+// Keyboard shortcut: Enter in keyword field starts workflow
+document.getElementById('keyword').addEventListener('keydown', function(e) {
+    if (e.key === 'Enter' && !document.getElementById('btnStart').disabled) {
+        startWorkflow();
+    }
+});
 </script>
 </body>
 </html>
