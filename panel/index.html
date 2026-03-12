@@ -252,6 +252,7 @@
                 <div class="tab on" data-tab="workflow" onclick="switchTab('workflow')">Workflow</div>
                 <div class="tab" data-tab="s1" onclick="switchTab('s1')">Analiza S1</div>
                 <div class="tab" data-tab="article" onclick="switchTab('article')">Artykul</div>
+                <div class="tab" data-tab="h2plan" onclick="switchTab('h2plan')">Plan H2</div>
                 <div class="tab" data-tab="prompts" onclick="switchTab('prompts')">Dane wsadowe</div>
                 <div class="tab" data-tab="optional" onclick="switchTab('optional')">Moduly opcjonalne</div>
             </div>
@@ -306,6 +307,15 @@
             </div>
 
             <!-- ═══ PROMPTS / INPUT DATA TAB ═══ -->
+            <!-- ═══ PLAN H2 TAB ═══ -->
+            <div class="tab-content" id="tab-h2plan">
+                <div id="h2planEmpty" style="padding:60px 0;text-align:center;color:var(--mg)">
+                    <div style="font-size:48px;margin-bottom:12px">&#128196;</div>
+                    <p style="font-size:14px">Plan H2 pojawi się po Step 3 (generowanie przez Claude)</p>
+                </div>
+                <div id="h2planContent" style="display:none;padding:16px"></div>
+            </div>
+
             <div class="tab-content" id="tab-prompts">
                 <div id="promptsEmpty" class="empty-state" style="padding:60px 0">
                     <div class="icon">&#128196;</div>
@@ -506,6 +516,7 @@ function setStepDone(step, data) {
         if (data.word_count) details.push(data.word_count + ' slow');
         if (data.ymyl !== undefined) details.push('YMYL: ' + (data.ymyl ? 'TAK' : 'NIE'));
         if (data.variants_count) details.push(data.variants_count + ' wariantow');
+        if (data.h2_count !== undefined) { details.push(data.h2_count + ' sekcji'); renderH2Plan(data); }
         if (data.pre_batch_keys) details.push(data.pre_batch_keys + ' kluczy');
         if (data.validation) {
             const vs = data.validation.score || data.validation.validation_score;
@@ -1229,6 +1240,89 @@ function toggleCard(id) {
     const hidden = body.style.display === 'none';
     body.style.display = hidden ? '' : 'none';
     if (ico) ico.textContent = hidden ? '▼' : '▶';
+}
+
+// ── CEL badge colors ──
+const CEL_COLORS = {
+    'definicja':    '#4a90d9',
+    'mechanizm':    '#e67e22',
+    'konsekwencje': '#c0392b',
+    'procedura':    '#27ae60',
+    'porównanie':   '#8e44ad',
+    'porada':       '#16a085',
+};
+
+function renderH2Plan(data) {
+    const plan = data.h2_plan;
+    if (!plan || !plan.length) return;
+
+    document.getElementById('h2planEmpty').style.display = 'none';
+    const container = document.getElementById('h2planContent');
+    container.style.display = 'block';
+
+    // If plan is just strings (fallback), render simple list
+    const isRich = plan.length && typeof plan[0] === 'object';
+
+    let html = '<div style="display:flex;flex-direction:column;gap:10px">';
+
+    plan.forEach(function(item, i) {
+        const heading  = isRich ? (item.heading || '') : item;
+        const cel      = isRich ? (item.cel || '') : '';
+        const encje    = isRich ? (item.encje_do_pokrycia || []) : [];
+        const paa      = isRich ? (item.paa_odpowiada_na || []) : [];
+        const lancuch  = isRich ? (item.lancuch_kauzalny || null) : null;
+        const uzasadnienie = isRich ? (item.uzasadnienie || '') : '';
+        const score    = isRich ? (item.score_bazowy || null) : null;
+
+        const celColor = CEL_COLORS[cel] || 'var(--mg)';
+
+        html += '<div style="background:var(--s1);border:1px solid var(--b1);border-radius:8px;padding:14px 16px">';
+
+        // Row 1: number + heading + cel badge + score
+        html += '<div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">';
+        html += '<div style="width:24px;height:24px;border-radius:50%;background:var(--orange);color:#000;font-weight:700;font-size:12px;display:flex;align-items:center;justify-content:center;flex-shrink:0">' + (i+1) + '</div>';
+        html += '<div style="font-size:14px;font-weight:600;color:var(--white);flex:1">' + esc(heading) + '</div>';
+        if (cel) html += '<div style="padding:2px 8px;border-radius:12px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;background:' + celColor + '22;color:' + celColor + ';border:1px solid ' + celColor + '44">' + esc(cel) + '</div>';
+        if (score !== null) html += '<div style="font-size:11px;color:var(--mg);white-space:nowrap">score: <span style="color:var(--orange)">' + score.toFixed ? score.toFixed(2) : score + '</span></div>';
+        html += '</div>';
+
+        // Row 2: meta chips
+        if (encje.length || paa.length || lancuch) {
+            html += '<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:' + (uzasadnienie ? '8' : '0') + 'px">';
+            encje.forEach(function(e) {
+                html += '<span style="background:rgba(74,144,217,.12);border:1px solid rgba(74,144,217,.3);color:#4a90d9;border-radius:4px;padding:1px 6px;font-size:11px">🏷 ' + esc(e) + '</span>';
+            });
+            paa.forEach(function(q) {
+                html += '<span style="background:rgba(39,174,96,.1);border:1px solid rgba(39,174,96,.25);color:#27ae60;border-radius:4px;padding:1px 6px;font-size:11px">❓ ' + esc(q) + '</span>';
+            });
+            if (lancuch) {
+                html += '<span style="background:rgba(230,126,34,.1);border:1px solid rgba(230,126,34,.25);color:#e67e22;border-radius:4px;padding:1px 6px;font-size:11px">⛓ ' + esc(lancuch) + '</span>';
+            }
+            html += '</div>';
+        }
+
+        // Row 3: uzasadnienie
+        if (uzasadnienie) {
+            html += '<div style="font-size:11px;color:var(--mg);font-style:italic;border-top:1px solid var(--b1);padding-top:6px">' + esc(uzasadnienie) + '</div>';
+        }
+
+        html += '</div>';
+    });
+
+    html += '</div>';
+
+    // PAA to FAQ notice
+    if (data.paa_do_faq && data.paa_do_faq.length) {
+        html += '<div style="margin-top:16px;background:var(--s1);border:1px solid var(--b1);border-radius:8px;padding:12px 16px">';
+        html += '<div style="font-size:11px;font-weight:700;color:var(--mg);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">❓ PAA → FAQ (' + data.paa_do_faq.length + ' pytań)</div>';
+        html += '<div style="display:flex;flex-wrap:wrap;gap:6px">';
+        data.paa_do_faq.forEach(function(q) {
+            html += '<span style="background:rgba(255,255,255,.04);border:1px solid var(--b1);color:var(--lg);border-radius:4px;padding:2px 8px;font-size:11px">' + esc(q) + '</span>';
+        });
+        html += '</div></div>';
+    }
+
+    container.innerHTML = html;
 }
 
 function renderPrompts(data) {

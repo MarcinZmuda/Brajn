@@ -82,6 +82,87 @@ Liczba sekcji H2: {{LICZBA_H2}}"""
 # ══════════════════════════════════════════════════════════════
 # 2. PRE-BATCH PROMPT — mapa rozmieszczeń, nie generuje tekstu
 # ══════════════════════════════════════════════════════════════
+
+# ══════════════════════════════════════════════════════════════
+# 2. H2 PLAN PROMPT
+# Wykonywany po Search Variants, przed Pre-Batch
+# Generuje plan artykułu jako JSON
+# ══════════════════════════════════════════════════════════════
+H2_PLAN_PROMPT = """Jesteś strategiem treści SEO. Twoim zadaniem jest zbudowanie planu artykułu dla hasła "{{HASLO_GLOWNE}}".
+
+NIE pisz treści. Zwróć wyłącznie JSON z planem.
+
+DANE WEJŚCIOWE:
+
+Scored H2 od konkurencji (text + score + powód):
+{{H2_SCORED_CANDIDATES}}
+
+Must-cover encje (muszą być pokryte w artykule):
+{{ENCJE_KRYTYCZNE}}
+
+Entity salience (które encje są "o czym jest temat", score 0-1):
+{{ENTITY_SALIENCE}}
+
+Top n-gramy (frazy dominujące u konkurencji):
+{{NGRAMY_TOP10}}
+
+Łańcuchy kauzalne (A→B→C — mechanizmy do wyjaśnienia):
+{{LANCUCHY_KAUZALNE}}
+
+PAA questions (pytania z Google):
+{{PAA_QUESTIONS}}
+
+Related searches:
+{{RELATED_SEARCHES}}
+
+Luki treściowe (czego brakuje u konkurencji):
+{{CONTENT_GAPS}}
+
+Jak konkurenci organizują artykuł (top 5, ich sekcje H2):
+{{COMPETITOR_SECTIONS}}
+
+Intencja wyszukiwania: {{SEARCH_INTENT}}
+YMYL kategoria: {{YMYL_KLASYFIKACJA}}
+Docelowa długość artykułu: {{DLUGOSC_CEL}} słów
+
+ZADANIE:
+
+Zbuduj plan 5-8 sekcji H2 który:
+1. Naturalnie prowadzi czytelnika — od pytania/problemu przez mechanizm do rozwiązania
+2. Pokrywa H2 z wysokim score (must_have obowiązkowo, high_priority jeśli pasuje tematycznie)
+3. Uwzględnia must-cover encje — każda musi znaleźć się w przynajmniej jednej sekcji
+4. Wplata łańcuchy kauzalne w sekcje tematycznie pasujące
+5. Odpowiada na PAA questions — albo bezpośrednio w sekcji H2 albo w FAQ
+6. Wypełnia luki których nie ma konkurencja (content_gaps) jeśli są wartościowe
+7. Nie kopiuje mechanicznie top scored H2 — możesz łączyć, dzielić lub przeformułować
+
+ZASADY:
+- Każda sekcja H2 powinna mieć inny cel (definicja / mechanizm / konsekwencje / procedura / porównanie / porada)
+- Nie twórz sekcji które będą się powtarzać treściowo
+- Dla YMYL=prawo: zacznij od definicji/progu, potem konsekwencje, potem procedury, na końcu porady
+- Dla YMYL=zdrowie: zacznij od objawów/mechanizmu, potem diagnoza, leczenie, profilaktyka
+- Dla intencja=transakcyjna: sekcje porównawcze i "jak wybrać" przed FAQ; dla informacyjna: mechanizm i wyjaśnienia na początku
+- Przejrzyj competitor_sections — jeśli wszyscy mają tę samą sekcję której Ty nie masz, rozważ dodanie; jeśli mają coś zbędnego, pomiń
+- Pierwsze 2 sekcje muszą odpowiadać na najczęstsze pytanie czytelnika
+
+Zwróć JSON:
+{
+  "h2_plan": [
+    {
+      "heading": "Tekst nagłówka H2",
+      "cel": "definicja|mechanizm|konsekwencje|procedura|porównanie|porada",
+      "encje_do_pokrycia": ["encja1", "encja2"],
+      "paa_odpowiada_na": ["pytanie z PAA jeśli ta sekcja je pokrywa"],
+      "lancuch_kauzalny": "A→B→C jeśli dotyczy, null jeśli nie",
+      "score_bazowy": 0.0,
+      "uzasadnienie": "dlaczego ta sekcja jest w planie"
+    }
+  ],
+  "paa_do_faq": ["pytania PAA które nie weszły do H2 — idą do FAQ"],
+  "uwagi": "opcjonalne uwagi do orchestratora"
+}
+"""
+
 PRE_BATCH_PROMPT = """Na podstawie poniższych danych wejściowych zbuduj mapę rozmieszczeń encji i fraz dla artykułu "{{HASLO_GLOWNE}}".
 NIE generuj tekstu artykułu. Zwróć wyłącznie JSON.
 

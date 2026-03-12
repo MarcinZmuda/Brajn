@@ -158,6 +158,7 @@ def run_s1_analysis(
                 "title": src.get("title", ""),
                 "word_count": src.get("word_count", 0),
                 "h2_count": len(src.get("h2_structure", [])),
+                "h2_structure": src.get("h2_structure", [])[:12],
                 "first_paragraph": (src.get("content", "") or "")[:400].strip(),
             }
             for src in sources

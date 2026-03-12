@@ -14,6 +14,7 @@ from typing import Generator
 from src.common.llm import claude_call
 from src.article_pipeline.prompts import (
     SYSTEM_PROMPT,
+    H2_PLAN_PROMPT,
     PRE_BATCH_PROMPT,
     BATCH_0_PROMPT,
     BATCH_N_PROMPT,
@@ -74,9 +75,12 @@ class ArticleOrchestrator:
         self.validation_result = None
         self.ymyl_result = None
         self.search_variants_result = None
+        # Logging for "Dane wsadowe" panel tab
+        self.prompt_log = []   # [{label, system, user}]
+        self.input_variables = {}  # snapshot after all variables are ready
 
-    def _llm_call(self, system_prompt: str, user_prompt: str, max_tokens: int = 4000) -> str:
-        """Make LLM call with the configured engine."""
+    def _llm_call(self, system_prompt: str, user_prompt: str, max_tokens: int = 4000, label: str = "") -> str:
+        """Make LLM call with the configured engine. Logs prompt for Dane wsadowe tab."""
         text, usage = claude_call(
             system_prompt=system_prompt,
             user_prompt=user_prompt,
@@ -84,6 +88,14 @@ class ArticleOrchestrator:
             max_tokens=max_tokens,
             temperature=0.7,
         )
+        # Log prompt for panel
+        if label:
+            self.prompt_log.append({
+                "label": label,
+                "system": system_prompt[:2000] + ("..." if len(system_prompt) > 2000 else ""),
+                "user": user_prompt[:3000] + ("..." if len(user_prompt) > 3000 else ""),
+                "tokens_out": len(text.split()),
+            })
         return text
 
     def run_ymyl_detection(self) -> dict:
@@ -115,6 +127,137 @@ class ArticleOrchestrator:
         )
         return self.search_variants_result
 
+    def run_h2_plan(self) -> list:
+        """
+        Step 2.5: Generate H2 article plan using Claude.
+        Uses scored H2 candidates, entities, ngrams, PAA, causal chains.
+        Updates _h2_plan_list and PLAN_ARTYKULU/PLAN_H2 variables.
+        """
+        import json
+
+        s1 = self.s1_data
+        keyword = self.variables.get("HASLO_GLOWNE", "")
+
+        # Build input data for prompt
+        h2_scored = s1.get("h2_scored_candidates") or {}
+        candidates = (h2_scored.get("must_have") or []) + (h2_scored.get("high_priority") or []) + (h2_scored.get("optional") or [])
+        h2_candidates_str = json.dumps(
+            [{"text": c.get("text"), "score": c.get("score"), "reason": c.get("reason")} for c in candidates[:20]],
+            ensure_ascii=False, indent=2
+        )
+
+        ngrams = s1.get("ngrams") or []
+        ngrams_top = [n.get("ngram") for n in sorted(ngrams, key=lambda x: x.get("weight", 0), reverse=True)[:10] if isinstance(n, dict)]
+
+        entity_seo = s1.get("entity_seo") or {}
+        must_cover = entity_seo.get("must_cover_concepts") or []
+
+        causal = s1.get("causal_triplets") or {}
+        chains = causal.get("chains") or causal.get("causal_chains") or []
+
+        serp = s1.get("serp_analysis") or {}
+        paa = [q.get("question", q) if isinstance(q, dict) else q for q in (serp.get("paa_questions") or [])[:8]]
+        related = [r.get("query", r.get("text", r)) if isinstance(r, dict) else r for r in (serp.get("related_searches") or [])[:8]]
+
+        gaps = s1.get("content_gaps") or {}
+        gaps_list = (gaps.get("suggested_new_h2s") or []) + (gaps.get("paa_unanswered") or [])
+
+        # ── entity_salience — które encje są "o czym jest temat" ──
+        entity_salience_raw = entity_seo.get("entity_salience") or []
+        entity_salience = [
+            {"entity": e.get("entity_text") or e.get("entity", ""),
+             "salience": e.get("salience_score") or e.get("salience", 0),
+             "type": e.get("type", "")}
+            for e in entity_salience_raw[:12]
+            if (e.get("salience_score") or e.get("salience", 0)) > 0.1
+        ]
+
+        # ── competitor_sections — jak top 5 konkurentów organizuje artykuł ──
+        competitors_raw = (self._s1_full or {}).get("competitors") or s1.get("competitors") or []
+        competitor_sections = [
+            {"url": c.get("url", "")[:60],
+             "h2s": c.get("h2_structure", [])[:8]}
+            for c in competitors_raw[:5]
+            if c.get("h2_structure")
+        ]
+
+        # ── search_intent — heurystyka na podstawie hasła + related searches ──
+        keyword_lower = keyword.lower()
+        transactional_signals = ["kup", "cena", "ile kosztuje", "sklep", "oferta",
+                                  "zamów", "ranking", "polecany", "najlepszy", "porównanie"]
+        intent_score = sum(1 for s in transactional_signals if s in keyword_lower)
+        intent_score += sum(
+            1 for r in related[:8]
+            for s in transactional_signals
+            if isinstance(r, str) and s in r.lower()
+        )
+        search_intent = "transakcyjna" if intent_score >= 2 else "informacyjna"
+
+        prompt_vars = {
+            "HASLO_GLOWNE": keyword,
+            "H2_SCORED_CANDIDATES": h2_candidates_str,
+            "ENCJE_KRYTYCZNE": json.dumps(must_cover[:15], ensure_ascii=False),
+            "ENTITY_SALIENCE": json.dumps(entity_salience, ensure_ascii=False),
+            "NGRAMY_TOP10": json.dumps(ngrams_top, ensure_ascii=False),
+            "LANCUCHY_KAUZALNE": json.dumps(chains[:6], ensure_ascii=False),
+            "PAA_QUESTIONS": json.dumps(paa, ensure_ascii=False),
+            "RELATED_SEARCHES": json.dumps(related, ensure_ascii=False),
+            "CONTENT_GAPS": json.dumps(gaps_list[:6], ensure_ascii=False),
+            "COMPETITOR_SECTIONS": json.dumps(competitor_sections, ensure_ascii=False),
+            "SEARCH_INTENT": search_intent,
+            "YMYL_KLASYFIKACJA": self.variables.get("YMYL_KLASYFIKACJA", "none"),
+            "DLUGOSC_CEL": self.variables.get("DLUGOSC_CEL", "2000"),
+        }
+
+        user = fill_template(H2_PLAN_PROMPT, prompt_vars)
+        response = self._llm_call(
+            system="Jesteś strategiem treści SEO. Zwróć wyłącznie poprawny JSON, bez komentarzy.",
+            user=user,
+            max_tokens=2000,
+            label="h2_plan"
+        )
+
+        # Parse response
+        h2_plan = []
+        paa_to_faq = []
+        try:
+            text = response.strip()
+            if "```" in text:
+                text = text.split("```")[1]
+                if text.startswith("json"):
+                    text = text[4:]
+            parsed = json.loads(text.strip())
+            h2_plan = [h["heading"] for h in parsed.get("h2_plan", []) if h.get("heading")]
+            paa_to_faq = parsed.get("paa_do_faq", [])
+            self._h2_plan_full = parsed.get("h2_plan", [])  # full objects for panel
+            self._paa_to_faq = paa_to_faq
+            print(f"[H2_PLAN] ✅ Claude generated {len(h2_plan)} sections")
+        except Exception as e:
+            print(f"[H2_PLAN] ⚠️ Parse error: {e} — falling back to scored candidates")
+            h2_plan = [c.get("text") for c in candidates[:8] if c.get("text")]
+
+        if not h2_plan:
+            kw = keyword or "Temat"
+            h2_plan = [f"Czym jest {kw}", f"Jak działa {kw}", f"Konsekwencje: {kw}", f"FAQ: {kw}"]
+
+        # Update variables
+        self.variables["_h2_plan_list"] = h2_plan[:8]
+        self.variables["PLAN_ARTYKULU"] = "\n".join(f"{i+1}. {h}" for i, h in enumerate(h2_plan[:8]))
+        self.variables["PLAN_H2"] = json.dumps(h2_plan[:8], ensure_ascii=False)
+        self.variables["LICZBA_H2"] = str(len(h2_plan[:8]))
+
+        # PAA to FAQ
+        if paa_to_faq:
+            existing = self.variables.get("PAA_BEZ_ODPOWIEDZI", "[]")
+            try:
+                existing_list = json.loads(existing)
+            except Exception:
+                existing_list = []
+            merged = list({q: None for q in paa_to_faq + existing_list}.keys())
+            self.variables["PAA_BEZ_ODPOWIEDZI"] = json.dumps(merged, ensure_ascii=False)
+
+        return h2_plan[:8]
+
     def run_pre_batch(self) -> dict:
         """
         Step 1: Generate entity/phrase placement map.
@@ -123,7 +266,7 @@ class ArticleOrchestrator:
         system = fill_template(SYSTEM_PROMPT, self.variables)
         user = fill_template(PRE_BATCH_PROMPT, self.variables)
 
-        response = self._llm_call(system, user, max_tokens=3000)
+        response = self._llm_call(system, user, max_tokens=3000, label="pre_batch")
         parsed = _safe_json_parse(response)
 
         if not parsed:
@@ -190,7 +333,7 @@ class ArticleOrchestrator:
         system = fill_template(SYSTEM_PROMPT, batch_vars)
         user = fill_template(BATCH_0_PROMPT, batch_vars)
 
-        text = self._llm_call(system, user, max_tokens=2000)
+        text = self._llm_call(system, user, max_tokens=2000, label="batch_0")
 
         # Validate
         issues = check_forbidden_phrases(text)
@@ -236,7 +379,7 @@ class ArticleOrchestrator:
         system = fill_template(SYSTEM_PROMPT, batch_vars)
         user = fill_template(BATCH_N_PROMPT, batch_vars)
 
-        text = self._llm_call(system, user, max_tokens=3000)
+        text = self._llm_call(system, user, max_tokens=3000, label=f"batch_{n}")
 
         # Validate
         issues = check_forbidden_phrases(text)
@@ -280,7 +423,7 @@ class ArticleOrchestrator:
         system = fill_template(SYSTEM_PROMPT, batch_vars)
         user = fill_template(BATCH_FAQ_PROMPT, batch_vars)
 
-        text = self._llm_call(system, user, max_tokens=3000)
+        text = self._llm_call(system, user, max_tokens=3000, label="batch_faq")
         self.batch_texts.append(text)
         return text
 
@@ -321,9 +464,10 @@ class ArticleOrchestrator:
         Run the complete article generation pipeline with SSE-compatible events.
         Yields status events for each step.
         """
-        h2_count = len(self.variables.get("_h2_plan_list", []))
-        # Steps: YMYL + variants + pre-batch + batch0 + H2s + FAQ + post-processing
-        total_steps = 6 + h2_count
+        # H2 plan is unknown before Claude generates it — estimate 6 sections, update after
+        h2_count_est = 6
+        # Steps: YMYL + variants + H2 plan + pre-batch + batch0 + H2s + FAQ + post-processing
+        total_steps = 6 + h2_count_est
 
         # Step 1: YMYL detection
         yield {"event": "step_start", "step": 1, "total": total_steps, "label": "YMYL: detekcja kategorii"}
@@ -335,15 +479,29 @@ class ArticleOrchestrator:
         variants = self.run_search_variants()
         yield {"event": "step_done", "step": 2, "data": {"variants_count": sum(len(v) for v in variants.values())}}
 
-        # Step 3: Pre-batch
-        yield {"event": "step_start", "step": 3, "total": total_steps, "label": "Pre-Batch: mapa rozmieszczeń"}
-        self.run_pre_batch()
-        yield {"event": "step_done", "step": 3, "data": {"pre_batch_keys": list((self.pre_batch_map or {}).keys())}}
+        # Step 3: H2 plan — Claude generates article structure based on scored candidates
+        yield {"event": "step_start", "step": 3, "total": total_steps, "label": "Plan H2: struktura artykułu"}
+        h2_plan = self.run_h2_plan()
+        h2_count = len(h2_plan)
+        total_steps = 6 + h2_count  # recalculate with actual H2 count
+        yield {"event": "step_done", "step": 3, "data": {
+            "h2_plan": getattr(self, "_h2_plan_full", h2_plan),
+            "paa_do_faq": getattr(self, "_paa_to_faq", []),
+            "h2_count": h2_count,
+        }}
 
-        # Step 4: Batch 0
-        yield {"event": "step_start", "step": 4, "total": total_steps, "label": "Batch 0: H1 + wstęp"}
+        # Snapshot all input variables after H2 plan is ready
+        self.input_variables = {k: v for k, v in self.variables.items() if not k.startswith("_")}
+
+        # Step 4: Pre-batch
+        yield {"event": "step_start", "step": 4, "total": total_steps, "label": "Pre-Batch: mapa rozmieszczeń"}
+        self.run_pre_batch()
+        yield {"event": "step_done", "step": 4, "data": {"pre_batch_keys": list((self.pre_batch_map or {}).keys())}}
+
+        # Step 5: Batch 0
+        yield {"event": "step_start", "step": 5, "total": total_steps, "label": "Batch 0: H1 + wstęp"}
         intro = self.run_batch_0()
-        yield {"event": "step_done", "step": 4, "data": {"text": intro, "word_count": len(intro.split())}}
+        yield {"event": "step_done", "step": 5, "data": {"text": intro, "word_count": len(intro.split())}}
 
         # Steps 5..N: H2 sections
         h2_plan = self.variables.get("_h2_plan_list", [])
@@ -377,4 +535,7 @@ class ArticleOrchestrator:
             "total_words": len(article.split()),
             "validation_score": validation.get("score", 0) if validation else 0,
             "ymyl": self.ymyl_result,
+            "prompt_log": self.prompt_log,
+            "input_variables": self.input_variables,
+            "pre_batch_map": self.pre_batch_map or {},
         }}
