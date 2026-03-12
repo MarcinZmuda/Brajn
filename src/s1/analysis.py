@@ -9,6 +9,20 @@ from src.s1.serp_fetcher import fetch_serp_data
 from src.s1.scraper import scrape_parallel
 from src.s1.ngram_analyzer import analyze_ngrams, score_h2_candidates
 
+# Semantic Embeddings (Gemini Embedding 2) — graceful degradation
+try:
+    from src.s1.semantic_embeddings import (
+        semantic_gap_analysis,
+        semantic_entity_clusters,
+        semantic_h2_ranking,
+        is_available as semantic_available,
+    )
+    _SEMANTIC_AVAILABLE = True
+    print("[S1] 🧠 Semantic embeddings module loaded")
+except ImportError:
+    _SEMANTIC_AVAILABLE = False
+    print("[S1] ⚠️ Semantic embeddings not available")
+
 # Optional modules — graceful degradation
 try:
     from src.s1.entity_extractor import perform_entity_seo_analysis
@@ -198,7 +212,7 @@ def run_s1_analysis(
             print(f"[S1] Causal extraction error: {e}")
             causal_data = {"error": str(e), "status": "FAILED"}
 
-    # Content Gaps
+    # Content Gaps — classic heuristic
     content_gaps_data = None
     if _GAP_ANALYZER_AVAILABLE and sources:
         try:
@@ -212,6 +226,65 @@ def run_s1_analysis(
         except Exception as e:
             print(f"[S1] Gap analysis error: {e}")
             content_gaps_data = {"error": str(e), "status": "FAILED"}
+
+    # ── Semantic Enhancements (Gemini Embedding 2) ──────────────
+    semantic_gaps_data = None
+    semantic_clusters_data = None
+
+    if _SEMANTIC_AVAILABLE and semantic_available():
+        # 1. Semantic Gap Analysis
+        try:
+            paa_strings = [
+                q.get("question", "") if isinstance(q, dict) else str(q)
+                for q in paa_questions if q
+            ]
+            semantic_gaps_data = semantic_gap_analysis(
+                main_keyword=main_keyword,
+                paa_questions=paa_strings,
+                related_searches=[r if isinstance(r, str) else str(r) for r in related_searches],
+                competitor_texts=[s.get("content", "") for s in sources],
+            )
+            # Merge with classic gaps — semantic gaps take priority
+            if content_gaps_data and semantic_gaps_data.get("status") == "OK":
+                content_gaps_data["semantic_gaps"] = semantic_gaps_data.get("all_gaps", [])
+                content_gaps_data["suggested_new_h2s"] = (
+                    semantic_gaps_data.get("suggested_new_h2s", []) or
+                    content_gaps_data.get("suggested_new_h2s", [])
+                )
+                content_gaps_data["total_gaps"] = max(
+                    content_gaps_data.get("total_gaps", 0),
+                    semantic_gaps_data.get("total_gaps", 0),
+                )
+        except Exception as e:
+            print(f"[S1] Semantic gap error: {e}")
+
+        # 2. Semantic Entity Clustering
+        try:
+            all_entity_texts = []
+            if entity_seo_data:
+                all_entity_texts = (
+                    [e.get("text", "") for e in (entity_seo_data.get("entities") or [])[:20]] +
+                    [e.get("text", "") for e in (entity_seo_data.get("concept_entities") or [])[:20]]
+                )
+                all_entity_texts = list(dict.fromkeys(t for t in all_entity_texts if t))
+
+            if len(all_entity_texts) >= 3:
+                semantic_clusters_data = semantic_entity_clusters(
+                    entities=all_entity_texts,
+                    main_keyword=main_keyword,
+                )
+                # Enrich entity_seo with semantic clusters
+                if entity_seo_data and semantic_clusters_data.get("status") == "OK":
+                    entity_seo_data["semantic_clusters"] = semantic_clusters_data.get("clusters", [])
+                    # Override must_cover with semantically ranked list
+                    sem_must = semantic_clusters_data.get("must_cover", [])
+                    sem_should = semantic_clusters_data.get("should_cover", [])
+                    if sem_must:
+                        entity_seo_data["must_cover_concepts"] = sem_must
+                    if sem_should:
+                        entity_seo_data["should_cover_concepts"] = sem_should
+        except Exception as e:
+            print(f"[S1] Semantic clustering error: {e}")
 
     # Build response
     response = {
@@ -241,13 +314,36 @@ def run_s1_analysis(
         },
     }
 
-    # H2 scoring
+    # H2 scoring — semantic first, classic fallback
     try:
-        h2_scored = score_h2_candidates(response, main_keyword)
+        h2_candidates_raw = ngram_result.get("h2_patterns", [])
+        paa_strings = [
+            q.get("question", "") if isinstance(q, dict) else str(q)
+            for q in paa_questions if q
+        ]
+
+        if _SEMANTIC_AVAILABLE and semantic_available() and h2_candidates_raw:
+            h2_scored = semantic_h2_ranking(
+                h2_candidates=h2_candidates_raw[:30],
+                main_keyword=main_keyword,
+                paa_questions=paa_strings,
+                competitor_h2s=h2_candidates_raw,
+            )
+            if h2_scored.get("status") != "OK":
+                raise ValueError("Semantic H2 ranking failed, using fallback")
+        else:
+            h2_scored = score_h2_candidates(response, main_keyword)
+
         if h2_scored and h2_scored.get("all_candidates"):
             response["h2_scored_candidates"] = h2_scored
     except Exception as e:
         print(f"[S1] H2 scoring error: {e}")
+        try:
+            h2_scored = score_h2_candidates(response, main_keyword)
+            if h2_scored and h2_scored.get("all_candidates"):
+                response["h2_scored_candidates"] = h2_scored
+        except Exception:
+            pass
 
     # Firestore save
     if project_id:

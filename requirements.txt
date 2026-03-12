@@ -34,3 +34,6 @@ gunicorn>=23.0.0
 
 # Optional: OpenAI for dual-engine support
 openai>=1.0.0
+-e 
+# Gemini Embedding 2 — multimodal semantic analysis
+google-genai>=1.0.0
