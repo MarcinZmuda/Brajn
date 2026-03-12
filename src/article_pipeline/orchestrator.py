@@ -211,8 +211,8 @@ class ArticleOrchestrator:
 
         user = fill_template(H2_PLAN_PROMPT, prompt_vars)
         response = self._llm_call(
-            system="Jesteś strategiem treści SEO. Zwróć wyłącznie poprawny JSON, bez komentarzy.",
-            user=user,
+            system_prompt="Jesteś strategiem treści SEO. Zwróć wyłącznie poprawny JSON, bez komentarzy.",
+            user_prompt=user,
             max_tokens=2000,
             label="h2_plan"
         )
