@@ -218,6 +218,7 @@ def run_s1_analysis(
         "main_keyword": main_keyword,
         "ngrams": ngram_result["ngrams"],
         "extended_terms": ngram_result["extended_terms"],
+        "h2_patterns": ngram_result["h2_patterns"],
         "semantic_keyphrases": semantic_keyphrases,
         "full_text_sample": full_text_sample,
         "serp_content": full_text_sample,
