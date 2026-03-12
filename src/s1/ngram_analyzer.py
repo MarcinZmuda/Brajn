@@ -70,6 +70,7 @@ def analyze_ngrams(
     lemma_surface_freq = defaultdict(Counter)
     all_text_content = []
     h2_patterns = []
+    h2_source_counter = {}  # h2_lower → set of source urls (for scoring)
 
     # Main sources: scraped pages
     for src_idx, src in enumerate(sources):
@@ -80,6 +81,13 @@ def analyze_ngrams(
         src_h2 = src.get("h2_structure", [])
         if src_h2:
             h2_patterns.extend(src_h2)
+            src_url = src.get("url", f"src_{src_idx}")
+            for h in src_h2:
+                if h:
+                    key = h.strip().lower()
+                    if key not in h2_source_counter:
+                        h2_source_counter[key] = set()
+                    h2_source_counter[key].add(src_url)
         raw_toks, lem_toks = _lemmatize_tokens(nlp, content)
         _build_ngrams_for_source(
             raw_toks, lem_toks,
@@ -213,17 +221,46 @@ def analyze_ngrams(
         extended_terms.sort(key=lambda x: (x["sources_count"], x["weight"]), reverse=True)
         extended_terms = extended_terms[:15]
 
-    unique_h2_patterns = list(dict.fromkeys(h2_patterns))[:60]  # more before cleaning
+    # Build unique H2 list (raw strings, deduped)
+    unique_h2_raw = list(dict.fromkeys(h2_patterns))[:90]  # wide net before cleaning
 
     # ── Data cleaning pass ──
     try:
         from src.s1.data_cleaner import clean_h2_patterns, clean_ngrams
-        unique_h2_patterns = clean_h2_patterns(unique_h2_patterns, main_keyword)[:30]
+        unique_h2_strings = clean_h2_patterns(unique_h2_raw, main_keyword)[:40]
         basic_terms = clean_ngrams(basic_terms, main_keyword)
         extended_terms = clean_ngrams(extended_terms, main_keyword)
-        print(f"[NGRAM] After cleaning: {len(basic_terms)} basic, {len(extended_terms)} extended, {len(unique_h2_patterns)} H2")
+        print(f"[NGRAM] After cleaning: {len(basic_terms)} basic, {len(extended_terms)} extended, {len(unique_h2_strings)} H2")
     except ImportError:
-        unique_h2_patterns = unique_h2_patterns[:30]
+        unique_h2_strings = unique_h2_raw[:30]
+
+    # Build scored H2 dicts with source count
+    # KEY INSIGHT: Nav items (Mapa serwisu, BIP, footer) always appear on exactly 1 page.
+    # Real content H2s repeat across competitors. Min threshold = 2 sources eliminates
+    # all single-page nav garbage without any blacklist.
+    num_sources_total = len(sources) or 1
+    # Dynamic threshold: 2 for small corpora, 3 for 6+ sources
+    MIN_H2_SOURCES = 2 if num_sources_total <= 5 else 3
+    unique_h2_patterns = []
+    seen_h2 = set()
+    for h in unique_h2_strings:
+        key = h.strip().lower()
+        if key in seen_h2:
+            continue
+        seen_h2.add(key)
+        src_count = len(h2_source_counter.get(key, set()))
+        if src_count < MIN_H2_SOURCES:
+            continue  # single-page H2 = nav item, skip
+        unique_h2_patterns.append({
+            "text": h,
+            "count": src_count,
+            "sources_total": num_sources_total,
+            "site_distribution": f"{src_count}/{num_sources_total}",
+        })
+
+    # Sort by count descending
+    unique_h2_patterns.sort(key=lambda x: x["count"], reverse=True)
+    print(f"[NGRAM] H2 after source-count filter (min {MIN_H2_SOURCES}): {len(unique_h2_patterns)} headings")
 
     return {
         "ngrams": basic_terms,
