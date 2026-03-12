@@ -698,11 +698,20 @@ def perform_entity_seo_analysis(
     return {
         "entities": [e.to_dict() for e in entities],
         "concept_entities": concept_entities_list,
+        "topical_entities": concept_entities_list,          # alias for panel
         "topical_summary": topical_entities_data,
         "entity_relationships": [r.to_dict() for r in relationships],
+        "relationships": [r.to_dict() for r in relationships],  # alias for panel
         "topical_coverage": [t.to_dict() for t in topical],
         "entity_salience": salience_data,
         "entity_cooccurrence": cooccurrence_data,
+        "cooccurrence_pairs": cooccurrence_data,            # alias for panel
         "entity_placement": placement_data,
+        "placement_instructions": placement_data,           # alias for panel
+        "must_cover_concepts": placement_data.get("must_cover_concepts", []) if placement_data else [],
+        "should_cover_concepts": [                          # built from topical — medium priority
+            t.get("subtopic", "") for t in [t.to_dict() for t in topical]
+            if t.get("priority") in ("MEDIUM", "LOW") and t.get("subtopic")
+        ][:15],
         "entity_seo_summary": summary
     }
