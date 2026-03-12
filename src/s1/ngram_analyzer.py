@@ -273,12 +273,79 @@ def analyze_ngrams(
 def score_h2_candidates(s1_data: dict, main_keyword: str = "") -> dict:
     """
     Score H2 candidates from S1 response data.
-    Simple business logic: competitor count, PAA unanswered, content gaps.
+
+    Base score: competitor count (0.085 per source, max 0.85)
+    Semantic boosts (additive, capped at 1.0):
+      +0.12  ngram overlap     — H2 contains high-weight ngrams from competitors
+      +0.10  entity boost      — H2 contains a must-cover entity (salience > 0.5)
+      +0.08  related search    — H2 matches a related search query
     """
+    import re
+
+    # ── Build lookup sets from S1 data ──────────────────────────────────────
+
+    # Ngram set: top ngrams by weight (weight >= 0.3 = well above noise)
+    ngram_phrases = set()
+    for ng in (s1_data.get("ngrams") or []):
+        text = ng.get("ngram", "") if isinstance(ng, dict) else str(ng)
+        weight = float(ng.get("weight", 0)) if isinstance(ng, dict) else 0
+        if text and weight >= 0.3:
+            ngram_phrases.add(text.lower())
+
+    # Entity set: must-cover concepts + high-salience named entities
+    entity_phrases = set()
+    entity_seo = s1_data.get("entity_seo") or {}
+    for e in (entity_seo.get("must_cover_concepts") or []):
+        t = e.lower() if isinstance(e, str) else (e.get("text", "").lower() if isinstance(e, dict) else "")
+        if t:
+            entity_phrases.add(t)
+    for e in (entity_seo.get("entity_salience") or []):
+        if not isinstance(e, dict):
+            continue
+        sal = float(e.get("salience_score", e.get("salience", 0)))
+        t = (e.get("entity") or e.get("text") or "").lower()
+        if t and sal >= 0.5:
+            entity_phrases.add(t)
+
+    # Related searches set — full phrases only (no word splitting, prevents false matches)
+    related_phrases = set()
+    for rs in (s1_data.get("serp_analysis", {}).get("related_searches") or []):
+        t = rs if isinstance(rs, str) else (rs.get("query", rs.get("text", "")) if isinstance(rs, dict) else "")
+        if t and len(t.strip()) > 8:  # min 8 chars to avoid single-word spurious matches
+            related_phrases.add(t.lower().strip())
+
+    def _h2_boosts(h2_lower: str) -> tuple[float, list[str]]:
+        """Returns (total_boost, list_of_reasons)."""
+        boost = 0.0
+        reasons = []
+
+        # 1. Ngram overlap — does H2 contain any high-weight ngram?
+        for phrase in ngram_phrases:
+            if phrase in h2_lower:
+                boost += 0.12
+                reasons.append(f"ngram:{phrase[:30]}")
+                break  # one boost per category
+
+        # 2. Entity boost — does H2 mention a must-cover entity?
+        for ent in entity_phrases:
+            if ent in h2_lower:
+                boost += 0.10
+                reasons.append(f"entity:{ent[:25]}")
+                break
+
+        # 3. Related search match — full phrase must appear in H2
+        for rs in related_phrases:
+            if rs in h2_lower:
+                boost += 0.08
+                reasons.append(f"related:{rs[:25]}")
+                break
+
+        return boost, reasons
+
+    # ── Pool 1: Competitor H2 patterns ──────────────────────────────────────
     candidates = []
     seen = set()
 
-    # Pool 1: Competitor H2 patterns
     serp_h2 = (s1_data.get("serp_analysis") or {}).get("competitor_h2_patterns") or []
     for h in serp_h2:
         if isinstance(h, dict):
@@ -291,53 +358,75 @@ def score_h2_candidates(s1_data: dict, main_keyword: str = "") -> dict:
         if not text or text.lower().strip() in seen:
             continue
         seen.add(text.lower().strip())
-        score = min(count * 0.085, 0.85)
+
+        base = min(count * 0.11, 0.88)   # 6src=0.66(must), 5src=0.55(high), 8src=0.88(must)
+        boost, boost_reasons = _h2_boosts(text.lower())
+        score = min(base + boost, 1.0)
+
+        reason_parts = [f"{count}x u konkurencji"]
+        if boost_reasons:
+            reason_parts.append(" | ".join(boost_reasons))
+
         candidates.append({
             "text": text,
             "score": round(score, 3),
+            "base_score": round(base, 3),
+            "boost": round(boost, 3),
             "source": "competitor",
             "comp_count": count,
-            "reason": f"{count}x u konkurencji",
+            "reason": ", ".join(reason_parts),
         })
 
-    # Pool 2: PAA unanswered
+    # ── Pool 2: PAA unanswered ───────────────────────────────────────────────
     content_gaps = s1_data.get("content_gaps") or {}
     for q in (content_gaps.get("paa_unanswered") or [])[:8]:
         q_text = q if isinstance(q, str) else (q.get("question", q.get("text", "")) if isinstance(q, dict) else str(q))
         if not q_text or q_text.lower().strip() in seen:
             continue
         seen.add(q_text.lower().strip())
+        boost, boost_reasons = _h2_boosts(q_text.lower())
+        score = min(0.50 + boost, 1.0)
         candidates.append({
             "text": q_text if q_text.endswith("?") else f"{q_text}?",
-            "score": 0.50,
+            "score": round(score, 3),
+            "base_score": 0.50,
+            "boost": round(boost, 3),
             "source": "paa_unanswered",
-            "reason": "PAA bez odpowiedzi u konkurencji",
+            "reason": "PAA bez odpowiedzi" + (" | " + " | ".join(boost_reasons) if boost_reasons else ""),
         })
 
-    # Pool 3: Suggested new H2s
+    # ── Pool 3: Suggested new H2s ────────────────────────────────────────────
     for h in (content_gaps.get("suggested_new_h2s") or [])[:6]:
         h_text = h if isinstance(h, str) else (h.get("h2", h.get("title", "")) if isinstance(h, dict) else str(h))
         if not h_text or h_text.lower().strip() in seen:
             continue
         seen.add(h_text.lower().strip())
+        boost, boost_reasons = _h2_boosts(h_text.lower())
+        score = min(0.35 + boost, 1.0)
         candidates.append({
             "text": h_text,
-            "score": 0.35,
+            "score": round(score, 3),
+            "base_score": 0.35,
+            "boost": round(boost, 3),
             "source": "content_gap",
-            "reason": "Luka - nikt z TOP-10 nie pokrywa",
+            "reason": "Luka treściowa" + (" | " + " | ".join(boost_reasons) if boost_reasons else ""),
         })
 
-    # Pool 4: depth_missing
+    # ── Pool 4: depth_missing ────────────────────────────────────────────────
     for d in (content_gaps.get("depth_missing") or [])[:5]:
         d_text = d if isinstance(d, str) else (d.get("topic", d.get("text", "")) if isinstance(d, dict) else str(d))
         if not d_text or d_text.lower().strip() in seen:
             continue
         seen.add(d_text.lower().strip())
+        boost, boost_reasons = _h2_boosts(d_text.lower())
+        score = min(0.25 + boost, 1.0)
         candidates.append({
             "text": d_text,
-            "score": 0.25,
+            "score": round(score, 3),
+            "base_score": 0.25,
+            "boost": round(boost, 3),
             "source": "depth_missing",
-            "reason": "Zbyt plytko u konkurencji",
+            "reason": "Zbyt płytko u konkurencji" + (" | " + " | ".join(boost_reasons) if boost_reasons else ""),
         })
 
     candidates.sort(key=lambda c: c["score"], reverse=True)
