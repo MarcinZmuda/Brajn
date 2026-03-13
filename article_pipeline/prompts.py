@@ -173,7 +173,7 @@ Te reguły MUSZĄ być spełnione. Jeśli którakolwiek jest naruszona, plan jes
 1. LICZBA_H2: Wybierz dokładnie {{LICZBA_H2}} sekcji H2 (nie licząc FAQ).
 2. POKRYCIE_ENCJI: Każda encja z <must_cover_entities> musi pojawić się w co najmniej jednym polu "entities" w planie (w H2 lub FAQ).
 3. UNIKALNOŚĆ: Żadne dwa H2 nie mogą odpowiadać na tę samą intencję użytkownika. Jeśli dwóch kandydatów pokrywa ten sam temat — wybierz tego z wyższym score lub połącz w jedno lepsze H2.
-4. FAQ: Sekcja FAQ zawiera {{LICZBA_FAQ}} pytań. Priorytetowe pytania z <paa_priority> MUSZĄ być uwzględnione. Uzupełnij resztę z <paa_standard> lub wygeneruj na podstawie danych.
+4. FAQ: Sekcja FAQ zawiera {{LICZBA_FAQ}} pytań. Priorytetowe pytania z <paa_priority> MUSZĄ być uwzględnione. Uzupełnij resztę z <paa_standard> lub wygeneruj pytania pokrywające encje/n-gramy nieobecne w sekcjach H2. FAQ jest buforem na niepokryte frazy — im więcej pytań, tym większe pokrycie.
 5. KOLEJNOŚĆ: Pierwsza sekcja H2 powinna odpowiadać na główną intencję hasła. Kolejne sekcje — od ogólnych do szczegółowych, z logicznym flow.
 6. H2_KEYWORDS (jeśli podane): Każda fraza z <h2_keywords> musi pojawić się w tekście co najmniej jednego nagłówka H2 (dosłownie lub w odmianie fleksyjnej). Jeśli <h2_keywords> jest puste lub nieobecne — ignoruj tę regułę.
 </hard_constraints>

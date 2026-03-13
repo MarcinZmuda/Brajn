@@ -115,6 +115,57 @@ class ArticleOrchestrator:
             })
         return text
 
+    def _calc_faq_count(self, target_h2: int, must_cover: list,
+                        paa_priority: list, paa_standard: list,
+                        candidates: list) -> int:
+        """
+        Dynamic FAQ count: base 4, increases if phrase/entity coverage is low.
+
+        Logic:
+        - Each H2 section can realistically cover ~2-3 entities and ~3-5 n-grams
+        - If we have more entities/n-grams than H2 sections can absorb, FAQ acts as overflow
+        - PAA priority questions are always included
+        - Range: 4-10
+        """
+        base = 4
+
+        # 1. PAA priority always included
+        paa_bonus = max(0, len(paa_priority) - base)  # if >4 priority PAA, add extra
+
+        # 2. Entity coverage pressure
+        entity_capacity = target_h2 * 3  # each H2 covers ~3 entities
+        entity_overflow = max(0, len(must_cover) - entity_capacity)
+        entity_bonus = min(2, entity_overflow // 2)  # +1 FAQ per 2 uncovered entities
+
+        # 3. N-gram coverage pressure
+        ngrams = self.variables.get("_ngrams", [])
+        total_ngrams = len(ngrams)
+        ngram_capacity = target_h2 * 5  # each H2 can weave ~5 n-grams
+        ngram_overflow = max(0, total_ngrams - ngram_capacity)
+        ngram_bonus = min(2, ngram_overflow // 4)  # +1 FAQ per 4 uncovered n-grams
+
+        # 4. Scored H2 candidates that didn't make it into sections
+        # These represent topics that should be covered somewhere
+        rejected_candidates = max(0, len([c for c in candidates if (c.get("score") or 0) >= 0.20]) - target_h2)
+        rejected_bonus = min(2, rejected_candidates // 2)
+
+        faq_count = base + paa_bonus + entity_bonus + ngram_bonus + rejected_bonus
+
+        # Clamp to 4-10
+        faq_count = max(4, min(10, faq_count))
+
+        if faq_count > base:
+            reasons = []
+            if paa_bonus: reasons.append(f"PAA+{paa_bonus}")
+            if entity_bonus: reasons.append(f"entities+{entity_bonus}")
+            if ngram_bonus: reasons.append(f"ngrams+{ngram_bonus}")
+            if rejected_bonus: reasons.append(f"rejected_h2+{rejected_bonus}")
+            print(f"[H2_PLAN] FAQ count: {faq_count} (base {base} + {', '.join(reasons)})")
+        else:
+            print(f"[H2_PLAN] FAQ count: {faq_count} (base)")
+
+        return faq_count
+
     def run_ymyl_detection(self) -> dict:
         """Detect YMYL category, then enrich with legal/medical sources."""
         keyword = self.variables.get("HASLO_GLOWNE", "")
@@ -220,8 +271,14 @@ class ArticleOrchestrator:
         # Clamp to reasonable range
         target_h2 = max(4, min(10, target_h2))
 
-        # ── FAQ count: prioritize PAA unanswered, total 4-8 ──
-        faq_count = max(4, min(8, len(paa_priority) + min(3, len(paa_standard))))
+        # ── FAQ count: base 4, scale up if many uncovered phrases/entities ──
+        faq_count = self._calc_faq_count(
+            target_h2=target_h2,
+            must_cover=must_cover,
+            paa_priority=paa_priority,
+            paa_standard=paa_standard,
+            candidates=candidates,
+        )
 
         # ── Build prompt variables ──
         prompt_vars = {
