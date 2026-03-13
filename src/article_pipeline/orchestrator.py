@@ -746,6 +746,9 @@ class ArticleOrchestrator:
         self.full_article = "\n\n".join(self.batch_texts)
         return self.full_article
 
+    # Regex for repeated-word n-grams: "menu menu", "void void void"
+    _RE_REPEATED_WORD_NGRAM = re.compile(r'^(\w+)(\s+\1)+$', re.IGNORECASE)
+
     def run_coverage_check(self) -> dict:
         """
         Porównuje tekst artykułu z zakresami freq_min/freq_max z S1 ngrams.
@@ -766,6 +769,9 @@ class ArticleOrchestrator:
         for ng in ngrams:
             term = (ng.get("ngram") or ng.get("text") or "").lower().strip()
             if not term or len(term) < 3:
+                continue
+            # Skip repeated-word n-grams (garbage from HTML nav: "menu menu")
+            if self._RE_REPEATED_WORD_NGRAM.match(term):
                 continue
             freq_min = ng.get("freq_min", 1)
             freq_max = ng.get("freq_max", 99)
@@ -826,8 +832,9 @@ class ArticleOrchestrator:
         try:
             from src.common.nlp_singleton import get_nlp
             nlp = get_nlp()
-        except Exception:
-            print("[COMPLIANCE] spaCy not available — skipping subject_ratio")
+            print(f"[COMPLIANCE] spaCy loaded: {nlp.meta.get('name', 'unknown')}")
+        except Exception as e:
+            print(f"[COMPLIANCE] spaCy not available ({e}) — subject_ratio will be 0%")
 
         return run_entity_seo_compliance(
             article_text=self.full_article,

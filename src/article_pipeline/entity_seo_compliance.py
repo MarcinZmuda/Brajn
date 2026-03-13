@@ -114,6 +114,73 @@ def _fuzzy_find(text: str, phrase: str, min_prefix: int = 4) -> bool:
     return False
 
 
+def _stem_word(word: str, min_len: int = 4) -> str:
+    """Get stem of a Polish word (first 75% of chars, min 4)."""
+    w = word.lower().strip()
+    if len(w) < min_len:
+        return w
+    return w[:max(min_len, int(len(w) * 0.75))]
+
+
+def _fuzzy_count_in_sentences(text: str, phrase: str) -> int:
+    """Count how many sentences contain a fuzzy match of the phrase.
+
+    For multi-word phrases: a sentence matches if ≥50% of content words
+    (length > 3) from the phrase are stem-found in that sentence.
+    For single-word phrases: stem match in sentence.
+    """
+    sentences = re.split(r'[.!?]+\s*', text)
+    phrase_words = [w for w in phrase.lower().split() if len(w) > 2]
+    if not phrase_words:
+        return 0
+
+    count = 0
+    for sent in sentences:
+        sent_lower = sent.lower()
+        if not sent_lower.strip():
+            continue
+
+        if phrase.lower() in sent_lower:
+            count += 1
+            continue
+
+        # Stem matching: check how many words from the phrase appear
+        found_words = 0
+        for pw in phrase_words:
+            stem = _stem_word(pw)
+            if stem in sent_lower:
+                found_words += 1
+
+        threshold = max(1, len(phrase_words) * 0.5)
+        if found_words >= threshold:
+            count += 1
+
+    return count
+
+
+def _fuzzy_find_in_paragraph(paragraph: str, phrase: str) -> bool:
+    """Check if phrase (or its stem variant) appears in a paragraph.
+
+    More lenient than _fuzzy_find: checks if ≥50% of content words
+    from the phrase are stem-matched in the paragraph.
+    """
+    para_lower = paragraph.lower()
+    if phrase.lower() in para_lower:
+        return True
+
+    phrase_words = [w for w in phrase.lower().split() if len(w) > 2]
+    if not phrase_words:
+        return False
+
+    found = 0
+    for pw in phrase_words:
+        stem = _stem_word(pw)
+        if stem in para_lower:
+            found += 1
+
+    return found >= max(1, len(phrase_words) * 0.5)
+
+
 # ================================================================
 # 1. ENTITY SALIENCE ANALYSIS
 # ================================================================
@@ -373,6 +440,8 @@ def analyze_spo_triples(
                 "confidence": 0.5,
             })
 
+    paragraphs = parsed["paragraphs"]
+
     results = []
     for t in triples:
         subj = t["subject"]
@@ -385,18 +454,27 @@ def analyze_spo_triples(
 
         full_found = subj_found and pred_found and obj_found
 
+        # Paragraph-level SPO matching (more lenient than sentence-level)
         clear_spo = False
         if full_found:
-            sentences = re.split(r'[.!?]+\s*', parsed["full_text"])
-            for sent in sentences:
-                sent_lower = sent.lower()
-                if (_fuzzy_find(sent_lower, subj) and
-                    _fuzzy_find(sent_lower, obj)):
-                    s_pos = sent_lower.find(subj.lower()[:4])
-                    o_pos = sent_lower.find(obj.lower()[:4])
-                    if s_pos >= 0 and o_pos >= 0 and s_pos < o_pos:
-                        clear_spo = True
-                        break
+            for para in paragraphs:
+                para_lower = para.lower()
+                s_in = _fuzzy_find_in_paragraph(para_lower, subj)
+                o_in = _fuzzy_find_in_paragraph(para_lower, obj)
+                p_in = _fuzzy_find_in_paragraph(para_lower, pred) if pred else True
+                if s_in and o_in and p_in:
+                    clear_spo = True
+                    break
+        elif subj_found and obj_found:
+            # Fallback: subject and object found in article but not predicate —
+            # check paragraph-level co-occurrence
+            for para in paragraphs:
+                s_in = _fuzzy_find_in_paragraph(para.lower(), subj)
+                o_in = _fuzzy_find_in_paragraph(para.lower(), obj)
+                if s_in and o_in:
+                    full_found = True
+                    clear_spo = True
+                    break
 
         status = "pass" if clear_spo else ("warn" if full_found else "fail")
         results.append({
@@ -459,9 +537,10 @@ def analyze_mention_variety(
     if main_keyword and main_keyword not in named_forms:
         named_forms.insert(0, main_keyword)
 
-    named_count = sum(_count_occurrences(full_text, f) for f in named_forms) if named_forms else 0
-    nominal_count = sum(_count_occurrences(full_text, f) for f in nominal_forms) if nominal_forms else 0
-    pronominal_count = sum(_count_occurrences(full_text, f) for f in pronominal_forms) if pronominal_forms else 0
+    # Use fuzzy stem-matching to count mentions (handles Polish inflection)
+    named_count = sum(_fuzzy_count_in_sentences(full_text, f) for f in named_forms) if named_forms else 0
+    nominal_count = sum(_fuzzy_count_in_sentences(full_text, f) for f in nominal_forms) if nominal_forms else 0
+    pronominal_count = sum(_fuzzy_count_in_sentences(full_text, f) for f in pronominal_forms) if pronominal_forms else 0
 
     total = named_count + nominal_count + pronominal_count
     if total == 0:
@@ -483,9 +562,9 @@ def analyze_mention_variety(
     else:
         status = "pass"
 
-    named_examples = [f for f in named_forms if f.lower() in full_lower][:5]
-    nominal_examples = [f for f in nominal_forms if f.lower() in full_lower][:5]
-    pronominal_examples = [f for f in pronominal_forms if f.lower() in full_lower][:5]
+    named_examples = [f for f in named_forms if _fuzzy_find(full_lower, f)][:5]
+    nominal_examples = [f for f in nominal_forms if _fuzzy_find(full_lower, f)][:5]
+    pronominal_examples = [f for f in pronominal_forms if _fuzzy_find(full_lower, f)][:5]
 
     return {
         "has_data": has_data,
