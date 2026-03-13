@@ -550,10 +550,11 @@ class KeywordTracker:
     def _init_phrase_budget(self, ngrams: list, ngram_type: str):
         """Initialize phrase budgets from pre-processed ngram data.
 
-        Budget scaling:
-        - BASIC:  max(total_batches * 2, freq_max * 2), topic phrases * 2
-        - EXTENDED: max(2, freq_max), topic phrases * 1.5
-        - Fuzzy pattern for counting (aligns with cascade logic)
+        Budget scaling (revised — no more ×2 topic boost which caused overshoot):
+        - BASIC:  max(total_batches, freq_max) — 1:1 with S1 targets, floor = total_batches
+        - EXTENDED: max(2, freq_max) — same as before
+        - Topic phrases: ×1.3 (mild boost, not ×2 which doubled stuffing)
+        - Stores original S1 freq_max as 'nw_target' for overshoot detection
         """
         for ng in ngrams:
             text = (ng.get("ngram") or ng.get("text") or "").strip()
@@ -567,16 +568,19 @@ class KeywordTracker:
                 weight = ng.get("weight", 0)
                 target_max = max(1, int(weight * 10))
 
+            nw_target = target_max  # Original S1 target for overshoot detection
+
             is_topic = self._is_topic_phrase(text.lower())
 
             if ngram_type == "BASIC":
-                global_max = max(self.total_batches * 2, target_max * 2)
+                # Floor = total_batches (1 per batch minimum), no ×2 multiplication
+                global_max = max(self.total_batches, target_max)
                 if is_topic:
-                    global_max *= 2
+                    global_max = int(global_max * 1.3)  # Mild boost, was ×2
             else:  # EXTENDED
                 global_max = max(2, target_max)
                 if is_topic:
-                    global_max = int(global_max * 1.5)
+                    global_max = int(global_max * 1.3)  # Was ×1.5
 
             key = text.lower()
             if key not in self._global_phrase_budget:
@@ -586,6 +590,7 @@ class KeywordTracker:
                     "global_used": 0,
                     "global_remaining": global_max,
                     "type": ngram_type,
+                    "nw_target": nw_target,  # Original S1 ceiling for overshoot STOP
                     "_pattern": _build_fuzzy_pattern(key),
                 }
 
@@ -783,9 +788,23 @@ class KeywordTracker:
             remaining = budget["global_remaining"]
             ptype = budget["type"]
 
-            if remaining <= 0:
+            # Overshoot detection: if usage exceeds 2× NW target, hard stop even if budget remains
+            nw_target = budget.get("nw_target", 0)
+            is_overshoot = nw_target > 0 and budget["global_used"] >= nw_target * 2
+
+            if remaining <= 0 or is_overshoot:
                 if ptype == "BASIC":
-                    stop_lines.append(f'🛑 STOP — nie używaj: "{phrase}"')
+                    if is_overshoot and remaining > 0:
+                        stop_lines.append(
+                            f'⛔ HARD STOP — fraza "{phrase}" przekroczyła 2× limit NW '
+                            f'({budget["global_used"]}/{nw_target}) — '
+                            f'pisz bez tej frazy, użyj synonimów')
+                    else:
+                        stop_lines.append(f'🛑 STOP — nie używaj: "{phrase}"')
+                elif ptype == "EXTENDED" and is_overshoot:
+                    stop_lines.append(
+                        f'🛑 STOP — "{phrase}" przekroczyła limit '
+                        f'({budget["global_used"]}/{nw_target}) — nie używaj')
                 continue
 
             allocated = max(1, -(-remaining // remaining_batches))
@@ -820,22 +839,27 @@ class KeywordTracker:
 
         ext_line_strs = [line for _, line in extended_lines]
 
-        # P1: Coverage alert — inform model about underperforming phrases
+        # P1: Coverage alert — inform model about underperforming phrases (BASIC + EXTENDED)
         coverage_alert_lines = []
         if self.batch_count >= 2:  # Only after first 2 batches have data
             progress_ratio = self.batch_count / max(1, self.total_batches)
             for key, budget in self._global_phrase_budget.items():
-                if budget["type"] != "BASIC" or budget["global_remaining"] <= 0:
+                if budget["global_remaining"] <= 0:
                     continue
-                expected_used = budget["global_max"] * progress_ratio
                 actual_used = budget["global_used"]
-                # Flag if actual usage is less than 40% of expected
-                if expected_used > 1 and actual_used < expected_used * 0.4:
-                    deficit = int(expected_used - actual_used)
-                    coverage_alert_lines.append(
-                        f'"{budget["phrase"]}" ({actual_used}/{budget["global_max"]} użyć, '
-                        f'zaległość: ~{deficit}× — priorytetyzuj)'
-                    )
+
+                if budget["type"] == "BASIC":
+                    expected_used = budget["global_max"] * progress_ratio
+                    if expected_used > 1 and actual_used < expected_used * 0.4:
+                        deficit = int(expected_used - actual_used)
+                        coverage_alert_lines.append(
+                            f'MUST: "{budget["phrase"]}" ({actual_used}/{budget["global_max"]} użyć, '
+                            f'zaległość: ~{deficit}× — priorytetyzuj)')
+                else:  # EXTENDED
+                    # Flag EXTENDED phrases at 0 usage past halfway point
+                    if actual_used == 0 and progress_ratio >= 0.4:
+                        coverage_alert_lines.append(
+                            f'NICE: "{budget["phrase"]}" (0 użyć — spróbuj wpleść naturalnie)')
 
         parts = []
         if coverage_alert_lines:
