@@ -26,6 +26,37 @@ BUDGET_COLLECTION = "seo_keyword_budgets"
 # ── Prompt cap: max EXTENDED phrases shown per batch ──
 _MAX_EXTENDED_PER_BATCH = 12
 
+# ── Synonym bank for topic-inherent words ──
+# When a topic word hits STOP, the model needs concrete alternatives.
+# Keys are lemmas, values are lists of synonyms/paraphrases.
+_SYNONYM_BANK: Dict[str, List[str]] = {
+    "meble": ["wyposażenie", "sprzęty", "elementy wyposażenia", "przedmioty"],
+    "mebel": ["wyposażenie", "sprzęty", "elementy wyposażenia", "przedmioty"],
+    "transport": ["przewóz", "przenoszenie", "dostarczanie", "przemieszczanie"],
+    "transportować": ["przewozić", "przenosić", "dostarczać", "przemieszczać"],
+    "zabezpieczyć": ["ochronić", "osłonić", "uchronić", "przygotować"],
+    "zabezpieczenie": ["ochrona", "osłona", "przygotowanie", "opatrzenie"],
+    "folia": ["okrycie ochronne", "warstwa ochronna", "materiał opakowaniowy"],
+    "pakować": ["owijać", "zawijać", "opakować", "przygotować"],
+    "uszkodzenie": ["szkoda", "zniszczenie", "naruszenie", "defekt"],
+    "przeprowadzka": ["zmiana lokalu", "relokacja", "zmiana miejsca zamieszkania"],
+    "załadunek": ["ładowanie", "umieszczanie w pojeździe", "wkładanie do auta"],
+}
+
+
+def _get_synonyms(phrase: str) -> List[str]:
+    """Find synonyms for a phrase using lemma-based lookup in synonym bank."""
+    lemmas = _lemmatize_phrase(phrase)
+    synonyms = set()
+    for lemma in lemmas:
+        if lemma in _SYNONYM_BANK:
+            synonyms.update(_SYNONYM_BANK[lemma])
+    # Also try the raw words
+    for word in phrase.lower().split():
+        if word in _SYNONYM_BANK:
+            synonyms.update(_SYNONYM_BANK[word])
+    return list(synonyms)[:4]  # Max 4 suggestions
+
 # ── P0: Garbage n-gram filter patterns ──
 _RE_CAMEL_CASE = re.compile(r'[a-z][A-Z]')              # camelCase
 _RE_CSS_HYPHEN = re.compile(r'[a-z]+-[a-z]+-')           # css-like-props
@@ -666,14 +697,31 @@ class KeywordTracker:
             budget["global_used"] += count_in_batch
             budget["global_remaining"] = max(0, budget["global_max"] - budget["global_used"])
 
+            # Track per-batch peak for diagnostics
+            allocated = budget.get("allocated_this_batch", 0)
+            batch_cap = max(3, allocated * 2) if allocated > 0 else 5
+            is_batch_overshoot = count_in_batch > batch_cap
+
             if count_in_batch > 0:
+                status = "OK"
+                if budget["global_used"] > budget["global_max"]:
+                    status = "OVER"
+                elif is_batch_overshoot:
+                    status = "BATCH_OVER"
+
                 phrase_report.append({
                     "phrase": budget["phrase"],
                     "in_batch": count_in_batch,
+                    "allocated": allocated,
                     "total_used": budget["global_used"],
                     "remaining": budget["global_remaining"],
-                    "status": "OVER" if budget["global_used"] > budget["global_max"] else "OK",
+                    "status": status,
                 })
+
+                # Track which phrases consistently overshoot per batch
+                if is_batch_overshoot:
+                    budget.setdefault("_batch_overshoot_count", 0)
+                    budget["_batch_overshoot_count"] += 1
 
         report = {
             "batch_label": batch_label,
@@ -793,25 +841,30 @@ class KeywordTracker:
             is_overshoot = nw_target > 0 and budget["global_used"] >= nw_target * 2
 
             if remaining <= 0 or is_overshoot:
+                synonyms = _get_synonyms(phrase)
+                syn_hint = f' Zamienniki: {", ".join(synonyms)}.' if synonyms else ''
                 if ptype == "BASIC":
                     if is_overshoot and remaining > 0:
                         stop_lines.append(
-                            f'⛔ HARD STOP — fraza "{phrase}" przekroczyła 2× limit NW '
+                            f'⛔ HARD STOP — fraza "{phrase}" przekroczyła 2× limit '
                             f'({budget["global_used"]}/{nw_target}) — '
-                            f'pisz bez tej frazy, użyj synonimów')
+                            f'ZAKAZANE w tym batchu.{syn_hint}')
                     else:
-                        stop_lines.append(f'🛑 STOP — nie używaj: "{phrase}"')
+                        stop_lines.append(
+                            f'🛑 STOP — nie używaj: "{phrase}".{syn_hint}')
                 elif ptype == "EXTENDED" and is_overshoot:
                     stop_lines.append(
                         f'🛑 STOP — "{phrase}" przekroczyła limit '
-                        f'({budget["global_used"]}/{nw_target}) — nie używaj')
+                        f'({budget["global_used"]}/{nw_target}).{syn_hint}')
                 continue
 
             allocated = max(1, -(-remaining // remaining_batches))
             allocated = min(allocated, remaining)
+            # Per-batch hard cap: never more than allocated × 2 in a single batch
+            batch_hard_cap = max(3, allocated * 2)
             budget["allocated_this_batch"] = allocated
 
-            line = (f'{phrase} · {allocated}x w tej sekcji '
+            line = (f'{phrase} · {allocated}x w tej sekcji (max {batch_hard_cap}x!) '
                     f'(zostało {remaining} na artykuł)')
 
             if ptype == "BASIC":
