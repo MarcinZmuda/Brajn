@@ -204,26 +204,45 @@ def _match_topic_keywords(keyword: str) -> List[Dict]:
 
 def _isap_search_acts(keyword: str, max_results: int = 4) -> List[Dict]:
     """
-    Search ISAP ELI API for legal acts matching keyword.
-    Falls back to topic map if API unavailable.
+    Search ISAP/Sejm ELI API for legal acts matching keyword.
+    The ELI API at api.sejm.gov.pl lists acts by publisher/year.
+    We try keyword search via the ISAP search endpoint.
+    Falls back gracefully if API unavailable.
     """
     results = []
 
-    # Try ELI API search
-    try:
-        # The Sejm ELI API allows searching acts
-        params = {"title": keyword, "limit": max_results}
-        r = requests.get(
-            f"{ISAP_ELI_BASE}/acts/DU/search",
-            params=params,
-            timeout=ISAP_TIMEOUT,
-            headers={"Accept": "application/json"},
-        )
-        if r.status_code == 200:
+    # Sejm ELI API — try searching by keyword in title
+    # Known working pattern: /eli/acts/{publisher}/{year} returns list
+    # Search: /eli/acts/DU/search?title=... (may not be available)
+    endpoints = [
+        f"{ISAP_ELI_BASE}/acts/DU/search",
+        f"{ISAP_ELI_BASE}/acts/DU",
+        "https://isap.sejm.gov.pl/api/isap/deeds",
+    ]
+
+    for endpoint in endpoints:
+        if results:
+            break
+        try:
+            r = requests.get(
+                endpoint,
+                params={"title": keyword, "limit": max_results},
+                timeout=ISAP_TIMEOUT,
+                headers={"Accept": "application/json"},
+            )
+            # Only parse if response looks like JSON
+            content_type = r.headers.get("Content-Type", "")
+            if r.status_code != 200 or "json" not in content_type.lower():
+                continue
+
             data = r.json()
-            items = data if isinstance(data, list) else data.get("items", [])
+            items = data if isinstance(data, list) else data.get("items", data.get("results", []))
             for item in items[:max_results]:
+                if not isinstance(item, dict):
+                    continue
                 title = item.get("title", "") or item.get("titleFinal", "")
+                if not title:
+                    continue
                 eli = item.get("ELI", "") or item.get("eli", "")
                 pub_date = item.get("promulgation", "") or item.get("announcementDate", "")
                 results.append({
@@ -236,35 +255,8 @@ def _isap_search_acts(keyword: str, max_results: int = 4) -> List[Dict]:
                 })
             if results:
                 print(f"[LEGAL] ISAP API → {len(results)} aktów dla '{keyword}'")
-    except Exception as e:
-        print(f"[LEGAL] ISAP API error: {e}")
-
-    # Try alternative ISAP endpoint
-    if not results:
-        try:
-            r = requests.get(
-                f"{ISAP_ELI_BASE}/acts/DU",
-                params={"title": keyword, "limit": max_results},
-                timeout=ISAP_TIMEOUT,
-                headers={"Accept": "application/json"},
-            )
-            if r.status_code == 200:
-                data = r.json()
-                items = data if isinstance(data, list) else data.get("items", [])
-                for item in items[:max_results]:
-                    title = item.get("title", "") or ""
-                    eli = item.get("ELI", "") or ""
-                    results.append({
-                        "act": title[:120],
-                        "articles": [],
-                        "eli": eli,
-                        "desc": title[:200],
-                        "source": "isap_api",
-                    })
-                if results:
-                    print(f"[LEGAL] ISAP API (alt) → {len(results)} aktów")
         except Exception as e:
-            print(f"[LEGAL] ISAP API (alt) error: {e}")
+            print(f"[LEGAL] ISAP API ({endpoint.split('/')[-1]}) skip: {e}")
 
     return results
 
