@@ -254,6 +254,30 @@
 
         /* Full-width card */
         .esc-full{grid-column:1/-1}
+
+        /* ── Annotation view ── */
+        .ann-toolbar{position:sticky;top:0;z-index:50;background:rgba(5,5,5,.93);backdrop-filter:blur(12px);border-bottom:1px solid var(--b1);padding:14px 24px}
+        .ann-toolbar-head{display:flex;align-items:center;gap:10px;margin-bottom:10px}
+        .ann-toolbar-head .ann-brand{font-size:14px;font-weight:800;color:var(--orange);letter-spacing:-.3px}
+        .ann-toolbar-head .ann-sub{font-size:13px;color:var(--mg);font-weight:600}
+        .ann-toggles{display:flex;gap:6px;flex-wrap:wrap}
+        .ann-toggle{display:flex;align-items:center;gap:6px;padding:7px 14px;border-radius:8px;font-size:12px;font-weight:600;font-family:'Outfit',sans-serif;cursor:pointer;transition:all .2s;background:var(--s1);color:var(--mg);border:1px solid var(--b1)}
+        .ann-toggle.on{background:var(--og);color:var(--orange);border-color:rgba(251,169,44,.25)}
+        .ann-toggle:hover:not(.on){border-color:var(--b3);color:var(--lg)}
+        .ann-toggle .ann-dot{width:6px;height:6px;border-radius:50%;background:var(--orange);box-shadow:0 0 6px rgba(251,169,44,.4);display:none}
+        .ann-toggle.on .ann-dot{display:block}
+        .ann-legend{display:flex;gap:14px;margin-top:10px;flex-wrap:wrap;font-size:10px;color:var(--lg)}
+        .ann-legend-item{display:flex;align-items:center;gap:4px}
+        .ann-legend-box{width:10px;height:10px;border-radius:2px}
+        .ann-legend-line{width:12px;display:inline-block}
+        .ann-article{max-width:740px;margin:0 auto;padding:32px 28px 80px}
+        .ann-article h1{font-size:1.85em;font-weight:800;color:var(--white);line-height:1.2;margin-bottom:22px;letter-spacing:-.5px}
+        .ann-article h2{font-size:1.3em;font-weight:700;color:var(--orange);line-height:1.3;margin-top:40px;margin-bottom:14px;padding-top:22px;border-top:1px solid var(--b1)}
+        .ann-article p{font-size:15px;line-height:1.82;color:#b0b0b0;margin:0 0 20px}
+        .ann-cooc-badge{font-size:9px;font-weight:700;padding:2px 8px;border-radius:4px;display:inline-block;margin:0 4px 4px 0}
+        .ann-para-wrap{margin-bottom:20px;position:relative}
+        .ann-empty{text-align:center;padding:60px 24px;color:var(--mg)}
+        .ann-empty p{font-size:14px;color:var(--mg)}
     </style>
 </head>
 <body>
@@ -320,6 +344,7 @@
                 <div class="tab" data-tab="prebatch" onclick="switchTab('prebatch')">Dane wsadowe</div>
                 <div class="tab" data-tab="article" onclick="switchTab('article')">Artykul</div>
                 <div class="tab" data-tab="entity" onclick="switchTab('entity')">Entity SEO</div>
+                <div class="tab" data-tab="annotate" onclick="switchTab('annotate')">Annotacje</div>
                 <div class="tab" data-tab="optional" onclick="switchTab('optional')">Moduly opcjonalne</div>
             </div>
 
@@ -388,6 +413,16 @@
                     <div class="empty-state">
                         <div class="icon">&#128300;</div>
                         <p>Dane Entity SEO pojawia sie po analizie S1</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ═══ ANNOTACJE TAB ═══ -->
+            <div class="tab-content" id="tab-annotate">
+                <div id="annotateContent">
+                    <div class="ann-empty">
+                        <div style="font-size:40px;margin-bottom:12px;opacity:.3">&#128270;</div>
+                        <p>Wygeneruj artykul, aby zobaczyc widok annotacji</p>
                     </div>
                 </div>
             </div>
@@ -1296,6 +1331,9 @@ function renderArticle(text) {
     document.getElementById('articleWC').textContent = wc + ' slow';
     document.getElementById('articleActions').style.display = 'flex';
     document.querySelectorAll('.opt-btn').forEach(function(b) { b.disabled = false; });
+
+    // Update annotation view if it exists
+    renderAnnotationView();
 }
 
 // ── Validation ──
@@ -1855,6 +1893,318 @@ function renderEntityCompliance(data) {
     html += '</div>';
 
     html += '</div>'; // close esc-grid
+
+    c.innerHTML = html;
+}
+
+// ── Annotation View ──
+var annLayers = new Set(['entities']);
+var annEntities = []; // [{text, type:'main'|'secondary'|'supporting', mentions:'named'|'nominal'|'pronominal'}]
+var annSpoSentences = []; // [{sentence, label:'SPO'|'EAV', s, v, o}]
+var annCausalSentences = []; // [{text, label}]
+var annCoocPairs = []; // [{a, b, label, color}]
+
+var LAYER_DEFS = [
+    { id: 'entities', label: 'Encje', icon: '\u25C6' },
+    { id: 'spo', label: 'Trojki SPO', icon: '\u25B3' },
+    { id: 'causal', label: 'Kauzalne', icon: '\u26D3' },
+    { id: 'cooc', label: 'Pary razem', icon: '\u2B21' },
+    { id: 'mentions', label: 'Wzmianki', icon: '\u21BB' },
+];
+
+function buildAnnotationData() {
+    // Build annotation arrays from s1Data
+    if (!s1Data) return;
+    var es = s1Data.entity_seo || {};
+    var entities = es.entities || [];
+    var salience = es.entity_salience || [];
+    var cooccurrence = es.cooccurrence_pairs || [];
+    var relationships = es.relationships || [];
+    var causal = s1Data.causal_triplets || {};
+    var chains = causal.chains || [];
+    var singles = causal.singles || [];
+    var facto = s1Data.factographic_triplets || {};
+    var factoSpo = facto.spo || [];
+    var factoEav = facto.eav || [];
+    var mainKw = s1Data.main_keyword || '';
+    var mentionForms = es.mention_forms || s1Data._mention_forms || null;
+
+    // Build entity list for annotation
+    annEntities = [];
+    // Main entity variants
+    if (mainKw) {
+        annEntities.push({ text: mainKw, type: 'main', mentions: 'named' });
+    }
+    // Salience entities
+    salience.forEach(function(s) {
+        var txt = s.entity_text || '';
+        if (!txt || txt.toLowerCase() === mainKw.toLowerCase()) return;
+        var type = (s.salience_score || 0) >= 0.3 ? 'secondary' : 'supporting';
+        annEntities.push({ text: txt, type: type, mentions: '' });
+    });
+    // Regular entities not in salience
+    var salTexts = new Set(salience.map(function(s) { return (s.entity_text || '').toLowerCase(); }));
+    salTexts.add(mainKw.toLowerCase());
+    entities.forEach(function(e) {
+        var txt = e.text || '';
+        if (!txt || salTexts.has(txt.toLowerCase())) return;
+        var imp = e.importance || 0;
+        var type = imp >= 0.7 ? 'secondary' : 'supporting';
+        annEntities.push({ text: txt, type: type, mentions: '' });
+    });
+    // Add mention forms
+    if (mentionForms) {
+        if (mentionForms.nominal) {
+            (Array.isArray(mentionForms.nominal) ? mentionForms.nominal : []).forEach(function(n) {
+                annEntities.push({ text: String(n), type: 'main', mentions: 'nominal' });
+            });
+        }
+        if (mentionForms.pronominal) {
+            (Array.isArray(mentionForms.pronominal) ? mentionForms.pronominal : []).forEach(function(n) {
+                annEntities.push({ text: String(n), type: 'main', mentions: 'pronominal' });
+            });
+        }
+    }
+
+    // SPO sentences from relationships
+    annSpoSentences = [];
+    relationships.forEach(function(r) {
+        var s = r.subject || '', v = r.verb || r.predicate || '', o = r.object || '';
+        if (s && v && o) {
+            annSpoSentences.push({ sentence: s + ' ' + v + ' ' + o, label: 'SPO', s: s, v: v, o: o });
+        }
+    });
+    factoSpo.forEach(function(r) {
+        var s = r.subject || '', v = r.predicate || '', o = r.object || '';
+        if (s && v && o) {
+            annSpoSentences.push({ sentence: s + ' ' + v + ' ' + o, label: 'SPO', s: s, v: v, o: o });
+        }
+    });
+    factoEav.forEach(function(r) {
+        var s = r.subject || '', v = r.predicate || '', o = r.object || '';
+        if (s && v && o) {
+            annSpoSentences.push({ sentence: s + ' ' + v + ' ' + o, label: 'EAV', s: s, v: v, o: o });
+        }
+    });
+
+    // Causal sentences
+    annCausalSentences = [];
+    chains.forEach(function(c) {
+        if (c.cause) annCausalSentences.push({ text: c.cause, label: '\u2192 lancuch' });
+        if (c.effect) annCausalSentences.push({ text: c.effect, label: '\u2192 lancuch' });
+    });
+    singles.forEach(function(c) {
+        if (c.cause) annCausalSentences.push({ text: c.cause, label: '\u26A1 skutek' });
+        if (c.effect) annCausalSentences.push({ text: c.effect, label: '\u26A1 skutek' });
+    });
+
+    // Cooccurrence pairs
+    annCoocPairs = [];
+    var colors = ['#34d399', '#60a5fa', '#f472b6', '#fbbf24', '#a78bfa', '#fb923c'];
+    cooccurrence.forEach(function(p, i) {
+        annCoocPairs.push({
+            a: (p.entity_a || '').toLowerCase(),
+            b: (p.entity_b || '').toLowerCase(),
+            label: (p.entity_a || '') + ' + ' + (p.entity_b || ''),
+            color: colors[i % colors.length],
+        });
+    });
+}
+
+function annotateParagraph(text) {
+    var html = text;
+    var entityColors = {
+        main: { bg: 'rgba(251,169,44,.16)', bb: '#fba92c' },
+        secondary: { bg: 'rgba(96,165,250,.12)', bb: '#60a5fa' },
+        supporting: { bg: 'rgba(167,139,250,.09)', bb: '#a78bfa' },
+    };
+    var mentionBadge = {
+        named: { c: '#fba92c', l: 'N' },
+        nominal: { c: '#60a5fa', l: 'Nom' },
+        pronominal: { c: '#a78bfa', l: 'Pro' },
+    };
+
+    // SPO: find matching substrings in the paragraph
+    if (annLayers.has('spo')) {
+        for (var si = 0; si < annSpoSentences.length; si++) {
+            var spo = annSpoSentences[si];
+            // Try to find the SPO subject in text
+            var sIdx = html.indexOf(spo.s);
+            if (sIdx === -1) continue;
+            // Check if the verb follows nearby
+            var afterS = html.indexOf(spo.v, sIdx);
+            if (afterS === -1 || afterS > sIdx + spo.s.length + 20) continue;
+            // Find the end of the SPO span (object)
+            var oIdx = html.indexOf(spo.o, afterS);
+            if (oIdx === -1) continue;
+            var spanEnd = oIdx + spo.o.length;
+            // Don't wrap if already inside a tag
+            var before = html.substring(0, sIdx);
+            if ((before.match(/<span/g) || []).length > (before.match(/<\/span>/g) || []).length + 1) continue;
+            var matched = html.substring(sIdx, spanEnd);
+            var c = spo.label === 'EAV' ? '#a78bfa' : '#fba92c';
+            var replacement = '<span style="border-left:3px solid ' + c + ';padding-left:8px;margin-left:-8px;background:' + c + '06;display:inline">' +
+                matched + '<sup style="font-size:8px;font-weight:800;color:' + c + ';margin-left:4px;background:' + c + '15;padding:1px 5px;border-radius:3px;border:1px solid ' + c + '25;vertical-align:middle;letter-spacing:0.3px">' + esc(spo.label) + '</sup></span>';
+            html = html.substring(0, sIdx) + replacement + html.substring(spanEnd);
+        }
+    }
+
+    // Causal: dashed underline
+    if (annLayers.has('causal')) {
+        for (var ci = 0; ci < annCausalSentences.length; ci++) {
+            var ca = annCausalSentences[ci];
+            if (!html.includes(ca.text)) continue;
+            var cc = ca.label.includes('lancuch') ? '#34d399' : ca.label.includes('mechanizm') ? '#60a5fa' : '#fbbf24';
+            html = html.replace(ca.text,
+                '<span style="background:' + cc + '0a;border-bottom:2px dashed ' + cc + '50;padding-bottom:1px">' + ca.text +
+                '<sup style="font-size:7px;font-weight:700;color:' + cc + ';margin-left:3px;vertical-align:middle">' + esc(ca.label) + '</sup></span>'
+            );
+        }
+    }
+
+    // Entities: highlight
+    if (annLayers.has('entities') || annLayers.has('mentions')) {
+        var sorted = annEntities.slice().sort(function(a, b) { return b.text.length - a.text.length; });
+        for (var ei = 0; ei < sorted.length; ei++) {
+            var ent = sorted[ei];
+            var idx = html.indexOf(ent.text);
+            if (idx === -1) continue;
+            var bef = html.substring(0, idx);
+            if ((bef.match(/<span/g) || []).length > (bef.match(/<\/span>/g) || []).length + 2) continue;
+            var ec = entityColors[ent.type] || entityColors.supporting;
+            var badge = '';
+            if (annLayers.has('mentions') && ent.mentions) {
+                var mb = mentionBadge[ent.mentions];
+                if (mb) {
+                    badge = '<sup style="font-size:7px;font-weight:800;color:' + mb.c + ';background:' + mb.c + '18;padding:0 3px;border-radius:2px;margin-left:2px;border:1px solid ' + mb.c + '35;vertical-align:middle;letter-spacing:0.4px">' + mb.l + '</sup>';
+                }
+            }
+            var rep = '<span style="background:' + ec.bg + ';border-bottom:2px solid ' + ec.bb + '40;padding:0 2px;border-radius:2px">' + ent.text + badge + '</span>';
+            html = html.substring(0, idx) + rep + html.substring(idx + ent.text.length);
+        }
+    }
+
+    return html;
+}
+
+function getParaCooc(text) {
+    if (!annLayers.has('cooc')) return [];
+    var lower = text.toLowerCase();
+    return annCoocPairs.filter(function(p) { return lower.includes(p.a) && lower.includes(p.b); });
+}
+
+function buildAnnLegend() {
+    var items = [];
+    if (annLayers.has('entities')) {
+        items.push({ type: 'box', color: '#fba92c', label: 'Encja glowna' });
+        items.push({ type: 'box', color: '#60a5fa', label: 'Drugorzedna' });
+        items.push({ type: 'box', color: '#a78bfa', label: 'Wspierajaca' });
+    }
+    if (annLayers.has('mentions')) {
+        items.push({ type: 'sup', color: '#fba92c', sup: 'N', label: 'N = Named' });
+        items.push({ type: 'sup', color: '#60a5fa', sup: 'Nom', label: 'Nom = Nominal' });
+        items.push({ type: 'sup', color: '#a78bfa', sup: 'Pro', label: 'Pro = Pronominal' });
+    }
+    if (annLayers.has('spo')) {
+        items.push({ type: 'line', color: '#fba92c', label: 'Trojka SPO' });
+        items.push({ type: 'line', color: '#a78bfa', label: 'Trojka EAV' });
+    }
+    if (annLayers.has('causal')) {
+        items.push({ type: 'dash', color: '#34d399', label: 'Lancuch kauzalny' });
+        items.push({ type: 'dash', color: '#fbbf24', label: 'Skutek' });
+    }
+    if (annLayers.has('cooc')) {
+        items.push({ type: 'hex', color: '#34d399', label: 'Para co-occurrence' });
+    }
+    return items;
+}
+
+function toggleAnnLayer(id) {
+    if (annLayers.has(id)) annLayers.delete(id);
+    else annLayers.add(id);
+    renderAnnotationView();
+}
+
+function renderAnnotationView() {
+    var c = document.getElementById('annotateContent');
+    if (!articleText) {
+        c.innerHTML = '<div class="ann-empty"><div style="font-size:40px;margin-bottom:12px;opacity:.3">&#128270;</div><p>Wygeneruj artykul, aby zobaczyc widok annotacji</p></div>';
+        return;
+    }
+
+    // Rebuild annotation data from s1Data
+    buildAnnotationData();
+
+    var html = '';
+
+    // Toolbar
+    html += '<div class="ann-toolbar">';
+    html += '<div class="ann-toolbar-head">';
+    html += '<span class="ann-brand">BRAJN</span>';
+    html += '<span class="ann-sub">Widok annotacji tekstu</span>';
+    html += '</div>';
+
+    // Layer toggles
+    html += '<div class="ann-toggles">';
+    LAYER_DEFS.forEach(function(l) {
+        var on = annLayers.has(l.id);
+        html += '<button class="ann-toggle' + (on ? ' on' : '') + '" onclick="toggleAnnLayer(\'' + l.id + '\')">';
+        html += '<span style="font-size:14px">' + l.icon + '</span> ' + esc(l.label);
+        html += '<span class="ann-dot"></span>';
+        html += '</button>';
+    });
+    html += '</div>';
+
+    // Legend
+    var legend = buildAnnLegend();
+    if (legend.length > 0) {
+        html += '<div class="ann-legend">';
+        legend.forEach(function(it) {
+            html += '<div class="ann-legend-item">';
+            if (it.type === 'box') html += '<span class="ann-legend-box" style="background:' + it.color + '30;border:2px solid ' + it.color + '60"></span>';
+            else if (it.type === 'sup') html += '<span style="font-size:7px;font-weight:800;color:' + it.color + ';background:' + it.color + '18;padding:0 3px;border-radius:2px;border:1px solid ' + it.color + '35">' + it.sup + '</span>';
+            else if (it.type === 'line') html += '<span class="ann-legend-line" style="border-bottom:3px solid ' + it.color + '"></span>';
+            else if (it.type === 'dash') html += '<span class="ann-legend-line" style="border-bottom:2px dashed ' + it.color + '70"></span>';
+            else if (it.type === 'hex') html += '<span style="color:' + it.color + ';font-size:11px">\u2B21</span>';
+            html += '<span>' + esc(it.label) + '</span>';
+            html += '</div>';
+        });
+        html += '</div>';
+    }
+    html += '</div>'; // close toolbar
+
+    // Article
+    html += '<div class="ann-article">';
+    var paragraphs = articleText.split(/\n\n+/).filter(function(p) { return p.trim(); });
+    paragraphs.forEach(function(para) {
+        var trimmed = para.trim();
+        var isH1 = trimmed.startsWith('# ');
+        var isH2 = trimmed.startsWith('## ');
+        var isH3 = trimmed.startsWith('### ');
+        var raw = isH3 ? trimmed.slice(4) : isH2 ? trimmed.slice(3) : isH1 ? trimmed.slice(2) : trimmed;
+        var annotated = annotateParagraph(raw);
+
+        if (isH1) {
+            html += '<h1>' + annotated + '</h1>';
+        } else if (isH2) {
+            html += '<h2>' + annotated + '</h2>';
+        } else if (isH3) {
+            html += '<h3 style="font-size:1.1em;font-weight:600;color:var(--white);margin-top:20px;margin-bottom:10px">' + annotated + '</h3>';
+        } else {
+            var cooc = getParaCooc(raw);
+            html += '<div class="ann-para-wrap">';
+            if (cooc.length > 0) {
+                html += '<div style="margin-bottom:6px;display:flex;gap:4px;flex-wrap:wrap">';
+                cooc.forEach(function(p) {
+                    html += '<span class="ann-cooc-badge" style="color:' + p.color + ';background:' + p.color + '10;border:1px solid ' + p.color + '20">\u2B21 ' + esc(p.label) + '</span>';
+                });
+                html += '</div>';
+            }
+            html += '<p>' + annotated + '</p>';
+            html += '</div>';
+        }
+    });
+    html += '</div>'; // close ann-article
 
     c.innerHTML = html;
 }
