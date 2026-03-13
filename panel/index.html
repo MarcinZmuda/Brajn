@@ -1098,7 +1098,13 @@ async function startWorkflow() {
             headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + apiKey },
             body: JSON.stringify({ main_keyword: kw })
         });
-        if (!s1Resp.ok) { const e = await s1Resp.json(); throw new Error(e.detail || 'S1 failed'); }
+        if (!s1Resp.ok) {
+            let detail = 'S1 failed (HTTP ' + s1Resp.status + ')';
+            try { const e = await s1Resp.json(); detail = e.detail || detail; } catch (_) {
+                try { detail = (await s1Resp.text()).substring(0, 200) || detail; } catch (_2) {}
+            }
+            throw new Error(detail);
+        }
         s1Data = await s1Resp.json();
         setStepDone(0, {});
         pipelineSteps[0].detail = (s1Data.summary ? s1Data.summary.total_sources || 0 : 0) + ' zrodel, ' + (s1Data.ngrams || []).length + ' n-gramow';
@@ -1132,8 +1138,17 @@ async function startWorkflow() {
             headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + apiKey },
             body: JSON.stringify(body)
         });
-        if (!startResp.ok) { const e = await startResp.json(); throw new Error(e.detail || 'Start failed'); }
-        const startData = await startResp.json();
+        if (!startResp.ok) {
+            let detail = 'Start failed (HTTP ' + startResp.status + ')';
+            try { const e = await startResp.json(); detail = e.detail || detail; } catch (_) {
+                try { detail = (await startResp.text()).substring(0, 200) || detail; } catch (_2) {}
+            }
+            throw new Error(detail);
+        }
+        let startData;
+        try { startData = await startResp.json(); } catch (jsonErr) {
+            throw new Error('Server returned invalid JSON response: ' + jsonErr.message);
+        }
         jobId = startData.job_id;
         log('Job started: ' + jobId);
 
