@@ -211,6 +211,43 @@ def _format_ngrams_with_limits(ngrams):
     return "\n".join(lines)
 
 
+def format_ngrams_for_section(ngram_names: list, all_ngrams: list, total_sections: int) -> str:
+    """Format ngrams assigned to a section WITH per-section frequency budgets.
+
+    Looks up each ngram in the full list to get its whole-article budget,
+    then divides by total_sections to produce a per-section ceiling.
+
+    Returns lines like: 'zabezpieczyć meble · max 1-2x w tej sekcji (budżet artykułu: 1-9)'
+    """
+    # Build lookup: normalized ngram text -> {freq_min, freq_max}
+    lookup = {}
+    for ng in all_ngrams:
+        text = (ng.get("ngram") or ng.get("text") or "").strip().lower()
+        if not text:
+            continue
+        fmin = ng.get("freq_min", 0)
+        fmax = ng.get("freq_max", 0)
+        weight = ng.get("weight", 0)
+        if fmin == fmax == 0:
+            fmin = max(1, int(weight * 5))
+            fmax = max(fmin, int(weight * 10))
+        lookup[text] = {"min": fmin, "max": fmax}
+
+    total = max(2, total_sections)  # intro + H2s + faq
+    lines = []
+    for name in ngram_names:
+        if not name or not isinstance(name, str):
+            continue
+        info = lookup.get(name.strip().lower(), {})
+        art_min = info.get("min", 1)
+        art_max = info.get("max", 3)
+        # Per-section ceiling: divide article max by sections, round up, min 1
+        sec_max = max(1, -(-art_max // total))  # ceiling division
+        sec_min = 0  # not every section needs every ngram
+        lines.append(f"{name} · max {sec_max}x w tej sekcji (artykuł: {art_min}-{art_max})")
+    return "\n".join(lines)
+
+
 def _build_h2_plan(s1_data):
     h2_plan = []
 
