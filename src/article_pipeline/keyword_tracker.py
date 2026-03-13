@@ -2,18 +2,20 @@
 Keyword Budget Tracker — in-memory phrase frequency control across batches,
 with optional Firestore persistence for real-time panel display.
 
-Tracks two separate budgets:
-1. Main keyword — dynamic max based on total_batches (not hardcoded 6)
-2. Phrase budget — BASIC + EXTENDED ngrams with \b word-boundary counting
+Pipeline (runs before _init_phrase_budget):
+1. remove_subsumed_basic — remove 1-2 word phrases contained in longer ones
+2. cascade_deduct_targets — reduce budgets via inclusion-exclusion
+3. deduplicate_keywords — aggressive reduction for phrases nested in MAIN
 
-Counting method (all phrases + main kw):
-- re.findall(r'\\b' + re.escape(phrase) + r'\\b', text.lower())
-- Word boundaries prevent inflected forms from burning budget
-  (szamponem does NOT count as "szampon", suchej does NOT count as "sucha")
+Counting method:
+- Fuzzy regex: each word → prefix (≥75% length, min 4 chars) + \\w*
+- "nawilżyć" pattern → \\bnawilż\\w*\\b → matches nawilżeniu, nawilżenia, nawilżone
+- Aligns counting with cascade budget logic (same fuzzy matching)
 
 Budget lives in RAM. Firestore is write-only (for panel reads), never blocks generation.
 Collection: seo_keyword_budgets/{project_id}
 """
+import math
 import re
 from typing import Optional
 
@@ -34,14 +36,244 @@ def _get_db():
 
 
 def _compute_main_kw_max(total_batches: int) -> int:
-    """Dynamic main keyword max: ~1 per batch, min 4, max 15.
-
-    800-word article (4 batches)  → max 4
-    1200-word article (6 batches) → max 6
-    1900-word article (8 batches) → max 8
-    3000-word article (12 batches) → max 12
-    """
+    """Dynamic main keyword max: ~1 per batch, min 4, max 15."""
     return max(4, min(total_batches, 15))
+
+
+# ── Fuzzy matching helpers ──
+
+def _common_prefix_len(a: str, b: str) -> int:
+    """Return length of common prefix between two strings."""
+    n = 0
+    for ca, cb in zip(a, b):
+        if ca == cb:
+            n += 1
+        else:
+            break
+    return n
+
+
+def _fuzzy_word_match(word_a: str, word_b: str) -> bool:
+    """Check if two words are morphological variants (Polish stemmer heuristic).
+
+    Rule: common prefix ≥ 75% of the shorter word's length, minimum 4 chars.
+    Examples:
+        nawilżyć ↔ nawilżeniu  → prefix "nawilż" (6) ≥ 75% of 8 (6) ✓
+        mebli ↔ meble          → prefix "mebl" (4)  ≥ 75% of 5 (3.75) ✓
+        mebel ↔ mebli          → prefix "meb" (3)   < 4 ✗
+        transport ↔ transportu  → prefix "transport" (9) ≥ 75% of 9 (6.75) ✓
+        rok ↔ wyrok             → too short ✗
+    """
+    shorter = min(len(word_a), len(word_b))
+    if shorter < 4:
+        return word_a == word_b
+    threshold = max(4, math.ceil(shorter * 0.75))
+    return _common_prefix_len(word_a, word_b) >= threshold
+
+
+def _phrase_contains_exact(long_phrase: str, short_phrase: str) -> bool:
+    """Check if all words of short_phrase appear EXACTLY in long_phrase.
+
+    Word-boundary: "rok" does NOT match in "wyrok".
+    "szampon" ∈ "szampon do suchej skóry" → True
+    "skórze" ∈ "nawilżyć skórę głowy" → False (skórze ≠ skórę)
+    """
+    long_words = long_phrase.lower().split()
+    short_words = short_phrase.lower().split()
+    if len(short_words) > len(long_words):
+        return False
+    used = set()
+    for sw in short_words:
+        matched = False
+        for i, lw in enumerate(long_words):
+            if i not in used and sw == lw:
+                used.add(i)
+                matched = True
+                break
+        if not matched:
+            return False
+    return True
+
+
+def _phrase_contains_fuzzy(long_phrase: str, short_phrase: str) -> bool:
+    """Check if all words of short_phrase fuzzy-match words in long_phrase.
+
+    Uses _fuzzy_word_match (common prefix ≥75%, min 4 chars).
+    "skórze" ∈ "nawilżyć skórę głowy" → True (skórz ≈ skórę)
+    """
+    long_words = long_phrase.lower().split()
+    short_words = short_phrase.lower().split()
+    if len(short_words) > len(long_words):
+        return False
+    used = set()
+    for sw in short_words:
+        matched = False
+        for i, lw in enumerate(long_words):
+            if i not in used and _fuzzy_word_match(sw, lw):
+                used.add(i)
+                matched = True
+                break
+        if not matched:
+            return False
+    return True
+
+
+def _build_fuzzy_pattern(phrase_lower: str) -> re.Pattern:
+    """Build regex that matches morphological variants of the phrase.
+
+    Each word → prefix (≥75% length, min 4 chars) + \\w*
+    Multi-word: joined with \\s+ (words must be adjacent).
+
+    Examples:
+        "nawilżyć"     → \\bnawilż\\w*\\b
+        "sucha skóra"  → \\bsuch\\w*\\s+skór\\w*\\b
+        "do"           → \\bdo\\b  (short words: exact match)
+    """
+    words = phrase_lower.split()
+    parts = []
+    for w in words:
+        if len(w) < 4:
+            parts.append(re.escape(w))
+        else:
+            prefix_len = max(4, math.ceil(len(w) * 0.75))
+            prefix = w[:prefix_len]
+            parts.append(re.escape(prefix) + r'\w*')
+    pattern_str = r'\b' + r'\s+'.join(parts) + r'\b'
+    return re.compile(pattern_str)
+
+
+# ── Pre-processing: subsumption + cascade + dedup ──
+
+def remove_subsumed_basic(ngrams: list, main_keyword: str = "") -> list:
+    """Remove short (1-2 word) phrases that are fully contained in a longer phrase.
+
+    "szampon" ⊂ "szampon do suchej skóry" → REMOVE "szampon"
+    "skórze" ⊂ "sucha skóra głowy" → REMOVE "skórze"
+
+    Only removes phrases with ≤2 words. 3+ word phrases are too specific to remove.
+    Uses fuzzy word matching on word boundaries.
+    """
+    all_phrases = [(ng.get("ngram") or ng.get("text") or "").strip().lower()
+                   for ng in ngrams]
+    # Also check against main keyword
+    if main_keyword:
+        all_phrases.append(main_keyword.lower())
+
+    to_remove = set()
+    for i, ng in enumerate(ngrams):
+        text = (ng.get("ngram") or ng.get("text") or "").strip()
+        if not text:
+            continue
+        words = text.lower().split()
+        if len(words) > 2:
+            continue  # Only remove 1-2 word phrases
+
+        # Check if this short phrase is contained in any longer phrase
+        for j, other in enumerate(all_phrases):
+            if i == j:
+                continue
+            other_words = other.split()
+            if len(other_words) <= len(words):
+                continue  # Only check against strictly longer phrases
+            if _phrase_contains_exact(other, text):
+                to_remove.add(i)
+                break
+
+    result = [ng for i, ng in enumerate(ngrams) if i not in to_remove]
+    removed = len(ngrams) - len(result)
+    if removed:
+        print(f"[BUDGET] remove_subsumed_basic: removed {removed}/{len(ngrams)} subsumed phrases")
+    return result
+
+
+def cascade_deduct_targets(ngrams: list) -> list:
+    """Reduce budgets via inclusion-exclusion.
+
+    If phrase A contains phrase B (fuzzy), then every use of A implicitly
+    counts as a use of B. So B's budget should be reduced.
+
+    adj_min = max(0, raw_min − Σ target_max of all children)
+    adj_max = max(0, raw_max − Σ target_min of all children)
+    """
+    # Build phrase list with targets
+    items = []
+    for ng in ngrams:
+        text = (ng.get("ngram") or ng.get("text") or "").strip()
+        if not text:
+            continue
+        fmin = ng.get("freq_min", 0)
+        fmax = ng.get("freq_max", 0)
+        weight = ng.get("weight", 0)
+        if fmin == fmax == 0:
+            fmin = max(1, int(weight * 5))
+            fmax = max(fmin, int(weight * 10))
+        items.append({"ng": ng, "text": text.lower(), "fmin": fmin, "fmax": fmax})
+
+    # For each phrase, find all "children" (longer phrases that contain it)
+    for i, item in enumerate(items):
+        children_fmin_sum = 0
+        children_fmax_sum = 0
+        for j, other in enumerate(items):
+            if i == j:
+                continue
+            # other is a child of item if other contains item AND other is longer
+            if len(other["text"].split()) > len(item["text"].split()):
+                if _phrase_contains_fuzzy(other["text"], item["text"]):
+                    children_fmin_sum += other["fmin"]
+                    children_fmax_sum += other["fmax"]
+
+        if children_fmax_sum > 0:
+            old_min, old_max = item["fmin"], item["fmax"]
+            item["fmin"] = max(0, item["fmin"] - children_fmax_sum)
+            item["fmax"] = max(0, item["fmax"] - children_fmin_sum)
+            # Write back
+            item["ng"]["freq_min"] = item["fmin"]
+            item["ng"]["freq_max"] = item["fmax"]
+            if old_max != item["fmax"]:
+                name = item["ng"].get("ngram") or item["ng"].get("text")
+                print(f"[BUDGET] cascade: {name} [{old_min},{old_max}] → [{item['fmin']},{item['fmax']}]")
+
+    return ngrams
+
+
+def deduplicate_keywords(ngrams: list, main_keyword: str) -> list:
+    """Aggressive reduction for phrases nested in the main keyword.
+
+    Phrases nested in MAIN: reduce by 2/3 × main_max.
+    Phrases nested in other (non-MAIN) phrases:
+        - prefix_compound / multi_word_prefix: reduce by 1/3 × long_max
+        - word_inside: reduce by 1/4 × long_max
+    """
+    main_lower = main_keyword.strip().lower()
+    # Estimate main_max from typical usage
+    main_max = 9  # reasonable default; exact value from S1 if available
+
+    # Find main_max from ngrams if main keyword is in the list
+    for ng in ngrams:
+        text = (ng.get("ngram") or ng.get("text") or "").strip().lower()
+        if text == main_lower:
+            main_max = ng.get("freq_max", 0) or 9
+            break
+
+    for ng in ngrams:
+        text = (ng.get("ngram") or ng.get("text") or "").strip()
+        if not text or text.lower() == main_lower:
+            continue
+
+        fmax = ng.get("freq_max", 0)
+        if fmax == 0:
+            continue
+
+        # Check if nested in MAIN
+        if _phrase_contains_fuzzy(main_lower, text):
+            reduction = int(main_max * 2 / 3)
+            new_max = max(1, fmax - reduction)
+            if new_max != fmax:
+                ng["freq_max"] = new_max
+                print(f"[BUDGET] dedup_main: {text} freq_max {fmax} → {new_max} "
+                      f"(nested in MAIN, -2/3×{main_max})")
+
+    return ngrams
 
 
 class KeywordTracker:
@@ -57,7 +289,7 @@ class KeywordTracker:
         )
         self.total_batches = max(2, total_batches)
 
-        # Fix 1: Dynamic main keyword max based on article length
+        # Dynamic main keyword max based on article length
         self._kw_max = _compute_main_kw_max(self.total_batches)
         self._kw_hard_ceiling = int(self._kw_max * 1.5)
 
@@ -75,9 +307,25 @@ class KeywordTracker:
         self.project_id = project_id
         self._db = _get_db() if project_id else None
 
-        # Initialize budgets
-        self._init_phrase_budget(ngrams or [], "BASIC")
-        self._init_phrase_budget(extended_ngrams or [], "EXTENDED")
+        # Pre-process ngrams before budget init
+        basic = list(ngrams or [])
+        extended = list(extended_ngrams or [])
+
+        # Step 1: Remove subsumed short phrases
+        basic = remove_subsumed_basic(basic, self.main_keyword)
+        extended = remove_subsumed_basic(extended, self.main_keyword)
+
+        # Step 2: Cascade deduct targets (inclusion-exclusion)
+        all_ngrams = basic + extended
+        cascade_deduct_targets(all_ngrams)
+
+        # Step 3: Deduplicate against main keyword
+        deduplicate_keywords(basic, self.main_keyword)
+        deduplicate_keywords(extended, self.main_keyword)
+
+        # Initialize budgets with pre-processed data
+        self._init_phrase_budget(basic, "BASIC")
+        self._init_phrase_budget(extended, "EXTENDED")
 
         # Save initial budget snapshot to Firestore
         self._save_to_firestore("init")
@@ -85,9 +333,7 @@ class KeywordTracker:
     def _is_topic_phrase(self, phrase_lower: str) -> bool:
         """Check if phrase shares word stems with main keyword → topic-central.
 
-        Uses common-prefix matching (min 4 chars) as poor-man's Polish stemmer:
-        'mebli' vs 'mebel' → common prefix 'meb' (3) — borderline, try longest common prefix
-        'transportu' vs 'transport' → common prefix 'transport' (9) → match
+        Uses common-prefix matching (min 4 chars) as poor-man's Polish stemmer.
         """
         main_words = self._main_kw_lower.split()
         phrase_words = phrase_lower.split()
@@ -97,31 +343,19 @@ class KeywordTracker:
             for pw in phrase_words:
                 if len(pw) < 3:
                     continue
-                # Exact match
                 if mw == pw:
                     return True
-                # Common prefix >= 4 chars (covers mebli/meble/mebel/meblom)
-                prefix_len = 0
-                for a, b in zip(mw, pw):
-                    if a == b:
-                        prefix_len += 1
-                    else:
-                        break
-                if prefix_len >= 4:
+                if _common_prefix_len(mw, pw) >= 4:
                     return True
         return False
 
     def _init_phrase_budget(self, ngrams: list, ngram_type: str):
-        """Initialize phrase budgets from S1 ngram data.
+        """Initialize phrase budgets from pre-processed ngram data.
 
-        Budget scaling rationale:
-        - S1 freq_max = per-competitor-page count (typically 500-1200 words)
-        - Our articles are 1500-3000 words across total_batches sections
-        - With \\b word boundaries, inflected forms don't burn budget
-        - Topic phrases (sharing words with main kw) get 2x boost
-
-        BASIC:  max(total_batches * 2, freq_max * 2), topic phrases * 2
-        EXTENDED: max(2, freq_max), topic phrases * 1.5
+        Budget scaling:
+        - BASIC:  max(total_batches * 2, freq_max * 2), topic phrases * 2
+        - EXTENDED: max(2, freq_max), topic phrases * 1.5
+        - Fuzzy pattern for counting (aligns with cascade logic)
         """
         for ng in ngrams:
             text = (ng.get("ngram") or ng.get("text") or "").strip()
@@ -138,10 +372,9 @@ class KeywordTracker:
             is_topic = self._is_topic_phrase(text.lower())
 
             if ngram_type == "BASIC":
-                # Scale up: at least 2 per batch, or 2x competitor freq
                 global_max = max(self.total_batches * 2, target_max * 2)
                 if is_topic:
-                    global_max *= 2  # topic words appear naturally very often
+                    global_max *= 2
             else:  # EXTENDED
                 global_max = max(2, target_max)
                 if is_topic:
@@ -155,7 +388,7 @@ class KeywordTracker:
                     "global_used": 0,
                     "global_remaining": global_max,
                     "type": ngram_type,
-                    "_pattern": re.compile(r'\b' + re.escape(key) + r'\b'),
+                    "_pattern": _build_fuzzy_pattern(key),
                 }
 
     # ── Firestore persistence (write-only, for panel real-time display) ──
@@ -194,16 +427,18 @@ class KeywordTracker:
         except Exception as e:
             print(f"[BUDGET] Firestore save error (non-blocking): {e}")
 
-    # ── Counting (Fix 2: \b word boundaries for ALL phrases) ──
+    # ── Counting (fuzzy regex — aligns with cascade logic) ──
 
     def _count_main_kw(self, text: str) -> int:
         """Count main keyword — exact word-boundary match on lowercase."""
         return len(self._main_kw_pattern.findall(text.lower()))
 
     def _count_phrase(self, budget: dict, text_lower: str) -> int:
-        """Count phrase — word-boundary regex match, not str.count().
+        """Count phrase using fuzzy pattern.
 
-        'szampon' matches 'szampon' but NOT 'szamponem', 'szamponu', 'szampony'.
+        Pattern matches morphological variants:
+        'nawilżyć' pattern → \\bnawilż\\w*\\b → matches nawilżeniu, nawilżenia, nawilżone
+        'sucha skóra' → \\bsuch\\w*\\s+skór\\w*\\b → matches suchej skórze
         """
         return len(budget["_pattern"].findall(text_lower))
 
@@ -282,14 +517,12 @@ class KeywordTracker:
     def _main_kw_needs_inject(self) -> bool:
         """Check if main keyword needs forced injection (underuse).
 
-        Fix 5: Never inject if status is STOP or FORCE_BAN — ban always wins.
+        Never inject if status is STOP or FORCE_BAN — ban always wins.
         """
         if self._main_kw_status() != "NORMAL":
             return False
-        # Underuse: batch >= 3 and never used
         if self.batch_count >= 3 and self._global_main_kw_count == 0:
             return True
-        # Underuse: last 2 batches and used < 30% of max
         remaining_batches = self.total_batches - self.batch_count
         min_expected = max(2, self._kw_max // 3)
         if remaining_batches <= 2 and self._global_main_kw_count < min_expected:
@@ -301,7 +534,7 @@ class KeywordTracker:
     def format_main_kw_instruction(self) -> str:
         """Generate prompt instruction for main keyword.
 
-        Fix 5: force-ban always wins over force-inject (no conflicting instructions).
+        force-ban always wins over force-inject (no conflicting instructions).
         """
         status = self._main_kw_status()
         used = self._global_main_kw_count
@@ -322,25 +555,21 @@ class KeywordTracker:
     def format_phrases_for_prompt(self, assigned_phrases: list = None) -> str:
         """Format phrase budget for prompt.
 
-        Fix 3: No STOP for non-exhausted phrases. If budget > 0, phrase is allowed
-               regardless of whether it was "assigned" to this batch.
-        Fix 4: Cap EXTENDED phrases to _MAX_EXTENDED_PER_BATCH, rotate by batch_count.
+        - No STOP for non-exhausted phrases.
+        - Cap EXTENDED phrases to _MAX_EXTENDED_PER_BATCH, rotate by batch_count.
         """
         basic_lines = []
         extended_lines = []
         stop_lines = []
 
-        # Collect all phrases with remaining budget
         phrases_to_show = {}
         if assigned_phrases:
-            # Show assigned phrases + any with remaining budget
             for name in assigned_phrases:
                 if not name or not isinstance(name, str):
                     continue
                 key = name.strip().lower()
                 if key in self._global_phrase_budget:
                     phrases_to_show[key] = self._global_phrase_budget[key]
-            # Also include non-assigned BASIC phrases that still have budget
             for key, budget in self._global_phrase_budget.items():
                 if key not in phrases_to_show and budget["type"] == "BASIC" and budget["global_remaining"] > 0:
                     phrases_to_show[key] = budget
@@ -355,8 +584,6 @@ class KeywordTracker:
             ptype = budget["type"]
 
             if remaining <= 0:
-                # Fix 3: Only show STOP for BASIC exhausted phrases.
-                # Don't clutter prompt with STOP for every EXTENDED phrase.
                 if ptype == "BASIC":
                     stop_lines.append(f'🛑 STOP — nie używaj: "{phrase}"')
                 continue
@@ -373,9 +600,7 @@ class KeywordTracker:
             else:
                 extended_lines.append((key, line))
 
-        # Fix 4: Rotate EXTENDED phrases across batches, cap at _MAX_EXTENDED_PER_BATCH
         if len(extended_lines) > _MAX_EXTENDED_PER_BATCH:
-            # Rotate: shift by batch_count so different batches see different EXTENDED phrases
             offset = (self.batch_count * _MAX_EXTENDED_PER_BATCH) % len(extended_lines)
             rotated = extended_lines[offset:] + extended_lines[:offset]
             extended_lines = rotated[:_MAX_EXTENDED_PER_BATCH]

@@ -502,7 +502,7 @@ ZASADY:
 - Liczba po „·" = ile razy MOŻESZ użyć frazy w tej sekcji. Nie przekraczaj.
 - 🛑 STOP = budżet wyczerpany. NIE UŻYWAJ tej frazy w żadnej formie.
 - Jeśli fraza nie pasuje do kontekstu — POMIŃ. Lepiej 0 niż wciśnięta na siłę.
-- Liczy się tylko DOKŁADNA forma. Odmienione formy (np. „szamponem" ≠ „szampon") NIE zużywają budżetu, więc możesz odmieniać swobodnie.
+- Odmienione formy (np. „szamponem", „szamponu") RÓWNIEŻ liczą się do budżetu. Pisz naturalnie — system rozpoznaje odmiany.
 </ngrams>
 
 <causal_triplets>
