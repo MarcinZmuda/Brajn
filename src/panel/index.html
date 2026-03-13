@@ -278,6 +278,28 @@
         .ann-para-wrap{margin-bottom:20px;position:relative}
         .ann-empty{text-align:center;padding:60px 24px;color:var(--mg)}
         .ann-empty p{font-size:14px;color:var(--mg)}
+
+        /* ── Compliance tab ── */
+        .comp-score-ring{width:120px;height:120px;border-radius:50%;display:flex;align-items:center;justify-content:center;margin:0 auto 16px;position:relative}
+        .comp-score-ring .comp-val{font-size:32px;font-weight:800;letter-spacing:-1px}
+        .comp-score-ring .comp-lbl{font-size:10px;color:var(--mg);text-transform:uppercase;letter-spacing:.5px;position:absolute;bottom:16px}
+        .comp-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;margin-bottom:20px}
+        .comp-metric{background:var(--s1);border:1px solid var(--b1);border-radius:10px;padding:14px 16px}
+        .comp-metric-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px}
+        .comp-metric-label{font-size:12px;font-weight:700;color:var(--white)}
+        .comp-metric-score{font-size:18px;font-weight:800}
+        .comp-bar-track{height:6px;background:var(--b2);border-radius:3px;overflow:hidden;margin-bottom:8px}
+        .comp-bar-fill{height:100%;border-radius:3px;transition:width .4s}
+        .comp-detail{font-size:11px;color:var(--mg);line-height:1.5}
+        .comp-check{display:flex;align-items:center;gap:6px;font-size:12px;padding:3px 0;color:var(--lg)}
+        .comp-check .dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+        .comp-check .dot.pass{background:var(--gn)}.comp-check .dot.warn{background:var(--yl)}.comp-check .dot.fail{background:var(--rd)}
+        .comp-pair-row{display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--b1);font-size:12px}
+        .comp-pair-status{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+        .comp-mention-bar{display:flex;height:20px;border-radius:4px;overflow:hidden;margin:6px 0}
+        .comp-mention-seg{display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:700;color:var(--bg)}
+        .comp-section{margin-bottom:20px}
+        .comp-section-title{font-size:13px;font-weight:700;color:var(--orange);margin-bottom:10px;padding-bottom:6px;border-bottom:1px solid var(--b1)}
     </style>
 </head>
 <body>
@@ -345,6 +367,7 @@
                 <div class="tab" data-tab="article" onclick="switchTab('article')">Artykul</div>
                 <div class="tab" data-tab="entity" onclick="switchTab('entity')">Entity SEO</div>
                 <div class="tab" data-tab="annotate" onclick="switchTab('annotate')">Annotacje</div>
+                <div class="tab" data-tab="compliance" onclick="switchTab('compliance')">Compliance</div>
                 <div class="tab" data-tab="optional" onclick="switchTab('optional')">Moduly opcjonalne</div>
             </div>
 
@@ -423,6 +446,16 @@
                     <div class="ann-empty">
                         <div style="font-size:40px;margin-bottom:12px;opacity:.3">&#128270;</div>
                         <p>Wygeneruj artykul, aby zobaczyc widok annotacji</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ═══ ENTITY SEO COMPLIANCE TAB ═══ -->
+            <div class="tab-content" id="tab-compliance">
+                <div id="complianceContent">
+                    <div class="ann-empty">
+                        <div style="font-size:40px;margin-bottom:12px;opacity:.3">&#128202;</div>
+                        <p>Entity SEO compliance pojawi sie po wygenerowaniu artykulu</p>
                     </div>
                 </div>
             </div>
@@ -1476,6 +1509,12 @@ async function startWorkflow() {
                         if (d.data.pre_batch_map) {
                             renderPreBatch(d.data.pre_batch_map, d.data.input_variables || {}, d.data.prompt_log || []);
                         }
+                        // Store entity compliance for annotation view
+                        if (d.data.entity_compliance) {
+                            window._entityCompliance = d.data.entity_compliance;
+                            renderAnnotationView();
+                            renderCompliance(d.data.entity_compliance);
+                        }
                     }
                     // Mark all remaining steps as done
                     Object.keys(pipelineSteps).forEach(function(k) {
@@ -2205,6 +2244,236 @@ function renderAnnotationView() {
         }
     });
     html += '</div>'; // close ann-article
+
+    c.innerHTML = html;
+}
+
+// ── Compliance Rendering ──
+
+function _compScoreColor(score) {
+    if (score >= 70) return 'var(--gn)';
+    if (score >= 40) return 'var(--yl)';
+    return 'var(--rd)';
+}
+
+function _compStatusDot(status) {
+    var cls = status === 'pass' ? 'pass' : (status === 'warn' ? 'warn' : 'fail');
+    return '<span class="dot ' + cls + '"></span>';
+}
+
+function renderCompliance(data) {
+    var c = document.getElementById('complianceContent');
+    if (!data || data.error) {
+        c.innerHTML = '<div class="ann-empty"><div style="font-size:40px;margin-bottom:12px;opacity:.3">&#9888;</div><p>' + esc(data ? data.error : 'Brak danych') + '</p></div>';
+        return;
+    }
+
+    var overall = data.overall_score || 0;
+    var scores = data.component_scores || {};
+    var weights = data.score_weights || {};
+    var html = '';
+
+    // ── Overall Score Ring ──
+    var ringColor = _compScoreColor(overall);
+    html += '<div class="card" style="text-align:center;padding:28px">';
+    html += '<div class="comp-score-ring" style="border:4px solid ' + ringColor + ';box-shadow:0 0 20px ' + ringColor + '30">';
+    html += '<span class="comp-val" style="color:' + ringColor + '">' + overall + '</span>';
+    html += '</div>';
+    html += '<div style="font-size:12px;color:var(--mg);margin-top:4px">Entity SEO Compliance Score</div>';
+
+    // Article meta
+    var meta = data.article_meta || {};
+    if (meta.h1) {
+        html += '<div style="margin-top:12px;font-size:11px;color:var(--mg)">';
+        html += 'H1: ' + esc(meta.h1) + ' | ' + (meta.word_count || '?') + ' slow | ' + (meta.h2_count || '?') + ' H2 | ' + (meta.paragraph_count || '?') + ' akapitow';
+        html += '</div>';
+    }
+    html += '</div>';
+
+    // ── Component Scores Grid ──
+    html += '<div class="comp-grid">';
+    var metricLabels = {
+        entity_salience: 'Entity Salience',
+        spo_triples: 'Trojki SPO',
+        causal_chains: 'Lancuchy kauzalne',
+        cooccurrence: 'Co-occurrence',
+        mention_variety: 'Mention Variety',
+        ngram_budget: 'N-gram Budget',
+        centerpiece: 'Centerpiece',
+        hard_facts: 'Hard Facts',
+    };
+    var metricOrder = ['entity_salience', 'spo_triples', 'causal_chains', 'cooccurrence', 'mention_variety', 'ngram_budget', 'centerpiece', 'hard_facts'];
+    metricOrder.forEach(function(key) {
+        var score = scores[key] || 0;
+        var weight = weights[key] || 0;
+        var color = _compScoreColor(score);
+        html += '<div class="comp-metric">';
+        html += '<div class="comp-metric-head">';
+        html += '<span class="comp-metric-label">' + (metricLabels[key] || key) + ' <span style="color:var(--mg);font-weight:400">(' + weight + '%)</span></span>';
+        html += '<span class="comp-metric-score" style="color:' + color + '">' + score + '</span>';
+        html += '</div>';
+        html += '<div class="comp-bar-track"><div class="comp-bar-fill" style="width:' + score + '%;background:' + color + '"></div></div>';
+        html += '</div>';
+    });
+    html += '</div>';
+
+    // ── 1. Entity Salience Detail ──
+    var es = data.entity_salience || {};
+    html += '<div class="card comp-section">';
+    html += '<div class="comp-section-title">1. Entity Salience</div>';
+    if (es.main_entity) {
+        html += '<div style="font-size:12px;color:var(--lg);margin-bottom:8px">Encja glowna: <b>' + esc(es.main_entity) + '</b></div>';
+    }
+    var esChecks = [
+        { label: 'Pozycja w tekscie (pierwsze 200 slow)', status: (es.position || {}).status || 'fail', detail: 'Slowo #' + ((es.position || {}).first_word || '?') },
+        { label: 'Obecnosc w H1', status: (es.h1 || {}).status || 'fail', detail: (es.h1 || {}).contains_entity ? 'Tak' : 'Nie' },
+        { label: 'Obecnosc w H2 (min 2)', status: (es.h2 || {}).status || 'fail', detail: ((es.h2 || {}).count_with_entity || 0) + '/' + ((es.h2 || {}).total_h2 || 0) },
+        { label: 'Subject ratio', status: (es.subject_ratio || {}).status || 'fail', detail: ((es.subject_ratio || {}).actual || 0) * 100 + '% (cel: ' + ((es.subject_ratio || {}).expected || 0) * 100 + '%)' },
+        { label: 'Early mentions (intro)', status: (es.early_mentions || {}).status || 'fail', detail: ((es.early_mentions || {}).found || []).length + '/' + ((es.early_mentions || {}).expected || []).length },
+    ];
+    esChecks.forEach(function(ch) {
+        html += '<div class="comp-check">' + _compStatusDot(ch.status) + '<span>' + esc(ch.label) + '</span><span style="margin-left:auto;color:var(--mg)">' + esc(String(ch.detail)) + '</span></div>';
+    });
+    html += '</div>';
+
+    // ── 2. Co-occurrence Pairs ──
+    var cooc = data.cooccurrence || {};
+    var coocPairs = cooc.pairs || [];
+    if (coocPairs.length > 0) {
+        html += '<div class="card comp-section">';
+        html += '<div class="comp-section-title">2. Co-occurrence Pairs <span style="color:var(--mg);font-weight:400">(' + (cooc.stats || {}).pass + '/' + (cooc.stats || {}).total + ' pass)</span></div>';
+        coocPairs.forEach(function(p) {
+            var color = p.status === 'pass' ? 'var(--gn)' : 'var(--rd)';
+            html += '<div class="comp-pair-row">';
+            html += '<span class="comp-pair-status" style="background:' + color + '"></span>';
+            html += '<span style="color:var(--lg)">' + esc(p.entity_a) + '</span>';
+            html += '<span style="color:var(--mg)">+</span>';
+            html += '<span style="color:var(--lg)">' + esc(p.entity_b) + '</span>';
+            html += '<span style="margin-left:auto;color:var(--mg);font-size:11px">' + (p.found_together ? p.same_paragraph_count + ' akapit(y)' : 'brak') + '</span>';
+            html += '</div>';
+        });
+        html += '</div>';
+    }
+
+    // ── 3. SPO Triples ──
+    var spo = data.spo_triples || {};
+    var triples = spo.triples || [];
+    if (triples.length > 0) {
+        html += '<div class="card comp-section">';
+        html += '<div class="comp-section-title">3. Trojki SPO <span style="color:var(--mg);font-weight:400">(' + (spo.stats || {}).covered + '/' + (spo.stats || {}).total + ' pokryte)</span></div>';
+        triples.slice(0, 12).forEach(function(t) {
+            html += '<div class="comp-check">' + _compStatusDot(t.status);
+            html += '<span style="color:var(--lg)">' + esc(t.subject) + '</span>';
+            html += '<span style="color:var(--orange)">' + esc(t.predicate) + '</span>';
+            html += '<span style="color:var(--lg)">' + esc(t.object) + '</span>';
+            html += '<span style="margin-left:auto">';
+            if (t.clear_spo) html += '<span class="chip" style="background:rgba(52,211,153,.1);color:var(--gn);border-color:rgba(52,211,153,.2)">SPO</span>';
+            else if (t.found_in_article) html += '<span class="chip" style="background:rgba(251,191,36,.1);color:var(--yl);border-color:rgba(251,191,36,.2)">czesciowe</span>';
+            else html += '<span class="chip" style="background:rgba(239,68,68,.1);color:var(--rd);border-color:rgba(239,68,68,.2)">brak</span>';
+            html += '</span></div>';
+        });
+        html += '</div>';
+    }
+
+    // ── 4. Mention Variety ──
+    var mv = data.mention_variety || {};
+    if (mv.has_data) {
+        var named = mv.named || {};
+        var nominal = mv.nominal || {};
+        var pronominal = mv.pronominal || {};
+        html += '<div class="card comp-section">';
+        html += '<div class="comp-section-title">4. Mention Variety <span style="color:var(--mg);font-weight:400">(ideal: Named 40-50%, Nominal 30-40%, Pro 15-25%)</span></div>';
+        html += '<div class="comp-mention-bar">';
+        if (named.pct > 0) html += '<div class="comp-mention-seg" style="width:' + named.pct + '%;background:var(--orange)">' + named.pct + '% N</div>';
+        if (nominal.pct > 0) html += '<div class="comp-mention-seg" style="width:' + nominal.pct + '%;background:var(--bl)">' + nominal.pct + '% Nom</div>';
+        if (pronominal.pct > 0) html += '<div class="comp-mention-seg" style="width:' + pronominal.pct + '%;background:#a78bfa">' + pronominal.pct + '% Pro</div>';
+        html += '</div>';
+        html += '<div style="display:flex;gap:16px;font-size:11px;color:var(--mg);margin-top:4px">';
+        html += '<span>Named: ' + named.count + 'x</span>';
+        html += '<span>Nominal: ' + nominal.count + 'x</span>';
+        html += '<span>Pronominal: ' + pronominal.count + 'x</span>';
+        html += '<span>Razem: ' + (mv.total_mentions || 0) + '</span>';
+        html += '</div>';
+        // Found examples
+        if ((named.found || []).length > 0) {
+            html += '<div style="margin-top:8px;font-size:11px"><span style="color:var(--orange)">Named:</span> <span style="color:var(--lg)">' + (named.found || []).map(esc).join(', ') + '</span></div>';
+        }
+        if ((nominal.found || []).length > 0) {
+            html += '<div style="font-size:11px"><span style="color:var(--bl)">Nominal:</span> <span style="color:var(--lg)">' + (nominal.found || []).map(esc).join(', ') + '</span></div>';
+        }
+        html += '</div>';
+    }
+
+    // ── 5. Causal Chains ──
+    var cc = data.causal_chains || {};
+    var chains = cc.chains || [];
+    if (chains.length > 0) {
+        html += '<div class="card comp-section">';
+        html += '<div class="comp-section-title">5. Lancuchy kauzalne <span style="color:var(--mg);font-weight:400">(' + (cc.stats || {}).covered + '/' + (cc.stats || {}).total + ' pokryte, ' + (cc.stats || {}).with_mechanism + ' z mechanizmem)</span></div>';
+        chains.slice(0, 8).forEach(function(ch) {
+            html += '<div class="comp-check">' + _compStatusDot(ch.status);
+            html += '<span style="color:var(--lg);font-size:11px">' + esc(ch.chain) + '</span>';
+            if (ch.has_mechanism) html += '<span class="chip" style="background:rgba(52,211,153,.1);color:var(--gn);border-color:rgba(52,211,153,.2);margin-left:auto">mechanizm</span>';
+            html += '</div>';
+        });
+        html += '</div>';
+    }
+
+    // ── 6. Centerpiece ──
+    var cp = data.centerpiece || {};
+    html += '<div class="card comp-section">';
+    html += '<div class="comp-section-title">6. Centerpiece Block (pierwsze 100 slow)</div>';
+    var cpChecks = [
+        { label: 'Encja glowna w pierwszym zdaniu', ok: cp.main_entity_in_first_sentence },
+        { label: 'Definicja encji obecna', ok: cp.definition_present },
+        { label: 'Zapowiedz tresci artykulu', ok: cp.topic_preview_present },
+        { label: 'Encje wspierajace (' + ((cp.supporting_entities || {}).count_found || 0) + '/' + ((cp.supporting_entities || {}).count_expected || 0) + ')', ok: ((cp.supporting_entities || {}).count_found || 0) >= 1 },
+    ];
+    cpChecks.forEach(function(ch) {
+        html += '<div class="comp-check">' + _compStatusDot(ch.ok ? 'pass' : 'fail') + '<span>' + esc(ch.label) + '</span></div>';
+    });
+    html += '</div>';
+
+    // ── 7. Naming Consistency ──
+    var nc = data.naming_consistency || {};
+    var variants = nc.variants || [];
+    if (variants.length > 0) {
+        html += '<div class="card comp-section">';
+        html += '<div class="comp-section-title">7. Naming Consistency <span style="color:var(--mg);font-weight:400">(' + nc.unique_forms + ' form)</span></div>';
+        html += '<div style="display:flex;flex-wrap:wrap;gap:6px">';
+        variants.forEach(function(v) {
+            html += '<span class="chip" style="background:var(--s2);color:var(--lg);border-color:var(--b2)">' + esc(v.form) + ' <span style="color:var(--orange)">' + v.count + 'x</span></span>';
+        });
+        html += '</div>';
+        html += '</div>';
+    }
+
+    // ── 8. Hard Facts ──
+    var hf = data.hard_facts || {};
+    var facts = hf.facts || [];
+    if (facts.length > 0) {
+        html += '<div class="card comp-section">';
+        html += '<div class="comp-section-title">8. Hard Facts <span style="color:var(--mg);font-weight:400">(' + (hf.stats || {}).found + '/' + (hf.stats || {}).total + ' znalezione)</span></div>';
+        facts.slice(0, 15).forEach(function(f) {
+            html += '<div class="comp-check">' + _compStatusDot(f.status);
+            html += '<span style="color:var(--lg)">' + esc(f.value) + '</span>';
+            if (f.category) html += '<span style="margin-left:6px;color:var(--mg);font-size:10px">[' + esc(f.category) + ']</span>';
+            html += '</div>';
+        });
+        html += '</div>';
+    }
+
+    // ── 9. N-gram Budget ──
+    var nb = data.ngram_budget || {};
+    var nbStats = nb.stats || {};
+    if (nbStats.total > 0) {
+        html += '<div class="card comp-section">';
+        html += '<div class="comp-section-title">9. N-gram Budget <span style="color:var(--mg);font-weight:400">(ok: ' + (nbStats.ok || 0) + ', missing: ' + (nbStats.missing || 0) + ', over: ' + (nbStats.over || 0) + ')</span></div>';
+        var nbPct = Math.round((nbStats.ok || 0) / Math.max(nbStats.total, 1) * 100);
+        html += '<div class="comp-bar-track" style="height:8px"><div class="comp-bar-fill" style="width:' + nbPct + '%;background:' + _compScoreColor(nbPct) + '"></div></div>';
+        html += '<div style="font-size:11px;color:var(--mg);margin-top:4px">Coverage: ' + nbPct + '% (' + (nbStats.ok || 0) + ' ok / ' + nbStats.total + ' total)</div>';
+        html += '</div>';
+    }
 
     c.innerHTML = html;
 }

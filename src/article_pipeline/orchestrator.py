@@ -35,6 +35,7 @@ from src.article_pipeline.validators import (
 )
 from src.article_pipeline.ymyl_detector import detect_ymyl, get_disclaimer_text
 from src.article_pipeline.search_variants import generate_search_variants
+from src.article_pipeline.entity_seo_compliance import run_entity_seo_compliance
 
 
 def _safe_json_parse(text: str) -> dict | None:
@@ -234,6 +235,16 @@ class ArticleOrchestrator:
         mention_forms = self.search_variants_result.get("mention_forms", {})
         self.variables["MENTION_FORMS_JSON"] = json.dumps(mention_forms, ensure_ascii=False)
         self.variables["_mention_forms"] = mention_forms
+        # Flat string forms for prompt templates
+        named = mention_forms.get("named", "")
+        if isinstance(named, list):
+            self.variables["NAMED_FORMS"] = ", ".join(named)
+        else:
+            self.variables["NAMED_FORMS"] = str(named)
+        nominal = mention_forms.get("nominal", [])
+        self.variables["NOMINAL_FORMS"] = ", ".join(nominal) if isinstance(nominal, list) else str(nominal)
+        pronominal = mention_forms.get("pronominal", [])
+        self.variables["PRONOMINAL_CUES"] = ", ".join(pronominal) if isinstance(pronominal, list) else str(pronominal)
         return self.search_variants_result
 
     def run_h2_plan(self) -> list:
@@ -525,7 +536,7 @@ class ArticleOrchestrator:
             "HARD_FACTS_BATCH_0_JSON": json.dumps(hard_facts_b0, ensure_ascii=False),
         }
 
-        system = fill_template(SYSTEM_PROMPT, batch_vars)
+        system = fill_template(BATCH_N_SYSTEM, batch_vars)
         user = fill_template(BATCH_0_PROMPT, batch_vars)
 
         text = self._llm_call(system, user, max_tokens=2000, label="batch_0")
@@ -643,9 +654,41 @@ class ArticleOrchestrator:
 
         return text
 
+    def _filter_faq_questions(self, questions: list, max_faq: int = 4) -> list:
+        """
+        Filter FAQ questions to only those NOT already answered in article batches.
+        Returns up to max_faq questions that represent content gaps.
+        """
+        if not questions or not self.batch_texts:
+            return questions[:max_faq]
+
+        # Build text of all existing batches (lowered)
+        existing_text = " ".join(self.batch_texts).lower()
+
+        # Extract key phrases from each question (3+ char words)
+        def _question_covered(q: str) -> bool:
+            words = [w.strip("?.,!") for w in q.lower().split() if len(w.strip("?.,!")) > 3]
+            if not words:
+                return False
+            # If >= 60% of significant words appear in existing text, question is covered
+            found = sum(1 for w in words if w in existing_text)
+            return found >= len(words) * 0.6
+
+        uncovered = [q for q in questions if not _question_covered(q)]
+        covered = [q for q in questions if _question_covered(q)]
+
+        # Prefer uncovered (content gaps), fill remaining from covered if needed
+        result = uncovered[:max_faq]
+        if len(result) < max_faq:
+            result.extend(covered[:max_faq - len(result)])
+
+        print(f"[FAQ] Filtered {len(questions)} → {len(result)} questions ({len(uncovered)} uncovered content gaps)")
+        return result
+
     def run_batch_faq(self) -> str:
         """
         Step 4: Generate FAQ section.
+        Limited to max 4 questions that represent content gaps (not covered in H2 sections).
         """
         pre = self.pre_batch_map or {}
         faq_data = (pre.get("batches") or {}).get("batch_faq", {})
@@ -655,26 +698,46 @@ class ArticleOrchestrator:
         if pubmed and ymyl in ("zdrowie",):
             disclaimer += f" (źródło: {pubmed})"
 
-        related_as_questions = []
-        for rs in self.variables.get("_related_searches", [])[:5]:
+        # Collect all candidate FAQ questions (priority order)
+        all_candidates = []
+        paa_priority = self.variables.get("_paa_unanswered", [])
+        paa_standard = faq_data.get("pytania_standardowe", self.variables.get("_paa_standard", []))
+        related = self.variables.get("_related_searches", [])
+
+        all_candidates.extend(paa_priority)
+        all_candidates.extend(paa_standard)
+        for rs in related[:5]:
             text = rs if isinstance(rs, str) else str(rs)
             if not text.endswith("?"):
                 text = f"Czym jest {text}?" if len(text.split()) <= 3 else f"{text}?"
-            related_as_questions.append(text)
+            all_candidates.append(text)
+
+        # Deduplicate
+        seen = set()
+        unique = []
+        for q in all_candidates:
+            q_lower = q.lower().strip()
+            if q_lower not in seen:
+                seen.add(q_lower)
+                unique.append(q)
+
+        # Filter to max 4 content-gap questions
+        faq_questions = self._filter_faq_questions(unique, max_faq=4)
 
         batch_vars = {
             **self.variables,
-            "PAA_STANDARDOWE": json.dumps(faq_data.get("pytania_standardowe", self.variables.get("_paa_standard", [])), ensure_ascii=False),
-            "RELATED_AS_QUESTIONS": json.dumps(related_as_questions, ensure_ascii=False),
+            "PAA_BEZ_ODPOWIEDZI": json.dumps(faq_questions, ensure_ascii=False),
+            "PAA_STANDARDOWE": "[]",  # Already merged into single prioritized list
+            "RELATED_AS_QUESTIONS": "[]",
             "NGRAMY_FAQ": "\n".join(faq_data.get("ngramy", [])),
             "HARD_FACTS_FAQ": json.dumps(_hard_facts_values(self.variables.get("_hard_facts", [])), ensure_ascii=False),
             "DISCLAIMER_SECTION": disclaimer if disclaimer else "Brak wymagań YMYL — pomiń disclaimer.",
         }
 
-        system = fill_template(SYSTEM_PROMPT, batch_vars)
+        system = fill_template(BATCH_N_SYSTEM, batch_vars)
         user = fill_template(BATCH_FAQ_PROMPT, batch_vars)
 
-        text = self._llm_call(system, user, max_tokens=3000, label="batch_faq")
+        text = self._llm_call(system, user, max_tokens=2000, label="batch_faq")
         self.batch_texts.append(text)
         return text
 
@@ -748,6 +811,30 @@ class ArticleOrchestrator:
         self.coverage_result = result
         print(f"[COVERAGE] {result['stats']}")
         return result
+
+    def run_entity_compliance(self) -> dict:
+        """
+        Run Entity SEO Compliance analysis on the assembled article.
+        Zero LLM calls — purely local analysis.
+        Reuses coverage_result for ngram_budget if available.
+        """
+        if not self.full_article:
+            return {"error": "No article to analyze", "overall_score": 0}
+
+        # Try to load spaCy for subject_ratio analysis
+        nlp = None
+        try:
+            from src.common.nlp_singleton import get_nlp
+            nlp = get_nlp()
+        except Exception:
+            print("[COMPLIANCE] spaCy not available — skipping subject_ratio")
+
+        return run_entity_seo_compliance(
+            article_text=self.full_article,
+            s1_data=self._s1_full,
+            ngram_coverage=getattr(self, "coverage_result", None),
+            nlp=nlp,
+        )
 
     def run_post_processing(self) -> dict:
         """
@@ -885,6 +972,9 @@ class ArticleOrchestrator:
         # Coverage check — bez LLM, czysto lokalne
         coverage = self.run_coverage_check()
 
+        # Entity SEO Compliance — czysto lokalne
+        entity_compliance = self.run_entity_compliance()
+
         yield {"event": "step_done", "step": total_steps, "data": {"validation": validation}}
 
         yield {"event": "complete", "data": {
@@ -896,6 +986,7 @@ class ArticleOrchestrator:
             "input_variables": self.input_variables,
             "pre_batch_map": self.pre_batch_map or {},
             "coverage": coverage,
+            "entity_compliance": entity_compliance,
             "keyword_budget": self.keyword_tracker.get_summary(),
             "keyword_reports": self.keyword_tracker.batch_reports,
         }}

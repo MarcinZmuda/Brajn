@@ -357,6 +357,9 @@ Dla każdego batcha (batch_0 przez batch_N i batch_faq) wskaż:
 3. które łańcuchy kauzalne wpleść w ten batch
 4. które peryfrazy/warianty wpleść w ten batch
 
+Pary współwystępujące: {{PARY_KOOCCURRENCE}}
+Trójki SPO: {{ENTITY_RELATIONSHIPS_JSON}}
+
 ZASADY ROZMIESZCZEŃ:
 - Encja główna: batch_0 i każdy kolejny batch minimum 1x
 - Encje o salience > 0.7: batch_0 + batch_1 obowiązkowo
@@ -366,6 +369,7 @@ ZASADY ROZMIESZCZEŃ:
 - Peryfrazy i warianty potoczne: minimum 3 różne w całym artykule
 - Warianty formalne: minimum 2 różne w całym artykule
 - weighted blanket / anglicyzmy branżowe: wpleść jeśli podane w danych
+- REGUŁA KOOCCURRENCE: Jeśli para encji współwystępuje w >=5 zdaniach u konkurencji (z pary współwystępujących), przypisz OBE encje do tego samego batcha.
 
 WAŻNE: Jeśli dane wejściowe zawierają SERP snippets z liczbami, cenami lub datami — wyodrębnij je osobno jako "hard_facts" w JSON.
 Te wartości mają priorytet absolutny — model nie może ich zastępować.
@@ -452,6 +456,13 @@ ZASADA FALLBACK — użyj PIERWSZEGO dostępnego źródła:
    - Jeśli <key_triplet> jest NIEPUSTE — użyj tego tripletu przyczyna→skutek jako oś jednego ze zdań w intro.
    - To WSZYSTKO. Nie ładuj intro dodatkowymi encjami — {{DLUGOSC_INTRO}} słów to za mało. Reszta encji i n-gramów trafi do sekcji H2.
 
+5. CENTERPIECE BLOCK (pierwsze 2-4 zdania intro):
+   Pierwsze zdania intro to blok deklaracji tematu:
+   a) Zdanie 1: Zdefiniuj encję główną — czym jest, w jednym zdaniu.
+   b) Zdanie 2-3: Wymień 2-3 encje wspierające z <first_paragraph_entities> — naturalnie, w kontekście.
+   c) Zdanie 3-4: Zarysuj, co artykuł pokryje (odpowiednik odwróconej piramidy).
+   Cel: Google musi z pierwszych 100 słów zrozumieć O CZYM jest strona i JAKIE encje są centralne.
+
 6. ZAPOWIEDŹ ARTYKUŁU:
    Ostatnie 1–2 zdania intro zapowiadają, co czytelnik znajdzie dalej.
    Nawiąż do tematu pierwszej sekcji H2: „{{PIERWSZY_H2}}".
@@ -459,21 +470,6 @@ ZASADA FALLBACK — użyj PIERWSZEGO dostępnego źródła:
 
 7. HARD FACTS: wpleć fakty z <hard_facts> które pasują do kontekstu intro. Reszta trafi do sekcji H2.
 </intro_rules>
-
-<style>
-1. Naturalny, publicystyczny polski. Mów do czytelnika: „możesz", „pamiętaj", „jeśli".
-2. Średnia długość zdania: 11–15 słów. Rytm: krótkie (5–8) przeplataj z dłuższymi (18–22).
-3. Akapity: długość wynika z funkcji. Unikaj monotonii — różnicuj liczbę zdań.
-4. Aktywna strona czasownika.
-</style>
-
-<banned_phrases>
-Nigdy nie używaj (ani wariantów):
-- Warto zaznaczyć / Warto podkreślić / Należy zaznaczyć / Należy podkreślić
-- Jest to ważne / W dzisiejszym artykule / Kluczowym aspektem / Podsumowując powyższe
-- Jak wspomniano wcześniej / Co więcej, / Ponadto, / Niemniej jednak,
-- W związku z powyższym, / Mając na uwadze / Nie sposób nie wspomnieć / Wiele osób błędnie
-</banned_phrases>
 
 <data>
 
@@ -496,6 +492,10 @@ Nigdy nie używaj (ani wariantów):
 <hard_facts>
 {{HARD_FACTS_BATCH_0_JSON}}
 </hard_facts>
+
+<first_paragraph_entities>
+{{ENCJE_PIERWSZY_AKAPIT}}
+</first_paragraph_entities>
 
 <early_entities>
 Te encje pojawiają się u konkurencji w pierwszych 200 słowach. Wpleć je w intro:
@@ -530,27 +530,22 @@ Bez komentarzy, metadanych, ani tekstu przed/po. Markdown: # dla H1, potem akapi
 </output_format>
 
 <self_check>
-Przed zwróceniem zweryfikuj:
-1. H1 ≤ 70 znaków ze spacjami?
-2. H1 zawiera encję główną i NIE zaczyna się od niej w mianowniku?
-3. Intro jest zwięzłe i na temat?
-4. Pierwsze zdanie zawiera encję główną, ale nie jako podmiot w mianowniku?
-5. Pierwsze 100 słów pokrywa kluczowe informacje ze źródła referencyjnego (AI Overview / Featured Snippet)?
-6. Czy hard facts z <hard_facts> są wplecione tam gdzie pasują do kontekstu?
-7. Jeśli <key_ngram> niepuste — czy fraza pojawia się w intro?
-8. Jeśli <key_triplet> niepuste — czy triplet przyczyna→skutek jest użyty?
-9. Ostatnie zdanie nawiązuje do tematu „{{PIERWSZY_H2}}"?
-10. Czy encje z <early_entities> pojawiają się w intro?
-10. Żadna fraza z <banned_phrases> nie występuje?
-11. Żadne zdanie nie jest ogólnikiem bez konkretnej informacji?
-Jeśli nie przechodzi — popraw ZANIM zwrócisz tekst.
+Zweryfikuj: H1 ≤ 70 znaków, zawiera encję, NIE zaczyna się od niej w mianowniku? Pierwsze 100 słów pokrywa AI Overview/Featured Snippet? Hard facts dokładne? Key ngram/triplet użyte? Ostatnie zdanie nawiązuje do „{{PIERWSZY_H2}}"? Brak zakazanych fraz? Brak ogólników?
 </self_check>"""
 
 
 # ══════════════════════════════════════════════════════════════
 # 4. BATCH N — SZABLON SEKCJI H2 (v3.0 XML)
 # ══════════════════════════════════════════════════════════════
-BATCH_N_SYSTEM = """Jesteś doświadczonym polskim redaktorem treści SEO. Piszesz fragment artykułu na podstawie danych dostarczonych w instrukcji. Zwracasz wyłącznie tekst w formacie określonym w <output_format>."""
+BATCH_N_SYSTEM = """Jesteś doświadczonym polskim redaktorem treści SEO.
+
+STYL: naturalny, publicystyczny polski. Mów do czytelnika: „możesz", „pamiętaj", „jeśli".
+Zdania: średnia 11–15 słów. Rytm: krótkie (5–8) przeplataj z dłuższymi (18–22).
+Aktywna strona czasownika. Bez pogrubień w tekście ciągłym. Listy punktowe tylko dla procedur/instrukcji.
+
+ZAKAZANE FRAZY: Warto zaznaczyć/podkreślić, Należy zaznaczyć/podkreślić, Jest to ważne, W dzisiejszym artykule, Kluczowym aspektem, Podsumowując powyższe, Jak wspomniano wcześniej, Co więcej, Ponadto, Niemniej jednak, W związku z powyższym, Mając na uwadze, Nie sposób nie wspomnieć, Wiele osób błędnie.
+
+Zwracasz wyłącznie tekst w formacie określonym w <output_format>."""
 
 BATCH_N_PROMPT = """<task>
 Napisz WYŁĄCZNIE sekcję H2 nr {{N}} artykułu „{{HASLO_GLOWNE}}".
@@ -558,89 +553,35 @@ Nie pisz intro, nie pisz FAQ, nie pisz innych sekcji.
 </task>
 
 <continuity>
-Poprzednia sekcja zakończyła się zdaniem: „{{OSTATNIE_ZDANIE_POPRZEDNIEGO_BATCHA}}"
+Poprzednia sekcja: „{{OSTATNIE_ZDANIE_POPRZEDNIEGO_BATCHA}}"
 Zacznij od naturalnego rozwinięcia. Nie powtarzaj treści poprzedniej sekcji.
 </continuity>
 
 <section_spec>
-Nagłówek H2: {{NAGLOWEK_H2}}
-Następna sekcja: {{NASTEPNY_H2}}
-Orientacyjna długość sekcji: ~{{DLUGOSC_SEKCJI}} słów, ale pisz tyle ile wymaga temat.
+H2: {{NAGLOWEK_H2}}
+Następna: {{NASTEPNY_H2}}
+Długość: ~{{DLUGOSC_SEKCJI}} słów (pisz tyle ile wymaga temat).
 </section_spec>
 
-<style>
-1. Naturalny, publicystyczny polski. Mów do czytelnika: „możesz", „pamiętaj", „jeśli".
-2. Średnia długość zdania: 11–15 słów. Rytm: krótkie (5–8) przeplataj z dłuższymi (18–22).
-3. Akapity: długość wynika z funkcji. Unikaj monotonii — różnicuj liczbę zdań.
-4. Aktywna strona czasownika.
-</style>
-
-<banned_phrases>
-Nigdy nie używaj (ani wariantów):
-- Warto zaznaczyć / Warto podkreślić / Należy zaznaczyć / Należy podkreślić
-- Jest to ważne / W dzisiejszym artykule / Kluczowym aspektem / Podsumowując powyższe
-- Jak wspomniano wcześniej / Co więcej, / Ponadto, / Niemniej jednak,
-- W związku z powyższym, / Mając na uwadze / Nie sposób nie wspomnieć / Wiele osób błędnie
-</banned_phrases>
-
 <entity_rules>
-Encja główna „{{ENCJA_GLOWNA}}" — wpleć jeśli naturalnie pasuje do sekcji. Nie każda sekcja musi ją zawierać.
-Encje sekcji (z <section_entities>): staraj się wpleść te, które naturalnie pasują do tematu. Odmieniaj przez przypadki.
-Jeśli któraś encja nie pasuje do kontekstu — pomiń ją. Lepiej 0 niż wciśnięta na siłę.
-ROTACJA WZMIANEK: Nie powtarzaj encji głównej pełną nazwą w każdym zdaniu.
-Używaj form z <mention_forms>: Named (pełna nazwa) → Nominal (peryfraza) → Pronominal (zaimek), potem rotuj.
+Encja główna „{{ENCJA_GLOWNA}}" — wpleć jeśli naturalnie pasuje. Nie każda sekcja musi ją zawierać.
+Encje sekcji z <section_entities>: wpleć te, które pasują do tematu. Odmieniaj przez przypadki.
+ROTACJA WZMIANEK: Named (pełna nazwa) → Nominal (peryfraza z <mention_forms>) → Pronominal (zaimek) → rotuj.
+Encja główna jako PODMIOT gramatyczny (nie dopełnienie) — u konkurencji podmiot w {{SUBJECT_RATIO_PCT}}% zdań.
 </entity_rules>
 
 <ngram_rules>
-N-gramy z <section_ngrams> mają budżet wystąpień dla tej sekcji.
-
-OZNACZENIA:
-- MUST = fraza oczekiwana. Staraj się użyć w podanej formie lub naturalnej odmianie, ale nie na siłę.
-- NICE-TO-HAVE = fraza opcjonalna. Użyj tylko jeśli naturalnie pasuje.
-- Liczba po „·" = ile razy MOŻESZ użyć frazy w tej sekcji. Wartość po „max" to ABSOLUTNE MAXIMUM.
-- 🛑 STOP = budżet wyczerpany. BEZWZGLĘDNY ZAKAZ użycia tej frazy i jej odmian. Użyj podanych zamienników.
-- ⛔ HARD STOP = fraza drastycznie przekroczona. KAŻDE kolejne użycie obniża jakość. Zamień na synonimy.
-
-ZASADY:
-- Odmienione formy (np. „szamponem", „szamponu") RÓWNIEŻ liczą się do budżetu.
-- Jeśli fraza nie pasuje do kontekstu — POMIŃ. Lepiej 0 niż wciśnięta na siłę.
-- Nie powtarzaj tego samego n-gramu w sąsiednich zdaniach.
-- Nie zaczynaj dwóch akapitów od tej samej frazy kluczowej.
-- Jeśli zdanie brzmi sztucznie z powodu wciśniętego n-gramu — usuń go.
-- STUFFING = powtarzanie frazy ponad limit. To OBNIŻA scoring SEO, nie podnosi.
+OZNACZENIA: MUST = oczekiwana, NICE-TO-HAVE = opcjonalna, 🛑 STOP = zakaz użycia, ⛔ HARD STOP = drastycznie przekroczona.
+Liczba po „·" = max użyć w sekcji. Odmienione formy RÓWNIEŻ liczą się do budżetu.
+Nie powtarzaj n-gramu w sąsiednich zdaniach. Naturalność > SEO. STUFFING obniża scoring.
 </ngram_rules>
 
-<causal_rules>
-Triplety z <section_triplets>: wyjaśniaj DLACZEGO → CO → EFEKT.
-Używaj spójników: dlatego / bo / w efekcie / ponieważ / przez co / w rezultacie.
-Jeśli <section_triplets> jest puste — nie wymyślaj tripletów. Pisz normalnie.
-</causal_rules>
-
-<hard_facts_rules>
-Fakty z <section_hard_facts>: użyj dokładnie jak podane.
-Nie zaokrąglaj, nie zastępuj własnymi szacunkami.
-Jeśli fakt koliduje z Twoją wiedzą — użyj wersji z <section_hard_facts>.
-Wplataj naturalnie w tekst, nie wypisuj jako luźne liczby.
-</hard_facts_rules>
-
-<voice_guidance>
-Encja główna „{{ENCJA_GLOWNA}}": u konkurencji jest podmiotem w {{SUBJECT_RATIO_PCT}}% zdań.
-Gdy ją użyjesz — niech będzie PODMIOTEM, nie dopełnieniem w stronie biernej.
-</voice_guidance>
-
-<spo_structure>
-Relacje encji z <section_entity_relationships>: opisz je czytelną strukturą SPO.
-Dla każdej relacji:
-1. Zdanie SPO: [PODMIOT] [ORZECZENIE] [DOPEŁNIENIE] + konkretna wartość
-2. Wyjaśnienie: dlaczego/jak to działa (1-2 zdania)
-NIE pisz ogólników bez SPO. Każde kluczowe zdanie musi mieć czytelny podmiot, orzeczenie i dopełnienie.
-</spo_structure>
-
-<formatting_rules>
-1. Listy punktowe: TYLKO dla instrukcji krok po kroku, procedur, wymagań formalnych.
-2. Pogrubienia w tekście ciągłym: zakazane.
-</formatting_rules>
-
+<content_rules>
+- Triplety z <section_triplets>: DLACZEGO → CO → EFEKT (spójniki: dlatego/bo/w efekcie/ponieważ).
+- Hard facts z <section_hard_facts>: użyj dokładnie, nie zaokrąglaj.
+- Relacje z <section_entity_relationships>: opisz strukturą SPO (podmiot-orzeczenie-dopełnienie + wartość).
+- Pary z <section_cooccurrence>: trzymaj w TYM SAMYM akapicie.
+</content_rules>
 
 <data>
 
@@ -695,17 +636,7 @@ Bez komentarzy, metadanych, ani tekstu przed/po.
 </output_format>
 
 <self_check>
-Przed zwróceniem zweryfikuj:
-1. Sekcja jest zwięzła i wyczerpuje temat bez lania wody?
-2. Encja główna pojawia się jeśli naturalnie pasuje do kontekstu?
-3. Żaden n-gram nie przekracza swojego max budżetu?
-4. Czy MUST n-gramy są w miarę możliwości użyte (bez sztucznego wciskania)?
-5. Żaden n-gram ze statusem 🛑 STOP lub ⛔ HARD STOP nie został użyty?
-6. Żadna fraza z <banned_phrases> nie występuje?
-7. Hard facts użyte dokładnie (nie zaokrąglone)?
-8. Pary z <section_cooccurrence> są w tym samym akapicie?
-9. Encja główna jest podmiotem (nie dopełnieniem) w zdaniach, w których występuje?
-Jeśli nie przechodzi — popraw ZANIM zwrócisz tekst.
+Zweryfikuj: n-gramy 🛑/⛔ nieużyte? Hard facts dokładne? Pary cooccurrence w tym samym akapicie? Encja główna = podmiot? Brak zakazanych fraz?
 </self_check>"""
 
 
@@ -715,31 +646,23 @@ Jeśli nie przechodzi — popraw ZANIM zwrócisz tekst.
 BATCH_FAQ_PROMPT = """<task>
 Napisz WYŁĄCZNIE sekcję FAQ artykułu „{{HASLO_GLOWNE}}".
 Nie pisz intro, nie pisz sekcji H2.
+Odpowiedz na DOKŁADNIE te pytania — nie dodawaj własnych.
 </task>
 
 <faq_questions>
-PRIORYTET 1 — PAA bez odpowiedzi w SERP (Featured Snippet):
 {{PAA_BEZ_ODPOWIEDZI}}
-Odpowiedź 3–4 zdania. Pierwsze zdanie = bezpośrednia odpowiedź (tak/nie + wyjaśnienie).
-
-PRIORYTET 2 — PAA standardowe:
-{{PAA_STANDARDOWE}}
-Odpowiedź 2–3 zdania.
-
-PRIORYTET 3 — Related Searches jako pytania:
-{{RELATED_AS_QUESTIONS}}
-Odpowiedź 1–2 zdania jeśli nie pokryte wyżej.
 </faq_questions>
 
-<faq_format>
-- Każde pytanie jako ## (nagłówek H2)
-- Odpowiedź jako akapit — bez list punktowych
-- Pierwsze zdanie = bezpośrednia odpowiedź na pytanie, bez wstępów
-- Odpowiedzi do 80 słów każda
-</faq_format>
+<faq_rules>
+1. Każde pytanie jako ## (nagłówek H2).
+2. Odpowiedź: 2–4 zdania, akapit — bez list punktowych.
+3. Pierwsze zdanie = bezpośrednia odpowiedź na pytanie, bez wstępów.
+4. Odpowiedzi do 80 słów każda.
+5. NIE powtarzaj informacji z wcześniejszych sekcji artykułu — dodaj NOWĄ wartość.
+6. Wpleć n-gramy z <faq_data> jeśli naturalnie pasują.
+</faq_rules>
 
 <faq_banned>
-ZAKAZANE w FAQ:
 - „To dobre pytanie."
 - „Odpowiedź na to pytanie nie jest jednoznaczna."
 - „Wiele zależy od..."
@@ -747,7 +670,7 @@ ZAKAZANE w FAQ:
 </faq_banned>
 
 <faq_data>
-N-gramy do wplecenia: {{NGRAMY_FAQ}}
+N-gramy: {{NGRAMY_FAQ}}
 Hard facts: {{HARD_FACTS_FAQ}}
 </faq_data>
 
@@ -763,8 +686,6 @@ Zwróć:
 
 ## [Pytanie FAQ 2]
 [Odpowiedź do 80 słów]
-
-...
 
 [Disclaimer jeśli wymagany]
 </output_format>"""

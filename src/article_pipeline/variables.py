@@ -99,13 +99,20 @@ def extract_global_variables(s1_data: dict, target_length: int = 2000) -> dict:
         "ENCJE_KRYTYCZNE":          json.dumps(must_cover, ensure_ascii=False),
         "ENCJE_KRYTYCZNE_Z_KONTEKSTEM": json.dumps(must_cover_enriched, ensure_ascii=False),
         "PLACEMENT_INSTRUCTION":    placement_instruction,
+        "ENCJE_PIERWSZY_AKAPIT":    json.dumps(
+            entity_placement.get("first_paragraph_entities", [])
+            if isinstance(entity_placement, dict) else [], ensure_ascii=False),
         "COOCCURRENCE_PAIRS_JSON":  json.dumps(strong_cooccurrence[:5], ensure_ascii=False),
+        "PARY_KOOCCURRENCE":        json.dumps(strong_cooccurrence[:8], ensure_ascii=False),
         "ENTITY_RELATIONSHIPS_JSON": json.dumps(entity_relationships[:10], ensure_ascii=False),
         "SUBJECT_RATIO_PCT":        subject_ratio_pct,
         "EARLY_ENTITIES_JSON":      json.dumps(early_entities, ensure_ascii=False),
         "HEADING_EXAMPLES_JSON":    json.dumps(heading_examples, ensure_ascii=False),
         "COMPETITOR_OPENINGS_JSON": json.dumps(competitor_openings, ensure_ascii=False),
         "DEPTH_MISSING_JSON":       json.dumps(depth_missing, ensure_ascii=False),
+        "NAMED_FORMS":              "",  # filled by orchestrator after search_variants
+        "NOMINAL_FORMS":            "",
+        "PRONOMINAL_CUES":          "",
         "NGRAMY_Z_CZESTOTLIWOSCIA": ngrams_formatted,
         "NGRAMY_Z_LIMITAMI":        json.dumps(
             [{"ngram": ng.get("ngram",""), "min": ng.get("freq_min",0), "max": ng.get("freq_max",5)}
@@ -164,10 +171,46 @@ def extract_global_variables(s1_data: dict, target_length: int = 2000) -> dict:
 
 # ── helpers ───────────────────────────────────────────────────
 
+def _is_natural_polish_phrase(text: str) -> bool:
+    """Check if text looks like a natural Polish phrase (not a lemma cluster like 'alkohol wpływ')."""
+    if not text or len(text) < 3:
+        return False
+    words = text.split()
+    # Single word is OK
+    if len(words) == 1:
+        return True
+    # Check for common patterns that indicate unnatural lemma clusters:
+    # - all words in nominative (lowercase, no prepositions/articles)
+    # - no connecting words (po, na, w, z, do, pod, za, dla, od, przy, o, ze, bez)
+    connectors = {"po", "na", "w", "z", "do", "pod", "za", "dla", "od", "przy",
+                  "o", "ze", "bez", "przed", "nad", "między", "wobec", "versus",
+                  "i", "a", "lub", "czy", "oraz", "albo", "jak", "co", "który",
+                  "która", "które", "to", "jest", "się"}
+    has_connector = any(w.lower() in connectors for w in words)
+    # If 2+ words and no connector, likely a lemma cluster
+    if len(words) >= 2 and not has_connector:
+        # Exception: compound nouns like "dieta ketogeniczna" (adj+noun or noun+adj)
+        # Check if it looks like a proper noun phrase (at least one word > 4 chars)
+        long_words = [w for w in words if len(w) > 4]
+        if len(long_words) >= 2:
+            # Could be "dieta ketogeniczna" — check if it reads naturally
+            # Heuristic: if no word ends in typical Polish case endings for nominative
+            # adjectives (-y, -a, -e, -i, -owy, -owa, -owe), it's suspicious
+            adj_endings = ("y", "a", "e", "i", "owy", "owa", "owe", "ny", "na", "ne",
+                          "ski", "ska", "skie", "czy", "cza", "cze", "iczny", "iczna")
+            has_adj = any(w.lower().endswith(adj_endings) for w in words)
+            if not has_adj:
+                return False  # e.g. "alkohol wpływ" — two bare nouns, no adj
+        else:
+            return False
+    return True
+
+
 def _extract_main_entity(s1_data):
     """
     Wyciąga encję główną z S1.
     Garbage filtering delegated to web_garbage_filter.is_entity_garbage (Level 1-11).
+    Natural language validation: rejects lemma clusters like 'alkohol wpływ'.
     Fallback → main_keyword jeśli lista jest pusta lub same garbage.
     """
     entity_seo = s1_data.get("entity_seo") or {}
@@ -196,7 +239,7 @@ def _extract_main_entity(s1_data):
                 continue
             text = item.get("entity") or item.get("text") or ""
             score = float(item.get("salience") or item.get("score") or 0.5)
-            if text and not _is_garbage(text):
+            if text and not _is_garbage(text) and _is_natural_polish_phrase(text):
                 return text, score
 
     # 2. entities sorted by importance
@@ -210,7 +253,7 @@ def _extract_main_entity(s1_data):
         for top in sorted_ents:
             text = top.get("text") or ""
             score = float(top.get("importance") or top.get("salience") or 0.5)
-            if text and not _is_garbage(text):
+            if text and not _is_garbage(text) and _is_natural_polish_phrase(text):
                 return text, score
 
     # 3. fallback → main_keyword
