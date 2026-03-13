@@ -9,7 +9,7 @@ All prompt templates with placeholder variables.
 # 1. SYSTEM PROMPT — wysyłany jako system w każdym wywołaniu API
 # v2.0: Persona only — reguły przeniesione do user prompt
 # ══════════════════════════════════════════════════════════════
-SYSTEM_PROMPT = """Jesteś doświadczonym polskim redaktorem treści SEO. Piszesz artykuły na podstawie planu i danych dostarczonych w instrukcji. Zwracasz gotowy artykuł w formacie określonym w <output_format>."""
+SYSTEM_PROMPT = """Jesteś doświadczonym polskim redaktorem treści SEO. Piszesz fragment artykułu na podstawie danych dostarczonych w instrukcji. Zwracasz wyłącznie tekst w formacie określonym w <output_format>."""
 
 # ══════════════════════════════════════════════════════════════
 # 1b. ARTICLE WRITER — pełny prompt v2.0 (XML-structured)
@@ -326,46 +326,134 @@ Zwróć JSON w formacie:
 # 3. BATCH 0 — WSTĘP + H1
 # ══════════════════════════════════════════════════════════════
 BATCH_0_PROMPT = """<task>
-Napisz WYŁĄCZNIE nagłówek H1 i wstępny akapit artykułu na temat „{{HASLO_GLOWNE}}".
-Nie pisz żadnych sekcji H2. Nie pisz FAQ.
+Napisz nagłówek H1 i wstępny akapit artykułu na temat: „{{HASLO_GLOWNE}}".
+To jest BATCH 0 — pisz WYŁĄCZNIE H1 i intro. Nie pisz sekcji H2 ani dalszej treści.
 </task>
 
-<snippet_goal>
-Pierwsze 100 słów musi działać jako samodzielna odpowiedź na pytanie: „{{PYTANIE_SNIPPETOWE}}"
-Google i modele AI często wyciągają właśnie ten fragment jako bezpośrednią odpowiedź.
-Struktura: definicja → główny mechanizm lub konsekwencja → zapowiedź artykułu.
-</snippet_goal>
+<lead_strategy>
+Cel intro: zająć pozycję AI Overview w Google dla hasła „{{HASLO_GLOWNE}}".
+
+Google generuje AI Overview na podstawie treści, które:
+- bezpośrednio i zwięźle odpowiadają na intencję wyszukiwania
+- podają konkretne fakty, liczby, progi (nie ogólniki)
+- są spójne z tym, co Google już wyświetla jako AI Overview lub Featured Snippet
+
+Dlatego intro musi pokrywać TE SAME informacje co źródło referencyjne — ale własnymi słowami, w lepszej strukturze, z wyższą gęstością informacji.
+
+ZASADA FALLBACK — użyj PIERWSZEGO dostępnego źródła:
+
+1. Jeśli <ai_overview> jest NIEPUSTE → to jest Twoje źródło referencyjne.
+   Intro musi pokryć te same kluczowe informacje (fakty, liczby, progi, konsekwencje), ale:
+   - przeformułowane własnymi słowami
+   - wzbogacone o hard facts z <hard_facts> których brakuje w AI Overview
+   - w naturalnym, publicystycznym stylu (nie kopiuj struktury zdań)
+
+2. Jeśli <ai_overview> jest PUSTE, ale <featured_snippet> jest NIEPUSTE → to jest Twoje źródło.
+   Intro musi odpowiadać na tę samą intencję co snippet, pokrywając te same informacje + hard facts.
+
+3. Jeśli OBA są PUSTE → napisz intro na podstawie <hard_facts>, <batch_entities> i encji głównej.
+   Struktura: kontekst problemu → główna konsekwencja/mechanizm → zapowiedź artykułu.
+</lead_strategy>
 
 <h1_rules>
-- Zawiera frazę „{{ENCJA_GLOWNA}}".
-- Zawiera zapowiedź głównej wartości artykułu (co czytelnik znajdzie).
-- Maksymalnie 70 znaków ze spacjami.
+1. Zawiera frazę „{{ENCJA_GLOWNA}}" (odmienioną naturalnie, nie w mianowniku na siłę).
+2. Zapowiada główną wartość artykułu (kary / konsekwencje / przepisy / poradnik / itp.).
+3. Maksymalnie 70 znaków ze spacjami.
+4. NIE zaczynaj H1 od encji głównej w mianowniku jako podmiot.
 </h1_rules>
 
 <intro_rules>
-Długość: {{DLUGOSC_INTRO}} słów (±15%).
+1. DŁUGOŚĆ: {{DLUGOSC_INTRO}} słów (±15%).
 
-MUSI zawierać encje: {{ENCJE_BATCH_0}}
-MUSI użyć co najmniej jednej peryfrazy: {{PERYFRAZY_BATCH_0}}
-MUSI wpleść hard facts: {{HARD_FACTS_BATCH_0}}
+2. PIERWSZE ZDANIE:
+   - Zawiera encję główną, ale NIE jako podmiot w mianowniku.
+   - Zacznij od kontekstu, liczby, napięcia lub sytuacji.
+   POPRAWNIE: „Co roku tysiące kierowców traci prawo jazdy za jazdę pod wpływem alkoholu."
+   BŁĘDNIE: „Jazda pod wpływem alkoholu jest przestępstwem."
 
-Pierwsze zdanie: zawiera encję główną „{{ENCJA_GLOWNA}}" — ale NIE jako podmiot w mianowniku na początku.
-Zacznij od kontekstu, liczby, napięcia lub sytuacji.
-Ostatnie zdanie: pomostowe, prowadzi do pierwszej sekcji H2.
+3. GĘSTOŚĆ INFORMACJI:
+   - Pierwsze 100 słów = zwięzła odpowiedź na intencję hasła (to Google wyciąga do AI Overview).
+   - Nie marnuj słów na ogólniki typu „temat jest ważny" / „wiele osób się zastanawia".
+   - Każde zdanie musi wnosić konkretną informację: fakt, próg, konsekwencję lub mechanizm.
 
-{{NW_LUKI}}
+4. ENCJE I FRAZY W INTRO:
+   - Encja główna („{{ENCJA_GLOWNA}}") — OBOWIĄZKOWA, minimum 1x (pierwsze zdanie ją zawiera — zaliczone).
+   - Jeśli <key_ngram> jest NIEPUSTE — wpleć tę frazę naturalnie (1x wystarczy). To najważniejszy n-gram zawierający encję główną.
+   - Jeśli <key_triplet> jest NIEPUSTE — użyj tego tripletu przyczyna→skutek jako oś jednego ze zdań w intro.
+   - To WSZYSTKO. Nie ładuj intro dodatkowymi encjami — {{DLUGOSC_INTRO}} słów to za mało. Reszta encji i n-gramów trafi do sekcji H2.
+
+6. ZAPOWIEDŹ ARTYKUŁU:
+   Ostatnie 1–2 zdania intro zapowiadają, co czytelnik znajdzie dalej.
+   Nawiąż do tematu pierwszej sekcji H2: „{{PIERWSZY_H2}}".
+   Nie powtarzaj tytułu H2 dosłownie.
+
+7. HARD FACTS: wpleć co najmniej 2 fakty z <hard_facts>. Reszta trafi do sekcji H2.
 </intro_rules>
 
-<snippet_answer>
-Jeśli dane zawierają PAA bez odpowiedzi w SERP ({{PAA_BEZ_ODPOWIEDZI}}), wpleć krótką odpowiedź na pierwsze z tych pytań naturalnie w akapit wstępny. To priorytet Featured Snippet.
-</snippet_answer>
+<style>
+1. Naturalny, publicystyczny polski. Mów do czytelnika: „możesz", „pamiętaj", „jeśli".
+2. Średnia długość zdania: 11–15 słów. Rytm: krótkie (5–8) przeplataj z dłuższymi (18–22).
+3. Akapity: 2–6 zdań. Żadne dwa akapity nie mają identycznej liczby zdań.
+4. Aktywna strona czasownika.
+</style>
+
+<banned_phrases>
+Nigdy nie używaj (ani wariantów):
+- Warto zaznaczyć / Warto podkreślić / Należy zaznaczyć / Należy podkreślić
+- Jest to ważne / W dzisiejszym artykule / Kluczowym aspektem / Podsumowując powyższe
+- Jak wspomniano wcześniej / Co więcej, / Ponadto, / Niemniej jednak,
+- W związku z powyższym, / Mając na uwadze / Nie sposób nie wspomnieć / Wiele osób błędnie
+</banned_phrases>
+
+<data>
+
+<ai_overview>
+{{AI_OVERVIEW_TEXT}}
+</ai_overview>
+
+<featured_snippet>
+{{FEATURED_SNIPPET_TEXT}}
+</featured_snippet>
+
+<key_ngram>
+{{KEY_NGRAM}}
+</key_ngram>
+
+<key_triplet>
+{{KEY_TRIPLET}}
+</key_triplet>
+
+<hard_facts>
+{{HARD_FACTS_BATCH_0_JSON}}
+</hard_facts>
+
+</data>
 
 <output_format>
-Zwróć:
-# [H1 — max 70 znaków]
+Zwróć WYŁĄCZNIE:
 
-[Akapit wstępny — {{DLUGOSC_INTRO}} słów]
-</output_format>"""
+# [tekst H1]
+
+[akapit(y) wstępne — pełny tekst intro]
+
+Bez komentarzy, metadanych, ani tekstu przed/po. Markdown: # dla H1, potem akapit(y) jako czysty tekst.
+</output_format>
+
+<self_check>
+Przed zwróceniem zweryfikuj:
+1. H1 ≤ 70 znaków ze spacjami?
+2. H1 zawiera encję główną i NIE zaczyna się od niej w mianowniku?
+3. Intro ma ≈ {{DLUGOSC_INTRO}} słów (±15%)?
+4. Pierwsze zdanie zawiera encję główną, ale nie jako podmiot w mianowniku?
+5. Pierwsze 100 słów pokrywa kluczowe informacje ze źródła referencyjnego (AI Overview / Featured Snippet)?
+6. Minimum 2 hard facts z <hard_facts> są wplecione?
+7. Jeśli <key_ngram> niepuste — czy fraza pojawia się w intro?
+8. Jeśli <key_triplet> niepuste — czy triplet przyczyna→skutek jest użyty?
+9. Ostatnie zdanie nawiązuje do tematu „{{PIERWSZY_H2}}"?
+10. Żadna fraza z <banned_phrases> nie występuje?
+11. Żadne zdanie nie jest ogólnikiem bez konkretnej informacji?
+Jeśli nie przechodzi — popraw ZANIM zwrócisz tekst.
+</self_check>"""
 
 
 # ══════════════════════════════════════════════════════════════

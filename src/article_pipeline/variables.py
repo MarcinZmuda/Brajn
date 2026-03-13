@@ -42,6 +42,14 @@ def extract_global_variables(s1_data: dict, target_length: int = 2000) -> dict:
     peryfrazy, warianty_potoczne, warianty_formalne, anglicyzmy = \
         _extract_search_variants(s1_data)
 
+    # ── AI Overview & Featured Snippet text ──
+    ai_overview_text = _extract_ai_overview_text(serp)
+    featured_snippet_text = _extract_featured_snippet_text(serp)
+
+    # ── Key ngram & triplet for Batch 0 ──
+    key_ngram = _select_key_ngram(ngrams, main_entity)
+    key_triplet = _select_key_triplet(chains, relations)
+
     entity_seo = s1_data.get("entity_seo") or {}
     concept_entities = entity_seo.get("concept_entities") or []
     entity_placement = entity_seo.get("entity_placement") or {}
@@ -79,6 +87,11 @@ def extract_global_variables(s1_data: dict, target_length: int = 2000) -> dict:
                                      else paa_standard[0] if paa_standard
                                      else s1_data.get("main_keyword", "")),
         "DLUGOSC_INTRO":            str(min(180, target_length // 9)),
+        "AI_OVERVIEW_TEXT":         ai_overview_text,
+        "FEATURED_SNIPPET_TEXT":    featured_snippet_text,
+        "KEY_NGRAM":                key_ngram,
+        "KEY_TRIPLET":              key_triplet,
+        "PIERWSZY_H2":              h2_plan[0] if h2_plan else "",
         # internal keys (prefixed _)
         "_h2_plan_list":            h2_plan,
         "_paa_unanswered":          paa_unanswered,
@@ -359,6 +372,69 @@ def _clean_h2_list(h2_list):
             seen.add(text.lower())
             clean.append(text)
     return clean
+
+
+def _extract_ai_overview_text(serp: dict) -> str:
+    """Extract AI Overview text from SERP data as a single string."""
+    ai_ov = serp.get("ai_overview") or {}
+    if not ai_ov or not isinstance(ai_ov, dict):
+        return ""
+    text = ai_ov.get("text") or ""
+    # If text_blocks available, join them for richer context
+    if not text:
+        blocks = ai_ov.get("text_blocks") or []
+        text = " ".join(b if isinstance(b, str) else b.get("text", "") for b in blocks).strip()
+    return text[:2000]
+
+
+def _extract_featured_snippet_text(serp: dict) -> str:
+    """Extract Featured Snippet text from SERP data."""
+    fs = serp.get("featured_snippet") or {}
+    if not fs or not isinstance(fs, dict):
+        return ""
+    answer = fs.get("answer") or fs.get("snippet") or ""
+    title = fs.get("title") or ""
+    if title and answer:
+        return f"{title}: {answer}"[:1000]
+    return (answer or title)[:1000]
+
+
+def _select_key_ngram(ngrams: list, main_entity: str) -> str:
+    """Select the highest-weight n-gram that contains the main entity."""
+    if not ngrams or not main_entity:
+        return ""
+    entity_lower = main_entity.lower()
+    entity_words = set(entity_lower.split())
+    for ng in ngrams:
+        text = (ng.get("ngram") or "") if isinstance(ng, dict) else str(ng)
+        text_lower = text.lower()
+        # Check if ngram contains entity (full match or word overlap ≥50%)
+        if entity_lower in text_lower:
+            return text
+        ng_words = set(text_lower.split())
+        if entity_words and len(entity_words & ng_words) >= max(1, len(entity_words) * 0.5):
+            return text
+    return ""
+
+
+def _select_key_triplet(chains: list, relations: list) -> str:
+    """Select the top causal triplet as 'cause → effect' string."""
+    # Prefer chains (multi-hop), then single relations
+    for source in [chains, relations]:
+        if not source:
+            continue
+        for item in source:
+            if isinstance(item, dict):
+                cause = item.get("cause") or item.get("przyczyna") or ""
+                effect = item.get("effect") or item.get("skutek") or ""
+                mid = item.get("mechanism") or item.get("relation_type") or ""
+                if cause and effect:
+                    if mid and mid not in ("causes", "leads_to"):
+                        return f"{cause} → {mid} → {effect}"
+                    return f"{cause} → {effect}"
+            elif isinstance(item, str) and "→" in item:
+                return item
+    return ""
 
 
 def fill_template(template: str, variables: dict) -> str:
