@@ -496,11 +496,13 @@ Encja główna „{{ENCJA_GLOWNA}}" — obowiązkowa w każdej sekcji.
 <ngrams>
 {{NGRAMY_BATCH_N}}
 
-TWARDE LIMITY:
+ZASADY:
+- MUST = frazy obowiązkowe. Użyj w dokładnej formie podanej powyżej.
+- NICE-TO-HAVE = frazy opcjonalne. Użyj tylko jeśli naturalnie pasują do sekcji.
 - Liczba po „·" = ile razy MOŻESZ użyć frazy w tej sekcji. Nie przekraczaj.
-- 🛑 STOP = budżet wyczerpany w poprzednich sekcjach. NIE UŻYWAJ tej frazy.
-- Jeśli fraza nie pasuje do kontekstu sekcji — POMIŃ. Lepiej 0 niż wciśnięta na siłę.
-- Odmiana (np. „mebli" / „meblom") i parafrazy też się liczą do budżetu.
+- 🛑 STOP = budżet wyczerpany. NIE UŻYWAJ tej frazy w żadnej formie.
+- Jeśli fraza nie pasuje do kontekstu — POMIŃ. Lepiej 0 niż wciśnięta na siłę.
+- Liczy się tylko DOKŁADNA forma. Odmienione formy (np. „szamponem" ≠ „szampon") NIE zużywają budżetu, więc możesz odmieniać swobodnie.
 </ngrams>
 
 <causal_triplets>
