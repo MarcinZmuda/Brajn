@@ -308,7 +308,6 @@ Zwróć JSON w formacie:
 {
   "hard_facts": ["lista faktów z SERP snippets"],
   "paa_bez_odpowiedzi": ["pytania PAA oznaczone jako bez odpowiedzi"],
-  "related_searches_brands": ["marki z Related Searches do wplecenia"],
   "batches": {
     "batch_0": {
       "encje_obowiazkowe": [],
@@ -688,9 +687,7 @@ ARTYKUŁ:
 
 8. PERYFRAZY — sprawdź czy minimum 3 peryfrazy z listy {{PERYFRAZY_ALL}} zostały użyte
 
-9. RELATED_BRANDS — jeśli {{MARKI_Z_RELATED_SEARCHES}} nie są puste i artykuł ma intencję transakcyjną — sprawdź czy przynajmniej jedna marka jest wspomniana
-
-10. PAA_ZERO_ANSWER — sprawdź czy pytania z listy {{PAA_BEZ_ODPOWIEDZI}} mają odpowiedź w FAQ
+9. PAA_ZERO_ANSWER — sprawdź czy pytania z listy {{PAA_BEZ_ODPOWIEDZI}} mają odpowiedź w FAQ
 
 Zwróć JSON:
 {
