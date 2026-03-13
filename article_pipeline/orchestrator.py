@@ -94,10 +94,13 @@ class ArticleOrchestrator:
         self.validation_result = None
         self.ymyl_result = None
         self.search_variants_result = None
-        # Firestore-backed keyword budget tracker
+        # In-memory keyword budget tracker (no Firestore — lives for one workflow)
         self.keyword_tracker = KeywordTracker(
-            project_id=project_id,
+            main_keyword=self.variables.get("HASLO_GLOWNE", ""),
             ngrams=self.variables.get("_ngrams", []),
+            extended_ngrams=(self.variables.get("_ngrams_full", [])
+                             [len(self.variables.get("_ngrams", [])):]),  # extended only
+            total_batches=max(3, len(self.variables.get("_h2_plan_list", [])) + 2),
         )
         # Logging for "Dane wsadowe" panel tab
         self.prompt_log = []   # [{label, system, user}]
@@ -491,7 +494,7 @@ class ArticleOrchestrator:
         self.batch_texts.append(text)
         self.bridge_sentences.append(_get_last_sentence(text))
 
-        # Update n-gram budget after batch 0 (Firestore-persisted)
+        # Update phrase budget after batch 0
         self.keyword_tracker.update_after_batch(text, batch_label="batch_0")
 
         # Extract H1 from batch_0 output for use in ARTICLE_WRITER_PROMPT
@@ -531,9 +534,9 @@ class ArticleOrchestrator:
         pre_batch_hf = batch_data.get("hard_facts_do_uzycia", [])
         merged_hf = list(dict.fromkeys(pre_batch_hf + section_hard_facts))
 
-        # Format ngrams with REMAINING budget from Firestore-backed tracker
+        # Format ngrams with remaining budget from in-memory tracker
         assigned_ngrams = batch_data.get("ngramy", [])
-        ngrams_formatted = self.keyword_tracker.format_for_prompt(assigned_ngrams)
+        ngrams_formatted = self.keyword_tracker.format_phrases_for_prompt(assigned_ngrams)
 
         batch_vars = {
             **self.variables,
@@ -544,6 +547,7 @@ class ArticleOrchestrator:
             "POPRZEDNIE_ZDANIA_POMOSTOWE": json.dumps(self.bridge_sentences, ensure_ascii=False),
             "ENCJE_BATCH_N": json.dumps(merged_entities, ensure_ascii=False),
             "NGRAMY_BATCH_N": ngrams_formatted,
+            "MAIN_KW_INSTRUCTION": self.keyword_tracker.format_main_kw_instruction(),
             "TRIPLETS_BATCH_N": json.dumps(batch_data.get("lancuchy", []), ensure_ascii=False),
             "HARD_FACTS_BATCH_N": json.dumps(merged_hf, ensure_ascii=False),
             "PERYFRAZY_BATCH_N": json.dumps(
@@ -572,7 +576,7 @@ class ArticleOrchestrator:
         self.batch_texts.append(text)
         self.bridge_sentences.append(_get_last_sentence(text))
 
-        # Update n-gram budget after each H2 section (Firestore-persisted)
+        # Update phrase budget after each H2 section
         self.keyword_tracker.update_after_batch(text, batch_label=f"batch_{n}")
 
         return text

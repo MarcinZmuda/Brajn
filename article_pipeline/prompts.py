@@ -483,6 +483,10 @@ Akapity: 3–5 akapitów narracyjnych z naturalnym przepływem
 
 <section_data>
 
+<main_keyword_budget>
+{{MAIN_KW_INSTRUCTION}}
+</main_keyword_budget>
+
 <entities>
 {{ENCJE_BATCH_N}}
 Każda encja musi pojawić się min. 1x. Odmieniaj przez przypadki.
@@ -492,10 +496,11 @@ Encja główna „{{ENCJA_GLOWNA}}" — obowiązkowa w każdej sekcji.
 <ngrams>
 {{NGRAMY_BATCH_N}}
 
-TWARDE LIMITY — nie przekraczaj wartości „max Nx" podanej przy każdym n-gramie.
-To jest budżet DLA TEJ SEKCJI. Jeśli n-gram ma „max 1x" — użyj go najwyżej 1 raz.
-Jeśli n-gram nie pasuje do kontekstu sekcji — POMIŃ GO. Lepiej 0 niż wciśnięty na siłę.
-Nie parafrazuj n-gramu żeby ominąć limit — warianty też się liczą.
+TWARDE LIMITY:
+- Liczba po „·" = ile razy MOŻESZ użyć frazy w tej sekcji. Nie przekraczaj.
+- 🛑 STOP = budżet wyczerpany w poprzednich sekcjach. NIE UŻYWAJ tej frazy.
+- Jeśli fraza nie pasuje do kontekstu sekcji — POMIŃ. Lepiej 0 niż wciśnięta na siłę.
+- Odmiana (np. „mebli" / „meblom") i parafrazy też się liczą do budżetu.
 </ngrams>
 
 <causal_triplets>
