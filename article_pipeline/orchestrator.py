@@ -26,6 +26,7 @@ from src.article_pipeline.prompts import (
     DISCLAIMERS,
 )
 from src.article_pipeline.variables import extract_global_variables, fill_template, format_ngrams_for_section
+from src.article_pipeline.keyword_tracker import KeywordTracker
 from src.article_pipeline.validators import (
     validate_batch,
     validate_global,
@@ -69,12 +70,13 @@ class ArticleOrchestrator:
     """Orchestrates the full BRAJEN article generation pipeline."""
 
     def __init__(self, s1_data: dict, engine: str = "claude", model: str = "claude-sonnet-4-6",
-                 nw_terms: list = None, h2_keywords: list = None):
+                 nw_terms: list = None, h2_keywords: list = None, project_id: str = None):
         # Use LLM-optimized version if available, fallback to full s1_data
         self.s1_data = s1_data.get("_llm_ready") or s1_data
         self._s1_full = s1_data  # full version for panel display
         self.engine = engine
         self.model = model
+        self.project_id = project_id
         self.variables = extract_global_variables(s1_data)
         # H2 keywords from user (NW/Surfer phrases required in H2 headings)
         self._h2_keywords = h2_keywords or []
@@ -92,8 +94,15 @@ class ArticleOrchestrator:
         self.validation_result = None
         self.ymyl_result = None
         self.search_variants_result = None
-        # Stateful n-gram budget tracking across batches
-        self._keyword_state = self._init_keyword_state()
+        # Keyword budget tracker (in-memory + Firestore write-only for panel)
+        self.keyword_tracker = KeywordTracker(
+            main_keyword=self.variables.get("HASLO_GLOWNE", ""),
+            ngrams=self.variables.get("_ngrams", []),
+            extended_ngrams=(self.variables.get("_ngrams_full", [])
+                             [len(self.variables.get("_ngrams", [])):]),  # extended only
+            total_batches=max(3, len(self.variables.get("_h2_plan_list", [])) + 2),
+            project_id=project_id,
+        )
         # Logging for "Dane wsadowe" panel tab
         self.prompt_log = []   # [{label, system, user}]
         self.input_variables = {}  # snapshot after all variables are ready
@@ -116,68 +125,6 @@ class ArticleOrchestrator:
                 "tokens_out": len(text.split()),
             })
         return text
-
-    def _init_keyword_state(self) -> dict:
-        """Build initial keyword budget from ngrams with freq_min/freq_max."""
-        ngrams = self.variables.get("_ngrams", [])
-        state = {}
-        for ng in ngrams:
-            text = (ng.get("ngram") or ng.get("text") or "").strip()
-            if not text:
-                continue
-            fmin = ng.get("freq_min", 0)
-            fmax = ng.get("freq_max", 0)
-            weight = ng.get("weight", 0)
-            if fmin == fmax == 0:
-                fmin = max(1, int(weight * 5))
-                fmax = max(fmin, int(weight * 10))
-            state[text] = {"min": fmin, "max": fmax}
-        return state
-
-    def _update_keyword_budget(self, batch_text: str, label: str = "") -> dict:
-        """Run compliance report on batch text and update remaining budget.
-        Returns the compliance report for logging."""
-        if not self._keyword_state or not batch_text:
-            return {}
-        try:
-            from src.s1.generate_compliance_report import generate_compliance_report
-            result = generate_compliance_report(batch_text, self._keyword_state)
-            report = result.get("compliance_report", [])
-            self._keyword_state = result.get("new_keyword_state", self._keyword_state)
-
-            # Log over-budget phrases
-            over = [r for r in report if r.get("status") == "OVER"]
-            if over:
-                phrases = ", ".join(f"{r['keyword']}({r['actual_in_batch']})" for r in over)
-                print(f"[ORCHESTRATOR] {label}: OVER-BUDGET phrases: {phrases}")
-            return result
-        except Exception as e:
-            print(f"[ORCHESTRATOR] Compliance check failed: {e}")
-            return {}
-
-    def _format_ngrams_from_budget(self, ngram_names: list) -> str:
-        """Format ngrams for prompt using REMAINING budget from keyword_state."""
-        lines = []
-        for name in ngram_names:
-            if not name or not isinstance(name, str):
-                continue
-            budget = self._keyword_state.get(name.strip())
-            if not budget:
-                # Try case-insensitive lookup
-                for k, v in self._keyword_state.items():
-                    if k.lower() == name.strip().lower():
-                        budget = v
-                        break
-            if budget:
-                remaining_max = budget.get("max", 0)
-                remaining_min = budget.get("min", 0)
-                if remaining_max <= 0:
-                    lines.append(f"{name} · STOP — budżet wyczerpany, nie używaj")
-                else:
-                    lines.append(f"{name} · zostało {remaining_min}-{remaining_max}x (nie przekraczaj {remaining_max})")
-            else:
-                lines.append(f"{name} · max 1-2x")
-        return "\n".join(lines)
 
     def _calc_faq_count(self, target_h2: int, must_cover: list,
                         paa_priority: list, paa_standard: list,
@@ -548,8 +495,8 @@ class ArticleOrchestrator:
         self.batch_texts.append(text)
         self.bridge_sentences.append(_get_last_sentence(text))
 
-        # Update n-gram budget after batch 0
-        self._update_keyword_budget(text, label="batch_0")
+        # Update phrase budget after batch 0
+        self.keyword_tracker.update_after_batch(text, batch_label="batch_0")
 
         # Extract H1 from batch_0 output for use in ARTICLE_WRITER_PROMPT
         h1_match = re.match(r"#\s+(.+)", text.strip())
@@ -588,9 +535,9 @@ class ArticleOrchestrator:
         pre_batch_hf = batch_data.get("hard_facts_do_uzycia", [])
         merged_hf = list(dict.fromkeys(pre_batch_hf + section_hard_facts))
 
-        # Format ngrams with REMAINING budget from compliance tracker
+        # Format ngrams with remaining budget from in-memory tracker
         assigned_ngrams = batch_data.get("ngramy", [])
-        ngrams_formatted = self._format_ngrams_from_budget(assigned_ngrams)
+        ngrams_formatted = self.keyword_tracker.format_phrases_for_prompt(assigned_ngrams)
 
         batch_vars = {
             **self.variables,
@@ -601,6 +548,7 @@ class ArticleOrchestrator:
             "POPRZEDNIE_ZDANIA_POMOSTOWE": json.dumps(self.bridge_sentences, ensure_ascii=False),
             "ENCJE_BATCH_N": json.dumps(merged_entities, ensure_ascii=False),
             "NGRAMY_BATCH_N": ngrams_formatted,
+            "MAIN_KW_INSTRUCTION": self.keyword_tracker.format_main_kw_instruction(),
             "TRIPLETS_BATCH_N": json.dumps(batch_data.get("lancuchy", []), ensure_ascii=False),
             "HARD_FACTS_BATCH_N": json.dumps(merged_hf, ensure_ascii=False),
             "PERYFRAZY_BATCH_N": json.dumps(
@@ -629,8 +577,8 @@ class ArticleOrchestrator:
         self.batch_texts.append(text)
         self.bridge_sentences.append(_get_last_sentence(text))
 
-        # Update n-gram budget after each H2 section
-        self._update_keyword_budget(text, label=f"batch_{n}")
+        # Update phrase budget after each H2 section
+        self.keyword_tracker.update_after_batch(text, batch_label=f"batch_{n}")
 
         return text
 
@@ -839,7 +787,10 @@ class ArticleOrchestrator:
         # Step 5: Batch 0
         yield {"event": "step_start", "step": 5, "total": total_steps, "label": "Batch 0: H1 + wstęp"}
         intro = self.run_batch_0()
-        yield {"event": "step_done", "step": 5, "data": {"text": intro, "word_count": len(intro.split())}}
+        yield {"event": "step_done", "step": 5, "data": {
+            "text": intro, "word_count": len(intro.split()),
+            "keyword_budget": self.keyword_tracker.get_summary(),
+        }}
 
         # Steps 5..N: H2 sections
         h2_plan = self.variables.get("_h2_plan_list", [])
@@ -847,7 +798,10 @@ class ArticleOrchestrator:
             step = 5 + i
             yield {"event": "step_start", "step": step, "total": total_steps, "label": f"Batch {i+1}: {h2[:50]}"}
             section = self.run_batch_n(i + 1, h2, h2)
-            yield {"event": "step_done", "step": step, "data": {"text": section, "word_count": len(section.split())}}
+            yield {"event": "step_done", "step": step, "data": {
+                "text": section, "word_count": len(section.split()),
+                "keyword_budget": self.keyword_tracker.get_summary(),
+            }}
 
         # FAQ
         faq_step = 5 + h2_count
@@ -881,4 +835,6 @@ class ArticleOrchestrator:
             "input_variables": self.input_variables,
             "pre_batch_map": self.pre_batch_map or {},
             "coverage": coverage,
+            "keyword_budget": self.keyword_tracker.get_summary(),
+            "keyword_reports": self.keyword_tracker.batch_reports,
         }}

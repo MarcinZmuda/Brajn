@@ -142,6 +142,7 @@ async def start_workflow(req: ArticleStartRequest):
     orchestrator = ArticleOrchestrator(
         s1_data=s1_data, engine=req.engine, model=model,
         nw_terms=req.nw_terms, h2_keywords=req.h2_structure,
+        project_id=req.project_id,
     )
 
     with _jobs_lock:
