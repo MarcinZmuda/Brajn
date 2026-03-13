@@ -357,6 +357,9 @@ Dla każdego batcha (batch_0 przez batch_N i batch_faq) wskaż:
 3. które łańcuchy kauzalne wpleść w ten batch
 4. które peryfrazy/warianty wpleść w ten batch
 
+Pary współwystępujące: {{PARY_KOOCCURRENCE}}
+Trójki SPO: {{ENTITY_RELATIONSHIPS_JSON}}
+
 ZASADY ROZMIESZCZEŃ:
 - Encja główna: batch_0 i każdy kolejny batch minimum 1x
 - Encje o salience > 0.7: batch_0 + batch_1 obowiązkowo
@@ -366,6 +369,7 @@ ZASADY ROZMIESZCZEŃ:
 - Peryfrazy i warianty potoczne: minimum 3 różne w całym artykule
 - Warianty formalne: minimum 2 różne w całym artykule
 - weighted blanket / anglicyzmy branżowe: wpleść jeśli podane w danych
+- REGUŁA KOOCCURRENCE: Jeśli para encji współwystępuje w >=5 zdaniach u konkurencji (z pary współwystępujących), przypisz OBE encje do tego samego batcha.
 
 WAŻNE: Jeśli dane wejściowe zawierają SERP snippets z liczbami, cenami lub datami — wyodrębnij je osobno jako "hard_facts" w JSON.
 Te wartości mają priorytet absolutny — model nie może ich zastępować.
@@ -452,6 +456,13 @@ ZASADA FALLBACK — użyj PIERWSZEGO dostępnego źródła:
    - Jeśli <key_triplet> jest NIEPUSTE — użyj tego tripletu przyczyna→skutek jako oś jednego ze zdań w intro.
    - To WSZYSTKO. Nie ładuj intro dodatkowymi encjami — {{DLUGOSC_INTRO}} słów to za mało. Reszta encji i n-gramów trafi do sekcji H2.
 
+5. CENTERPIECE BLOCK (pierwsze 2-4 zdania intro):
+   Pierwsze zdania intro to blok deklaracji tematu:
+   a) Zdanie 1: Zdefiniuj encję główną — czym jest, w jednym zdaniu.
+   b) Zdanie 2-3: Wymień 2-3 encje wspierające z <first_paragraph_entities> — naturalnie, w kontekście.
+   c) Zdanie 3-4: Zarysuj, co artykuł pokryje (odpowiednik odwróconej piramidy).
+   Cel: Google musi z pierwszych 100 słów zrozumieć O CZYM jest strona i JAKIE encje są centralne.
+
 6. ZAPOWIEDŹ ARTYKUŁU:
    Ostatnie 1–2 zdania intro zapowiadają, co czytelnik znajdzie dalej.
    Nawiąż do tematu pierwszej sekcji H2: „{{PIERWSZY_H2}}".
@@ -496,6 +507,10 @@ Nigdy nie używaj (ani wariantów):
 <hard_facts>
 {{HARD_FACTS_BATCH_0_JSON}}
 </hard_facts>
+
+<first_paragraph_entities>
+{{ENCJE_PIERWSZY_AKAPIT}}
+</first_paragraph_entities>
 
 <early_entities>
 Te encje pojawiają się u konkurencji w pierwszych 200 słowach. Wpleć je w intro:

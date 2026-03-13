@@ -235,6 +235,16 @@ class ArticleOrchestrator:
         mention_forms = self.search_variants_result.get("mention_forms", {})
         self.variables["MENTION_FORMS_JSON"] = json.dumps(mention_forms, ensure_ascii=False)
         self.variables["_mention_forms"] = mention_forms
+        # Flat string forms for prompt templates
+        named = mention_forms.get("named", "")
+        if isinstance(named, list):
+            self.variables["NAMED_FORMS"] = ", ".join(named)
+        else:
+            self.variables["NAMED_FORMS"] = str(named)
+        nominal = mention_forms.get("nominal", [])
+        self.variables["NOMINAL_FORMS"] = ", ".join(nominal) if isinstance(nominal, list) else str(nominal)
+        pronominal = mention_forms.get("pronominal", [])
+        self.variables["PRONOMINAL_CUES"] = ", ".join(pronominal) if isinstance(pronominal, list) else str(pronominal)
         return self.search_variants_result
 
     def run_h2_plan(self) -> list:

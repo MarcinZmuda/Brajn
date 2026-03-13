@@ -99,13 +99,20 @@ def extract_global_variables(s1_data: dict, target_length: int = 2000) -> dict:
         "ENCJE_KRYTYCZNE":          json.dumps(must_cover, ensure_ascii=False),
         "ENCJE_KRYTYCZNE_Z_KONTEKSTEM": json.dumps(must_cover_enriched, ensure_ascii=False),
         "PLACEMENT_INSTRUCTION":    placement_instruction,
+        "ENCJE_PIERWSZY_AKAPIT":    json.dumps(
+            entity_placement.get("first_paragraph_entities", [])
+            if isinstance(entity_placement, dict) else [], ensure_ascii=False),
         "COOCCURRENCE_PAIRS_JSON":  json.dumps(strong_cooccurrence[:5], ensure_ascii=False),
+        "PARY_KOOCCURRENCE":        json.dumps(strong_cooccurrence[:8], ensure_ascii=False),
         "ENTITY_RELATIONSHIPS_JSON": json.dumps(entity_relationships[:10], ensure_ascii=False),
         "SUBJECT_RATIO_PCT":        subject_ratio_pct,
         "EARLY_ENTITIES_JSON":      json.dumps(early_entities, ensure_ascii=False),
         "HEADING_EXAMPLES_JSON":    json.dumps(heading_examples, ensure_ascii=False),
         "COMPETITOR_OPENINGS_JSON": json.dumps(competitor_openings, ensure_ascii=False),
         "DEPTH_MISSING_JSON":       json.dumps(depth_missing, ensure_ascii=False),
+        "NAMED_FORMS":              "",  # filled by orchestrator after search_variants
+        "NOMINAL_FORMS":            "",
+        "PRONOMINAL_CUES":          "",
         "NGRAMY_Z_CZESTOTLIWOSCIA": ngrams_formatted,
         "NGRAMY_Z_LIMITAMI":        json.dumps(
             [{"ngram": ng.get("ngram",""), "min": ng.get("freq_min",0), "max": ng.get("freq_max",5)}
