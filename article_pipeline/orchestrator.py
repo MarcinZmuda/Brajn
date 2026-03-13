@@ -14,6 +14,7 @@ from typing import Generator
 from src.common.llm import claude_call
 from src.article_pipeline.prompts import (
     SYSTEM_PROMPT,
+    H2_PLAN_PROMPT,
     PRE_BATCH_PROMPT,
     BATCH_0_PROMPT,
     BATCH_N_PROMPT,
@@ -60,13 +61,20 @@ def _get_last_sentence(text: str) -> str:
 class ArticleOrchestrator:
     """Orchestrates the full BRAJEN article generation pipeline."""
 
-    def __init__(self, s1_data: dict, engine: str = "claude", model: str = "claude-sonnet-4-6"):
+    def __init__(self, s1_data: dict, engine: str = "claude", model: str = "claude-sonnet-4-6", nw_terms: list = None):
         # Use LLM-optimized version if available, fallback to full s1_data
         self.s1_data = s1_data.get("_llm_ready") or s1_data
         self._s1_full = s1_data  # full version for panel display
         self.engine = engine
         self.model = model
         self.variables = extract_global_variables(s1_data)
+        # NW/Surfer coverage analysis
+        from src.article_pipeline.nw_analyzer import analyze_nw_coverage
+        self._nw_analysis = analyze_nw_coverage(nw_terms or [], s1_data)
+        nw_block = self._nw_analysis.get("prompt_block", "")
+        self.variables["NW_LUKI"] = nw_block
+        if self._nw_analysis.get("stats", {}).get("total", 0) > 0:
+            print(f"[NW] Coverage analysis: {self._nw_analysis['stats']}")
         self.pre_batch_map = None
         self.batch_texts = []
         self.bridge_sentences = []
@@ -98,13 +106,33 @@ class ArticleOrchestrator:
         return text
 
     def run_ymyl_detection(self) -> dict:
-        """Detect YMYL category and update variables."""
+        """Detect YMYL category, then enrich with legal/medical sources."""
         keyword = self.variables.get("HASLO_GLOWNE", "")
         self.ymyl_result = detect_ymyl(keyword)
         category = self.ymyl_result.get("category", "none")
         self.variables["YMYL_KLASYFIKACJA"] = category
-        if self.ymyl_result.get("is_ymyl"):
-            self.variables["PUBMED_CYTAT"] = ""  # placeholder for future PubMed integration
+        self.variables["YMYL_CONTEXT"] = ""  # default empty
+
+        if category == "prawo":
+            try:
+                from src.ymyl.legal_enricher import get_legal_context
+                legal = get_legal_context(keyword)
+                self.ymyl_result["legal"] = legal
+                self.variables["YMYL_CONTEXT"] = legal.get("prompt_block", "")
+                print(f"[YMYL] ⚖️ Legal context: {legal.get('status')} — {len(legal.get('judgments', []))} orzeczeń")
+            except Exception as e:
+                print(f"[YMYL] ⚠️ Legal enricher error: {e}")
+
+        elif category == "zdrowie":
+            try:
+                from src.ymyl.medical_enricher import get_medical_context
+                medical = get_medical_context(keyword)
+                self.ymyl_result["medical"] = medical
+                self.variables["YMYL_CONTEXT"] = medical.get("prompt_block", "")
+                print(f"[YMYL] 🏥 Medical context: {medical.get('status')} — sources: {medical.get('sources_used', [])}")
+            except Exception as e:
+                print(f"[YMYL] ⚠️ Medical enricher error: {e}")
+
         return self.ymyl_result
 
     def run_search_variants(self) -> dict:
@@ -125,6 +153,137 @@ class ArticleOrchestrator:
             self.search_variants_result.get("warianty_formalne", []), ensure_ascii=False
         )
         return self.search_variants_result
+
+    def run_h2_plan(self) -> list:
+        """
+        Step 2.5: Generate H2 article plan using Claude.
+        Uses scored H2 candidates, entities, ngrams, PAA, causal chains.
+        Updates _h2_plan_list and PLAN_ARTYKULU/PLAN_H2 variables.
+        """
+        import json
+
+        s1 = self.s1_data
+        keyword = self.variables.get("HASLO_GLOWNE", "")
+
+        # Build input data for prompt
+        h2_scored = s1.get("h2_scored_candidates") or {}
+        candidates = (h2_scored.get("must_have") or []) + (h2_scored.get("high_priority") or []) + (h2_scored.get("optional") or [])
+        h2_candidates_str = json.dumps(
+            [{"text": c.get("text"), "score": c.get("score"), "reason": c.get("reason")} for c in candidates[:20]],
+            ensure_ascii=False, indent=2
+        )
+
+        ngrams = s1.get("ngrams") or []
+        ngrams_top = [n.get("ngram") for n in sorted(ngrams, key=lambda x: x.get("weight", 0), reverse=True)[:10] if isinstance(n, dict)]
+
+        entity_seo = s1.get("entity_seo") or {}
+        must_cover = entity_seo.get("must_cover_concepts") or []
+
+        causal = s1.get("causal_triplets") or {}
+        chains = causal.get("chains") or causal.get("causal_chains") or []
+
+        serp = s1.get("serp_analysis") or {}
+        paa = [q.get("question", q) if isinstance(q, dict) else q for q in (serp.get("paa_questions") or [])[:8]]
+        related = [r.get("query", r.get("text", r)) if isinstance(r, dict) else r for r in (serp.get("related_searches") or [])[:8]]
+
+        gaps = s1.get("content_gaps") or {}
+        gaps_list = (gaps.get("suggested_new_h2s") or []) + (gaps.get("paa_unanswered") or [])
+
+        # ── entity_salience — które encje są "o czym jest temat" ──
+        entity_salience_raw = entity_seo.get("entity_salience") or []
+        entity_salience = [
+            {"entity": e.get("entity_text") or e.get("entity", ""),
+             "salience": e.get("salience_score") or e.get("salience", 0),
+             "type": e.get("type", "")}
+            for e in entity_salience_raw[:12]
+            if (e.get("salience_score") or e.get("salience", 0)) > 0.1
+        ]
+
+        # ── competitor_sections — jak top 5 konkurentów organizuje artykuł ──
+        competitors_raw = (self._s1_full or {}).get("competitors") or s1.get("competitors") or []
+        competitor_sections = [
+            {"url": c.get("url", "")[:60],
+             "h2s": c.get("h2_structure", [])[:8]}
+            for c in competitors_raw[:5]
+            if c.get("h2_structure")
+        ]
+
+        # ── search_intent — heurystyka na podstawie hasła + related searches ──
+        keyword_lower = keyword.lower()
+        transactional_signals = ["kup", "cena", "ile kosztuje", "sklep", "oferta",
+                                  "zamów", "ranking", "polecany", "najlepszy", "porównanie"]
+        intent_score = sum(1 for s in transactional_signals if s in keyword_lower)
+        intent_score += sum(
+            1 for r in related[:8]
+            for s in transactional_signals
+            if isinstance(r, str) and s in r.lower()
+        )
+        search_intent = "transakcyjna" if intent_score >= 2 else "informacyjna"
+
+        prompt_vars = {
+            "HASLO_GLOWNE": keyword,
+            "H2_SCORED_CANDIDATES": h2_candidates_str,
+            "ENCJE_KRYTYCZNE": json.dumps(must_cover[:15], ensure_ascii=False),
+            "ENTITY_SALIENCE": json.dumps(entity_salience, ensure_ascii=False),
+            "NGRAMY_TOP10": json.dumps(ngrams_top, ensure_ascii=False),
+            "LANCUCHY_KAUZALNE": json.dumps(chains[:6], ensure_ascii=False),
+            "PAA_QUESTIONS": json.dumps(paa, ensure_ascii=False),
+            "RELATED_SEARCHES": json.dumps(related, ensure_ascii=False),
+            "CONTENT_GAPS": json.dumps(gaps_list[:6], ensure_ascii=False),
+            "COMPETITOR_SECTIONS": json.dumps(competitor_sections, ensure_ascii=False),
+            "SEARCH_INTENT": search_intent,
+            "YMYL_KLASYFIKACJA": self.variables.get("YMYL_KLASYFIKACJA", "none"),
+            "DLUGOSC_CEL": self.variables.get("DLUGOSC_CEL", "2000"),
+        }
+
+        user = fill_template(H2_PLAN_PROMPT, prompt_vars)
+        response = self._llm_call(
+            system_prompt="Jesteś strategiem treści SEO. Zwróć wyłącznie poprawny JSON, bez komentarzy.",
+            user_prompt=user,
+            max_tokens=2000,
+            label="h2_plan"
+        )
+
+        # Parse response
+        h2_plan = []
+        paa_to_faq = []
+        try:
+            text = response.strip()
+            if "```" in text:
+                text = text.split("```")[1]
+                if text.startswith("json"):
+                    text = text[4:]
+            parsed = json.loads(text.strip())
+            h2_plan = [h["heading"] for h in parsed.get("h2_plan", []) if h.get("heading")]
+            paa_to_faq = parsed.get("paa_do_faq", [])
+            self._h2_plan_full = parsed.get("h2_plan", [])  # full objects for panel
+            self._paa_to_faq = paa_to_faq
+            print(f"[H2_PLAN] ✅ Claude generated {len(h2_plan)} sections")
+        except Exception as e:
+            print(f"[H2_PLAN] ⚠️ Parse error: {e} — falling back to scored candidates")
+            h2_plan = [c.get("text") for c in candidates[:8] if c.get("text")]
+
+        if not h2_plan:
+            kw = keyword or "Temat"
+            h2_plan = [f"Czym jest {kw}", f"Jak działa {kw}", f"Konsekwencje: {kw}", f"FAQ: {kw}"]
+
+        # Update variables
+        self.variables["_h2_plan_list"] = h2_plan[:8]
+        self.variables["PLAN_ARTYKULU"] = "\n".join(f"{i+1}. {h}" for i, h in enumerate(h2_plan[:8]))
+        self.variables["PLAN_H2"] = json.dumps(h2_plan[:8], ensure_ascii=False)
+        self.variables["LICZBA_H2"] = str(len(h2_plan[:8]))
+
+        # PAA to FAQ
+        if paa_to_faq:
+            existing = self.variables.get("PAA_BEZ_ODPOWIEDZI", "[]")
+            try:
+                existing_list = json.loads(existing)
+            except Exception:
+                existing_list = []
+            merged = list({q: None for q in paa_to_faq + existing_list}.keys())
+            self.variables["PAA_BEZ_ODPOWIEDZI"] = json.dumps(merged, ensure_ascii=False)
+
+        return h2_plan[:8]
 
     def run_pre_batch(self) -> dict:
         """
@@ -300,6 +459,72 @@ class ArticleOrchestrator:
         self.full_article = "\n\n".join(self.batch_texts)
         return self.full_article
 
+    def run_coverage_check(self) -> dict:
+        """
+        Porównuje tekst artykułu z zakresami freq_min/freq_max z S1 ngrams.
+        Zwraca raport: missing, under, over, ok.
+        Bez LLM — czysto lokalne liczenie.
+        """
+        import re as _re
+
+        article = self.full_article.lower()
+        if not article:
+            return {}
+
+        s1_full = self._s1_full
+        ngrams = (s1_full.get("ngrams") or []) + (s1_full.get("extended_terms") or [])
+
+        missing, under, over, ok = [], [], [], []
+
+        for ng in ngrams:
+            term = (ng.get("ngram") or ng.get("text") or "").lower().strip()
+            if not term or len(term) < 3:
+                continue
+            freq_min = ng.get("freq_min", 1)
+            freq_max = ng.get("freq_max", 99)
+            weight   = ng.get("weight", 0)
+
+            actual = len(_re.findall(_re.escape(term), article))
+
+            entry = {
+                "term":   ng.get("ngram") or ng.get("text"),
+                "actual": actual,
+                "min":    freq_min,
+                "max":    freq_max,
+                "weight": round(weight, 3),
+            }
+
+            if actual == 0 and freq_min >= 1:
+                missing.append(entry)
+            elif 0 < actual < freq_min:
+                under.append(entry)
+            elif freq_max and actual > freq_max:
+                over.append(entry)
+            else:
+                ok.append(entry)
+
+        missing.sort(key=lambda x: x["weight"], reverse=True)
+        under.sort(key=lambda x: x["min"] - x["actual"], reverse=True)
+        over.sort(key=lambda x: x["actual"] - x["max"], reverse=True)
+
+        result = {
+            "missing": missing,
+            "under":   under,
+            "over":    over,
+            "ok":      ok,
+            "stats": {
+                "total":        len(ngrams),
+                "missing":      len(missing),
+                "under":        len(under),
+                "over":         len(over),
+                "ok":           len(ok),
+                "coverage_pct": round(len(ok) / max(len(ngrams), 1) * 100),
+            }
+        }
+        self.coverage_result = result
+        print(f"[COVERAGE] {result['stats']}")
+        return result
+
     def run_post_processing(self) -> dict:
         """
         Step 5: Validate the full article.
@@ -332,9 +557,10 @@ class ArticleOrchestrator:
         Run the complete article generation pipeline with SSE-compatible events.
         Yields status events for each step.
         """
-        h2_count = len(self.variables.get("_h2_plan_list", []))
-        # Steps: YMYL + variants + pre-batch + batch0 + H2s + FAQ + post-processing
-        total_steps = 6 + h2_count
+        # H2 plan is unknown before Claude generates it — estimate 6 sections, update after
+        h2_count_est = 6
+        # Steps: YMYL + variants + H2 plan + pre-batch + batch0 + H2s + FAQ + post-processing
+        total_steps = 6 + h2_count_est
 
         # Step 1: YMYL detection
         yield {"event": "step_start", "step": 1, "total": total_steps, "label": "YMYL: detekcja kategorii"}
@@ -345,18 +571,34 @@ class ArticleOrchestrator:
         yield {"event": "step_start", "step": 2, "total": total_steps, "label": "Warianty wyszukiwania"}
         variants = self.run_search_variants()
         yield {"event": "step_done", "step": 2, "data": {"variants_count": sum(len(v) for v in variants.values())}}
-        # Snapshot all input variables after variants are ready
+
+        # Step 3: H2 plan — Claude generates article structure based on scored candidates
+        yield {"event": "step_start", "step": 3, "total": total_steps, "label": "Plan H2: struktura artykułu"}
+        h2_plan = self.run_h2_plan()
+        h2_count = len(h2_plan)
+        total_steps = 6 + h2_count  # recalculate with actual H2 count
+        yield {"event": "step_done", "step": 3, "data": {
+            "h2_plan": getattr(self, "_h2_plan_full", h2_plan),
+            "paa_do_faq": getattr(self, "_paa_to_faq", []),
+            "h2_count": h2_count,
+        }}
+
+        # Snapshot all input variables after H2 plan is ready
         self.input_variables = {k: v for k, v in self.variables.items() if not k.startswith("_")}
 
-        # Step 3: Pre-batch
-        yield {"event": "step_start", "step": 3, "total": total_steps, "label": "Pre-Batch: mapa rozmieszczeń"}
+        # Step 4: Pre-batch
+        yield {"event": "step_start", "step": 4, "total": total_steps, "label": "Pre-Batch: mapa rozmieszczeń"}
         self.run_pre_batch()
-        yield {"event": "step_done", "step": 3, "data": {"pre_batch_keys": list((self.pre_batch_map or {}).keys())}}
+        yield {"event": "step_done", "step": 4, "data": {
+            "pre_batch_keys": list((self.pre_batch_map or {}).keys()),
+            "pre_batch_map": self.pre_batch_map or {},
+            "input_variables": self.input_variables,
+        }}
 
-        # Step 4: Batch 0
-        yield {"event": "step_start", "step": 4, "total": total_steps, "label": "Batch 0: H1 + wstęp"}
+        # Step 5: Batch 0
+        yield {"event": "step_start", "step": 5, "total": total_steps, "label": "Batch 0: H1 + wstęp"}
         intro = self.run_batch_0()
-        yield {"event": "step_done", "step": 4, "data": {"text": intro, "word_count": len(intro.split())}}
+        yield {"event": "step_done", "step": 5, "data": {"text": intro, "word_count": len(intro.split())}}
 
         # Steps 5..N: H2 sections
         h2_plan = self.variables.get("_h2_plan_list", [])
@@ -383,6 +625,10 @@ class ArticleOrchestrator:
         # Post-processing validation
         yield {"event": "step_start", "step": total_steps, "total": total_steps, "label": "Post-Processing: walidacja"}
         validation = self.run_post_processing()
+
+        # Coverage check — bez LLM, czysto lokalne
+        coverage = self.run_coverage_check()
+
         yield {"event": "step_done", "step": total_steps, "data": {"validation": validation}}
 
         yield {"event": "complete", "data": {
@@ -393,4 +639,5 @@ class ArticleOrchestrator:
             "prompt_log": self.prompt_log,
             "input_variables": self.input_variables,
             "pre_batch_map": self.pre_batch_map or {},
+            "coverage": coverage,
         }}

@@ -589,7 +589,11 @@ class ArticleOrchestrator:
         # Step 4: Pre-batch
         yield {"event": "step_start", "step": 4, "total": total_steps, "label": "Pre-Batch: mapa rozmieszczeń"}
         self.run_pre_batch()
-        yield {"event": "step_done", "step": 4, "data": {"pre_batch_keys": list((self.pre_batch_map or {}).keys())}}
+        yield {"event": "step_done", "step": 4, "data": {
+            "pre_batch_keys": list((self.pre_batch_map or {}).keys()),
+            "pre_batch_map": self.pre_batch_map or {},
+            "input_variables": self.input_variables,
+        }}
 
         # Step 5: Batch 0
         yield {"event": "step_start", "step": 5, "total": total_steps, "label": "Batch 0: H1 + wstęp"}
