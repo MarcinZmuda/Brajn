@@ -40,13 +40,13 @@ Nigdy nie używaj tych fraz (ani ich wariantów):
 
 <entity_rules>
 1. ENCJA GŁÓWNA („{{ENCJA_GLOWNA}}"): musi pojawić się w H1, w pierwszym akapicie intro, i w co najmniej 2 sekcjach H2 (odmieniana przez przypadki). Nie wciskaj na siłę w każdą sekcję.
-2. ENCJE KRYTYCZNE (lista w <critical_entities>): każda minimum 1x w całym artykule. Odmieniaj przez przypadki — nie wstawiaj w mianowniku na siłę.
+2. ENCJE KRYTYCZNE (lista w <critical_entities>): staraj się użyć każdą w artykule, ale tylko tam gdzie pasuje do kontekstu. Odmieniaj przez przypadki — nie wstawiaj w mianowniku na siłę.
 3. Nie klastruj encji — rozłóż je równomiernie po artykule.
 </entity_rules>
 
 <ngram_rules>
 Każdy n-gram z <ngrams> ma limit [min, max] wystąpień w CAŁYM artykule.
-- min = minimalna liczba wystąpień (obowiązkowa).
+- min = oczekiwana liczba wystąpień (staraj się osiągnąć, ale nie kosztem naturalności).
 - max = maksymalna — TWARDA GRANICA. Przekroczenie max = nadoptymalizacja i kara od Google.
 - Odmiana fleksyjna liczy się jako wystąpienie (np. „mebli", „meblom", „meble" = to samo).
 - Parafrazy i synonimy bliskie też się liczą — „zabezpieczyć meble" ≈ „zabezpieczanie mebli".
@@ -138,8 +138,8 @@ Zwróć artykuł jako czysty tekst z nagłówkami w markdown:
 <self_check>
 Przed zwróceniem artykułu zweryfikuj:
 1. Czy encja główna jest w H1, intro i co najmniej 2 sekcjach H2?
-2. Czy każda encja z <critical_entities> pojawia się min. 1x?
-3. Czy każdy n-gram z <ngrams> mieści się w limicie [min, max]?
+2. Czy encje z <critical_entities> są naturalnie wplecione tam gdzie pasują?
+3. Czy żaden n-gram z <ngrams> nie przekracza max?
 4. Czy żadna fraza z <banned_phrases> nie występuje w tekście?
 5. Czy artykuł ma {{LICZBA_H2}} sekcji H2 + FAQ?
 6. Czy tekst jest zwięzły i nie leje wody?
@@ -387,7 +387,7 @@ ZASADA FALLBACK — użyj PIERWSZEGO dostępnego źródła:
    Nawiąż do tematu pierwszej sekcji H2: „{{PIERWSZY_H2}}".
    Nie powtarzaj tytułu H2 dosłownie.
 
-7. HARD FACTS: wpleć co najmniej 2 fakty z <hard_facts>. Reszta trafi do sekcji H2.
+7. HARD FACTS: wpleć fakty z <hard_facts> które pasują do kontekstu intro. Reszta trafi do sekcji H2.
 </intro_rules>
 
 <style>
@@ -446,7 +446,7 @@ Przed zwróceniem zweryfikuj:
 3. Intro jest zwięzłe i na temat?
 4. Pierwsze zdanie zawiera encję główną, ale nie jako podmiot w mianowniku?
 5. Pierwsze 100 słów pokrywa kluczowe informacje ze źródła referencyjnego (AI Overview / Featured Snippet)?
-6. Minimum 2 hard facts z <hard_facts> są wplecione?
+6. Czy hard facts z <hard_facts> są wplecione tam gdzie pasują do kontekstu?
 7. Jeśli <key_ngram> niepuste — czy fraza pojawia się w intro?
 8. Jeśli <key_triplet> niepuste — czy triplet przyczyna→skutek jest użyty?
 9. Ostatnie zdanie nawiązuje do tematu „{{PIERWSZY_H2}}"?
@@ -494,8 +494,8 @@ Nigdy nie używaj (ani wariantów):
 
 <entity_rules>
 Encja główna „{{ENCJA_GLOWNA}}" — wpleć jeśli naturalnie pasuje do sekcji. Nie każda sekcja musi ją zawierać.
-Encje sekcji (z <section_entities>): wpleć każdą minimum 1x. Odmieniaj przez przypadki.
-Jeśli któraś encja nie pasuje naturalnie do tematu tej sekcji — pomiń ją. Lepiej 0 niż wciśnięta na siłę.
+Encje sekcji (z <section_entities>): staraj się wpleść te, które naturalnie pasują do tematu. Odmieniaj przez przypadki.
+Jeśli któraś encja nie pasuje do kontekstu — pomiń ją. Lepiej 0 niż wciśnięta na siłę.
 </entity_rules>
 
 <ngram_rules>
@@ -657,7 +657,7 @@ ARTYKUŁ:
 1. AI_PHRASES — wykryj obecność zakazanych fraz:
    ["Warto zaznaczyć", "Warto podkreślić", "Należy zaznaczyć", "Należy podkreślić", "Jest to ważne", "W dzisiejszym artykule", "Kluczowym aspektem", "Podsumowując powyższe", "Jak wspomniano wcześniej", "Co więcej,", "Ponadto,", "Niemniej jednak,", "W związku z powyższym", "Mając na uwadze", "Nie sposób nie wspomnieć", "Wiele osób błędnie"]
 
-2. ENTITY_COVERAGE — sprawdź czy każda encja z listy {{ENCJE_KRYTYCZNE}} pojawia się min. 1x
+2. ENTITY_COVERAGE — sprawdź ile encji z listy {{ENCJE_KRYTYCZNE}} zostało użytych (oczekiwane większość, ale nie kosztem naturalności)
 
 3. HARD_FACTS — sprawdź czy liczby/ceny z SERP snippets {{HARD_FACTS_ALL}} są użyte dokładnie (nie zaokrąglone)
 
