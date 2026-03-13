@@ -19,6 +19,7 @@ from src.article_pipeline.prompts import (
     H2_PLAN_PROMPT,
     PRE_BATCH_PROMPT,
     BATCH_0_PROMPT,
+    BATCH_N_SYSTEM,
     BATCH_N_PROMPT,
     BATCH_FAQ_PROMPT,
     POST_PROCESSING_PROMPT,
@@ -518,10 +519,19 @@ class ArticleOrchestrator:
         pre = self.pre_batch_map or {}
         batch_data = (pre.get("batches") or {}).get(f"batch_{n}", {})
         target_length = self.variables.get("_target_length", 2000)
-        h2_count = len(self.variables.get("_h2_plan_list", []))
+        h2_plan = self.variables.get("_h2_plan_list", [])
+        h2_count = len(h2_plan)
         # Distribute words: subtract intro, divide rest among H2s
         intro_words = int(self.variables.get("DLUGOSC_INTRO", "180") or "180")
         section_length = max(200, (target_length - intro_words) // max(1, h2_count))
+
+        # Determine next section title for bridge sentence
+        if n < h2_count:
+            next_h2 = h2_plan[n]  # n is 1-based, so h2_plan[n] = next section
+        elif self.variables.get("PLAN_FAQ"):
+            next_h2 = "FAQ"
+        else:
+            next_h2 = ""
 
         # Get section-specific data from H2 plan (v2.0)
         h2_plan_full = getattr(self, "_h2_plan_full", [])
@@ -545,30 +555,32 @@ class ArticleOrchestrator:
         assigned_ngrams = batch_data.get("ngramy", [])
         ngrams_formatted = self.keyword_tracker.format_phrases_for_prompt(assigned_ngrams, h2_heading=h2_heading)
 
+        # Periphrases: from pre-batch or fallback to global
+        periphrases = batch_data.get("peryfrazy", [])
+        if not periphrases:
+            try:
+                periphrases = json.loads(self.variables.get("PERYFRAZY", "[]"))[:3]
+            except (json.JSONDecodeError, TypeError):
+                periphrases = []
+
         batch_vars = {
             **self.variables,
             "N": str(n),
             "NAZWA_SEKCJI": section_name,
             "NAGLOWEK_H2": h2_heading,
+            "NASTEPNY_H2": next_h2,
             "OSTATNIE_ZDANIE_POPRZEDNIEGO_BATCHA": self.bridge_sentences[-1] if self.bridge_sentences else "",
             "POPRZEDNIE_ZDANIA_POMOSTOWE": json.dumps(self.bridge_sentences, ensure_ascii=False),
-            "ENCJE_BATCH_N": json.dumps(merged_entities, ensure_ascii=False),
+            "ENCJE_BATCH_N_JSON": json.dumps(merged_entities, ensure_ascii=False),
             "NGRAMY_BATCH_N": ngrams_formatted,
-            "MAIN_KW_INSTRUCTION": self.keyword_tracker.format_main_kw_instruction(),
-            "TRIPLETS_BATCH_N": json.dumps(batch_data.get("lancuchy", []), ensure_ascii=False),
-            "HARD_FACTS_BATCH_N": json.dumps(merged_hf, ensure_ascii=False),
-            "PERYFRAZY_BATCH_N": json.dumps(
-                batch_data.get("peryfrazy", []) or
-                json.loads(self.variables.get("PERYFRAZY", "[]"))[:3],
-                ensure_ascii=False
-            ),
+            "TRIPLETS_BATCH_N_JSON": json.dumps(batch_data.get("lancuchy", []), ensure_ascii=False),
+            "HARD_FACTS_BATCH_N_JSON": json.dumps(merged_hf, ensure_ascii=False),
+            "PERYFRAZY_BATCH_N_JSON": json.dumps(periphrases, ensure_ascii=False),
             "DLUGOSC_SEKCJI": str(section_length),
             "MIN_PERYFRAZ": "2",
-            "INTENCJA_TRANSAKCYJNA_AKTYWNA": "false",
-            "FRAZY_TRANSAKCYJNE": "[]",
         }
 
-        system = fill_template(SYSTEM_PROMPT, batch_vars)
+        system = fill_template(BATCH_N_SYSTEM, batch_vars)
         user = fill_template(BATCH_N_PROMPT, batch_vars)
 
         text = self._llm_call(system, user, max_tokens=3000, label=f"batch_{n}")

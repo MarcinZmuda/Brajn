@@ -462,8 +462,10 @@ Jeśli nie przechodzi — popraw ZANIM zwrócisz tekst.
 
 
 # ══════════════════════════════════════════════════════════════
-# 4. BATCH N — SZABLON SEKCJI H2 (v2.0 XML)
+# 4. BATCH N — SZABLON SEKCJI H2 (v3.0 XML)
 # ══════════════════════════════════════════════════════════════
+BATCH_N_SYSTEM = """Jesteś doświadczonym polskim redaktorem treści SEO. Piszesz fragment artykułu na podstawie danych dostarczonych w instrukcji. Zwracasz wyłącznie tekst w formacie określonym w <output_format>."""
+
 BATCH_N_PROMPT = """<task>
 Napisz WYŁĄCZNIE sekcję H2 nr {{N}} artykułu „{{HASLO_GLOWNE}}".
 Nie pisz intro, nie pisz FAQ, nie pisz innych sekcji.
@@ -472,87 +474,131 @@ Nie pisz intro, nie pisz FAQ, nie pisz innych sekcji.
 <continuity>
 Poprzednia sekcja zakończyła się zdaniem: „{{OSTATNIE_ZDANIE_POPRZEDNIEGO_BATCHA}}"
 Zacznij od naturalnego rozwinięcia tego pomosta. Nie powtarzaj treści poprzedniej sekcji.
-Poprzednie zdania pomostowe (nie powtarzaj ich schematu): {{POPRZEDNIE_ZDANIA_POMOSTOWE}}
+Poprzednie schematy zdań pomostowych (NIE powtarzaj żadnego z nich): {{POPRZEDNIE_ZDANIA_POMOSTOWE}}
 </continuity>
 
 <section_spec>
 Nagłówek H2: {{NAGLOWEK_H2}}
-Długość sekcji: {{DLUGOSC_SEKCJI}} słów (±15%)
-Akapity: 3–5 akapitów narracyjnych z naturalnym przepływem
+Następna sekcja: {{NASTEPNY_H2}}
+Długość sekcji: {{DLUGOSC_SEKCJI}} słów (±15%).
 </section_spec>
 
-<section_data>
+<style>
+1. Naturalny, publicystyczny polski. Mów do czytelnika: „możesz", „pamiętaj", „jeśli".
+2. Średnia długość zdania: 11–15 słów. Rytm: krótkie (5–8) przeplataj z dłuższymi (18–22).
+3. Akapity: 2–6 zdań. Żadne dwa akapity w sekcji nie mają identycznej liczby zdań.
+4. Aktywna strona czasownika.
+5. Liczba akapitów zależy od długości sekcji: ≤150 słów → 2–3 akapity, 150–300 → 3–4, >300 → 4–5.
+</style>
 
-<main_keyword_budget>
-{{MAIN_KW_INSTRUCTION}}
-</main_keyword_budget>
+<banned_phrases>
+Nigdy nie używaj (ani wariantów):
+- Warto zaznaczyć / Warto podkreślić / Należy zaznaczyć / Należy podkreślić
+- Jest to ważne / W dzisiejszym artykule / Kluczowym aspektem / Podsumowując powyższe
+- Jak wspomniano wcześniej / Co więcej, / Ponadto, / Niemniej jednak,
+- W związku z powyższym, / Mając na uwadze / Nie sposób nie wspomnieć / Wiele osób błędnie
+</banned_phrases>
 
-<entities>
-{{ENCJE_BATCH_N}}
-Każda encja musi pojawić się min. 1x. Odmieniaj przez przypadki.
-Encja główna „{{ENCJA_GLOWNA}}" — obowiązkowa w każdej sekcji.
-</entities>
+<entity_rules>
+Encja główna „{{ENCJA_GLOWNA}}" — OBOWIĄZKOWA, minimum 1x w sekcji (odmieniona naturalnie).
+Encje sekcji (z <section_entities>): wpleć każdą minimum 1x. Odmieniaj przez przypadki.
+Jeśli któraś encja nie pasuje naturalnie do tematu tej sekcji — pomiń ją. Lepiej 0 niż wciśnięta na siłę.
+</entity_rules>
 
-<ngrams>
-{{NGRAMY_BATCH_N}}
+<ngram_rules>
+N-gramy z <section_ngrams> mają budżet wystąpień dla tej sekcji.
 
-ZASADY (KRYTYCZNE — przestrzegaj ściśle):
-- MUST = frazy obowiązkowe. Użyj w formie podanej powyżej lub naturalnej odmianie.
-- NICE-TO-HAVE = frazy opcjonalne. Użyj tylko jeśli naturalnie pasują do sekcji.
-- Liczba po „·" = ile razy MOŻESZ użyć frazy w tej sekcji. Wartość po „max" to ABSOLUTNE MAXIMUM — NIGDY nie przekraczaj.
+OZNACZENIA:
+- MUST = fraza obowiązkowa. Użyj w podanej formie lub naturalnej odmianie.
+- NICE-TO-HAVE = fraza opcjonalna. Użyj tylko jeśli naturalnie pasuje.
+- Liczba po „·" = ile razy MOŻESZ użyć frazy w tej sekcji. Wartość po „max" to ABSOLUTNE MAXIMUM.
 - 🛑 STOP = budżet wyczerpany. BEZWZGLĘDNY ZAKAZ użycia tej frazy i jej odmian. Użyj podanych zamienników.
-- ⛔ HARD STOP = fraza drastycznie przekroczona. KAŻDE kolejne użycie obniża jakość artykułu. Zamień na synonimy.
+- ⛔ HARD STOP = fraza drastycznie przekroczona. KAŻDE kolejne użycie obniża jakość. Zamień na synonimy.
+
+ZASADY:
+- Odmienione formy (np. „szamponem", „szamponu") RÓWNIEŻ liczą się do budżetu.
 - Jeśli fraza nie pasuje do kontekstu — POMIŃ. Lepiej 0 niż wciśnięta na siłę.
-- Odmienione formy (np. „szamponem", „szamponu", „meblami", „mebli") RÓWNIEŻ liczą się do budżetu.
-- STUFFING = powtarzanie frazy ponad limit. To OBNIŻA scoring SEO, nie podnosi. Mniej = lepiej gdy limit osiągnięty.
-</ngrams>
-
-<causal_triplets>
-{{TRIPLETS_BATCH_N}}
-Dla każdego: wyjaśnij DLACZEGO (spójnik kauzalny). Jeśli lista pusta — nie wymyślaj.
-</causal_triplets>
-
-<hard_facts>
-{{HARD_FACTS_BATCH_N}}
-Użyj dokładnie — nie zaokrąglaj, nie zastępuj własnymi szacunkami.
-</hard_facts>
-
-<periphrases>
-Wpleć naturalnie min. {{MIN_PERYFRAZ}} z: {{PERYFRAZY_BATCH_N}}
-</periphrases>
-
-</section_data>
-
-{{NW_LUKI}}
-
-{{YMYL_CONTEXT}}
-
-<transactional>
-{{INTENCJA_TRANSAKCYJNA_AKTYWNA}}
-Marki z Related Searches: {{MARKI_Z_RELATED_SEARCHES}}
-Frazy transakcyjne: {{FRAZY_TRANSAKCYJNE}}
-Marki wpleć w naturalnym kontekście porównawczym — nigdy jako rekomendację.
-</transactional>
-
-<anti_stuffing>
-PRIORYTET: naturalność tekstu > nasycenie frazami SEO.
 - Nie powtarzaj tego samego n-gramu w sąsiednich zdaniach.
 - Nie zaczynaj dwóch akapitów od tej samej frazy kluczowej.
 - Jeśli zdanie brzmi sztucznie z powodu wciśniętego n-gramu — usuń go.
-- Lepiej mieć 0 użyć frazy niż 1 użycie, które psuje tekst.
-</anti_stuffing>
+- STUFFING = powtarzanie frazy ponad limit. To OBNIŻA scoring SEO, nie podnosi.
+</ngram_rules>
 
-<bridge>
-Zakończ sekcję zdaniem pomostowym prowadzącym do kolejnej sekcji.
-Schemat składniowy musi być inny niż poprzednie pomosty.
-</bridge>
+<causal_rules>
+Triplety z <section_triplets>: wyjaśniaj DLACZEGO → CO → EFEKT.
+Używaj spójników: dlatego / bo / w efekcie / ponieważ / przez co / w rezultacie.
+Jeśli <section_triplets> jest puste — nie wymyślaj tripletów. Pisz normalnie.
+</causal_rules>
+
+<hard_facts_rules>
+Fakty z <section_hard_facts>: użyj dokładnie jak podane.
+Nie zaokrąglaj, nie zastępuj własnymi szacunkami.
+Jeśli fakt koliduje z Twoją wiedzą — użyj wersji z <section_hard_facts>.
+Wplataj naturalnie w tekst, nie wypisuj jako luźne liczby.
+</hard_facts_rules>
+
+<formatting_rules>
+1. Listy punktowe: TYLKO dla instrukcji krok po kroku, procedur, wymagań formalnych.
+2. Pogrubienia w tekście ciągłym: zakazane.
+</formatting_rules>
+
+<bridge_rules>
+Zakończ sekcję zdaniem pomostowym prowadzącym do: „{{NASTEPNY_H2}}".
+Nawiąż do tematu następnej sekcji — nie powtarzaj jej tytułu dosłownie.
+Schemat składniowy musi być inny niż którykolwiek z {{POPRZEDNIE_ZDANIA_POMOSTOWE}}.
+
+WYJĄTEK: jeśli {{NASTEPNY_H2}} = "FAQ" — zakończ zdaniem zamykającym temat sekcji i otwierającym na pytania (np. zapowiedź FAQ).
+WYJĄTEK: jeśli {{NASTEPNY_H2}} = "" (ostatnia sekcja, brak FAQ) — zakończ zdaniem zamykającym cały artykuł.
+</bridge_rules>
+
+<data>
+
+<section_entities>
+{{ENCJE_BATCH_N_JSON}}
+</section_entities>
+
+<section_ngrams>
+{{NGRAMY_BATCH_N}}
+</section_ngrams>
+
+<section_triplets>
+{{TRIPLETS_BATCH_N_JSON}}
+</section_triplets>
+
+<section_hard_facts>
+{{HARD_FACTS_BATCH_N_JSON}}
+</section_hard_facts>
+
+<section_periphrases>
+{{PERYFRAZY_BATCH_N_JSON}}
+Wpleć naturalnie minimum {{MIN_PERYFRAZ}} z powyższych. Jeśli lista pusta — ignoruj.
+</section_periphrases>
+
+</data>
 
 <output_format>
-Zwróć:
+Zwróć WYŁĄCZNIE:
+
 ## {{NAGLOWEK_H2}}
 
 [Tekst sekcji — {{DLUGOSC_SEKCJI}} słów]
-</output_format>"""
+
+Bez komentarzy, metadanych, ani tekstu przed/po.
+</output_format>
+
+<self_check>
+Przed zwróceniem zweryfikuj:
+1. Sekcja ma ≈ {{DLUGOSC_SEKCJI}} słów (±15%)?
+2. Encja główna pojawia się min. 1x?
+3. Żaden n-gram nie przekracza swojego max budżetu?
+4. Każdy MUST n-gram jest użyty min. 1x?
+5. Żaden n-gram ze statusem 🛑 STOP lub ⛔ HARD STOP nie został użyty?
+6. Żadna fraza z <banned_phrases> nie występuje?
+7. Sekcja zaczyna się od nawiązania do pomostowego zdania poprzedniej sekcji?
+8. Sekcja kończy się zdaniem pomostowym o innym schemacie niż poprzednie?
+9. Hard facts użyte dokładnie (nie zaokrąglone)?
+Jeśli nie przechodzi — popraw ZANIM zwrócisz tekst.
+</self_check>"""
 
 
 # ══════════════════════════════════════════════════════════════
