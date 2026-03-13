@@ -58,6 +58,11 @@ def _get_last_sentence(text: str) -> str:
     return sentences[-1] if sentences else ""
 
 
+def _hard_facts_values(facts: list) -> list:
+    """Extract plain string values from hard facts (handles both str and dict)."""
+    return [f.get("value", "") if isinstance(f, dict) else str(f) for f in facts if f]
+
+
 class ArticleOrchestrator:
     """Orchestrates the full BRAJEN article generation pipeline."""
 
@@ -315,7 +320,7 @@ class ArticleOrchestrator:
             "ngramy": [ng.get("ngram", "") for ng in ngrams[:5]],
             "lancuchy": [],
             "peryfrazy": [],
-            "hard_facts_do_uzycia": self.variables.get("_hard_facts", [])[:3],
+            "hard_facts_do_uzycia": _hard_facts_values(self.variables.get("_hard_facts", [])[:3]),
         }
 
         ngrams_per_batch = max(1, len(ngrams) // max(1, len(h2_plan)))
@@ -443,7 +448,7 @@ class ArticleOrchestrator:
             "PAA_STANDARDOWE": json.dumps(faq_data.get("pytania_standardowe", self.variables.get("_paa_standard", [])), ensure_ascii=False),
             "RELATED_AS_QUESTIONS": json.dumps(related_as_questions, ensure_ascii=False),
             "NGRAMY_FAQ": "\n".join(faq_data.get("ngramy", [])),
-            "HARD_FACTS_FAQ": json.dumps(self.variables.get("_hard_facts", []), ensure_ascii=False),
+            "HARD_FACTS_FAQ": json.dumps(_hard_facts_values(self.variables.get("_hard_facts", [])), ensure_ascii=False),
             "DISCLAIMER_SECTION": disclaimer if disclaimer else "Brak wymagań YMYL — pomiń disclaimer.",
         }
 

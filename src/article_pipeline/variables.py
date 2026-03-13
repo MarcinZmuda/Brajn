@@ -282,27 +282,47 @@ def _get_related_searches(serp):
 
 
 def _extract_hard_facts(s1_data, serp):
-    facts = []
+    """Extract hard facts with category and source context."""
+    raw_facts = []
     sources = list(serp.get("competitor_snippets") or serp.get("serp_snippets") or [])
     featured = serp.get("featured_snippet") or {}
     sources.append(featured.get("answer") or "" if isinstance(featured, dict) else str(featured))
     ai_ov = serp.get("ai_overview") or {}
     sources.append(ai_ov.get("text") or "" if isinstance(ai_ov, dict) else "")
 
+    patterns = [
+        ("price", r"\d[\d\s]*[,.]?\d*\s*(?:zł|PLN|EUR|USD|€|\$|tys\.\s*zł|mln\s*zł)"),
+        ("date", r"(?:20[12]\d|19\d{2})\s*(?:r\.|roku|rok)"),
+        ("percent", r"\d+[,.]?\d*\s*(?:proc\.|%|procent)"),
+        ("measure", r"\d+[,.]?\d*\s*(?:kg|g|cm|mm|m²|m2|km|l|ml|h|min|godzin|dni|lat|miesięcy)"),
+    ]
+
     for text in sources:
         if not text or not isinstance(text, str):
             continue
-        facts += re.findall(r"\d[\d\s]*[,.]?\d*\s*(?:zł|PLN|EUR|USD|€|\$|tys\. zł|mln zł)", text)
-        facts += re.findall(r"(?:20[12]\d|19\d{2})\s*(?:r\.|roku|rok)", text)
-        facts += re.findall(r"\d+[,.]?\d*\s*(?:proc\.|%|procent)", text)
-        facts += re.findall(r"\d+[,.]?\d*\s*(?:kg|g|cm|mm|m²|m2|km|l|ml|h|min|godzin|dni|lat|miesięcy)", text)
+        for category, pattern in patterns:
+            for match in re.finditer(pattern, text):
+                value = match.group().strip()
+                # Extract surrounding context (up to 60 chars each side)
+                start = max(0, match.start() - 60)
+                end = min(len(text), match.end() + 60)
+                snippet = text[start:end].replace("\n", " ").strip()
+                if start > 0:
+                    snippet = "..." + snippet
+                if end < len(text):
+                    snippet = snippet + "..."
+                raw_facts.append({
+                    "value": value,
+                    "category": category,
+                    "source_snippet": snippet,
+                })
 
     seen, unique = set(), []
-    for f in facts:
-        k = re.sub(r"\s+", " ", f).strip().lower()
+    for f in raw_facts:
+        k = re.sub(r"\s+", " ", f["value"]).strip().lower()
         if k not in seen and len(k) > 2:
             seen.add(k)
-            unique.append(f.strip())
+            unique.append(f)
     return unique[:25]
 
 

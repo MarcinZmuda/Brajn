@@ -69,15 +69,16 @@ def check_entity_coverage(text: str, entities: list[str]) -> dict:
     return {"present": present, "missing": missing}
 
 
-def check_hard_facts(text: str, hard_facts: list[str]) -> dict:
-    """Check if hard facts from SERP are used exactly."""
+def check_hard_facts(text: str, hard_facts: list) -> dict:
+    """Check if hard facts from SERP are used exactly. Supports both str and dict items."""
     used = []
     missing = []
     for fact in hard_facts:
-        if fact in text:
-            used.append(fact)
-        else:
-            missing.append(fact)
+        val = fact.get("value", "") if isinstance(fact, dict) else str(fact)
+        if val and val in text:
+            used.append(val)
+        elif val:
+            missing.append(val)
     return {"used": used, "missing": missing}
 
 

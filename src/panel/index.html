@@ -946,9 +946,36 @@ function renderPreBatch(preBatchMap, inputVars, promptLog) {
     html += '<div class="stat-card"><div class="stat-val">' + brands.length + '</div><div class="stat-lbl">Marki</div></div>';
     html += '</div>';
 
-    // 2. Hard facts
+    // 2. Hard facts (with categories)
     if (hardFacts.length > 0) {
         html += buildSection('pb-hardfacts', 'Hard Facts (priorytetowe)', hardFacts.length, function() {
+            var catIcons = {price: '\uD83D\uDCB0', date: '\uD83D\uDCC5', percent: '\uD83D\uDCCA', measure: '\uD83D\uDCCF', other: '\uD83D\uDD39'};
+            var catNames = {price: 'Kwota', date: 'Data', percent: 'Procent', measure: 'Miara', other: 'Inne'};
+            // Group by category if facts are objects
+            var isRich = hardFacts.length > 0 && typeof hardFacts[0] === 'object' && hardFacts[0] !== null;
+            if (isRich) {
+                var groups = {};
+                hardFacts.forEach(function(f) {
+                    var cat = f.category || 'other';
+                    if (!groups[cat]) groups[cat] = [];
+                    groups[cat].push(f);
+                });
+                var out = '';
+                Object.keys(groups).forEach(function(cat) {
+                    var icon = catIcons[cat] || catIcons.other;
+                    var name = catNames[cat] || cat;
+                    out += '<div style="margin-bottom:8px"><div style="font-weight:600;font-size:12px;color:var(--white);margin-bottom:4px">' + icon + ' ' + esc(name) + '</div>';
+                    out += '<ul style="margin:0;padding-left:16px">';
+                    groups[cat].forEach(function(f) {
+                        var line = '<span style="color:var(--yl)">' + esc(f.value || String(f)) + '</span>';
+                        if (f.source_snippet) line += ' <span style="color:var(--mg);font-size:10px">— ' + esc(f.source_snippet) + '</span>';
+                        out += '<li style="color:var(--lg);margin-bottom:3px;font-size:12px">' + line + '</li>';
+                    });
+                    out += '</ul></div>';
+                });
+                return out;
+            }
+            // Fallback: plain strings
             return '<ul style="margin:0;padding-left:16px">' + hardFacts.map(function(f) {
                 return '<li style="color:var(--lg);margin-bottom:4px">' + esc(String(f)) + '</li>';
             }).join('') + '</ul>';
@@ -1006,18 +1033,106 @@ function renderPreBatch(preBatchMap, inputVars, promptLog) {
         }, true);
     }
 
-    // 4. Input variables snapshot
+    // 4. Input variables snapshot (full, formatted)
     if (inputVars && Object.keys(inputVars).length > 0) {
-        const varKeys = Object.keys(inputVars).filter(function(k) { return !k.startsWith('_'); });
+        var varDescriptions = {
+            'HASLO_GLOWNE': 'Glowne slowo kluczowe',
+            'ENCJA_GLOWNA': 'Glowna encja SEO',
+            'SALIENCE': 'Waga encji glownej (0-1)',
+            'DLUGOSC_CEL': 'Docelowa dlugosc artykulu (slowa)',
+            'LICZBA_H2': 'Liczba sekcji H2',
+            'PLAN_ARTYKULU': 'Plan naglowkow H2',
+            'PLAN_H2': 'Lista naglowkow H2 (JSON)',
+            'ENCJE_KRYTYCZNE': 'Encje obowiazkowe w tekscie',
+            'NGRAMY_Z_CZESTOTLIWOSCIA': 'N-gramy z wymaganymi czestotliwosciami',
+            'NGRAMY_Z_LIMITAMI': 'N-gramy z min/max limitami',
+            'LANCUCHY_KAUZALNE': 'Lancuchy przyczynowo-skutkowe',
+            'RELACJE_KAUZALNE': 'Proste relacje kauzalne',
+            'PERYFRAZY': 'Peryfrazy i synonimy frazy glownej',
+            'PERYFRAZY_ALL': 'Wszystkie peryfrazy',
+            'WARIANTY_POTOCZNE': 'Potoczne warianty slowa kluczowego',
+            'WARIANTY_FORMALNE': 'Formalne warianty slowa kluczowego',
+            'ANGLICYZMY': 'Angielskie odpowiedniki',
+            'HARD_FACTS_ALL': 'Twarde fakty z SERP (kwoty, daty, procenty)',
+            'PAA_BEZ_ODPOWIEDZI': 'Pytania PAA bez odpowiedzi w SERP',
+            'PAA_STANDARDOWE': 'Standardowe pytania PAA',
+            'MARKI_Z_RELATED_SEARCHES': 'Marki wykryte w related searches',
+            'WZORCE_H2_KONKURENCJI': 'Wzorce naglowkow H2 konkurencji',
+            'YMYL_KLASYFIKACJA': 'Klasyfikacja YMYL (prawo/zdrowie/finanse/none)',
+            'NW_LUKI': 'Luki pokrycia NW/Surfer',
+            'YMYL_CONTEXT': 'Kontekst YMYL (prawo/medycyna)',
+            'PUBMED_CYTAT': 'Cytat z PubMed (YMYL=zdrowie)',
+            'PYTANIE_SNIPPETOWE': 'Pytanie na snippet Google',
+            'DLUGOSC_INTRO': 'Docelowa dlugosc wstepu (slowa)',
+        };
+
+        var varKeys = Object.keys(inputVars).filter(function(k) { return !k.startsWith('_'); });
         html += buildSection('pb-vars', 'Zmienne wejsciowe (template)', varKeys.length, function() {
-            let t = '<table class="s1-table"><thead><tr><th>Zmienna</th><th>Wartosc</th></tr></thead><tbody>';
+            var t = '';
             varKeys.sort().forEach(function(k) {
-                const v = String(inputVars[k] || '');
-                const short = v.length > 120 ? v.substring(0, 120) + '...' : v;
-                t += '<tr><td style="color:var(--cyan);white-space:nowrap;font-size:11px">' + esc(k) + '</td>';
-                t += '<td style="font-size:11px;word-break:break-all;max-width:400px">' + esc(short) + '</td></tr>';
+                var raw = inputVars[k];
+                var desc = varDescriptions[k] || '';
+                t += '<div style="margin-bottom:10px;padding:8px;background:var(--bg);border-radius:6px;border:1px solid var(--br)">';
+                t += '<div style="display:flex;align-items:baseline;gap:8px;margin-bottom:4px">';
+                t += '<span style="color:var(--cyan);font-weight:600;font-size:12px;font-family:JetBrains Mono,monospace">' + esc(k) + '</span>';
+                if (desc) t += '<span style="color:var(--mg);font-size:10px">' + esc(desc) + '</span>';
+                t += '</div>';
+
+                // Format value based on type
+                var val = raw;
+                if (typeof val === 'string') {
+                    // Try parsing JSON strings
+                    try {
+                        var parsed = JSON.parse(val);
+                        if (Array.isArray(parsed)) {
+                            if (parsed.length === 0) {
+                                t += '<span style="color:var(--mg);font-size:11px">(pusta lista)</span>';
+                            } else if (typeof parsed[0] === 'string') {
+                                t += '<div style="display:flex;flex-wrap:wrap;gap:4px">';
+                                parsed.forEach(function(item) {
+                                    t += '<span style="background:var(--br);padding:2px 7px;border-radius:3px;font-size:11px;color:var(--lg)">' + esc(String(item)) + '</span>';
+                                });
+                                t += '</div>';
+                            } else if (typeof parsed[0] === 'object') {
+                                t += '<div style="max-height:200px;overflow-y:auto">';
+                                parsed.forEach(function(item, idx) {
+                                    var summary = Object.entries(item).map(function(e) { return e[0] + ': ' + String(e[1]).substring(0, 80); }).join(' | ');
+                                    t += '<div style="font-size:10px;color:var(--lg);padding:2px 0;border-bottom:1px solid var(--br)">' + (idx+1) + '. ' + esc(summary) + '</div>';
+                                });
+                                t += '</div>';
+                            } else {
+                                t += '<span style="font-size:11px;color:var(--lg)">' + esc(JSON.stringify(parsed)) + '</span>';
+                            }
+                        } else if (typeof parsed === 'object' && parsed !== null) {
+                            t += '<div style="max-height:150px;overflow-y:auto">';
+                            Object.entries(parsed).forEach(function(e) {
+                                t += '<div style="font-size:10px;color:var(--lg);padding:1px 0"><span style="color:var(--mg)">' + esc(e[0]) + ':</span> ' + esc(String(e[1]).substring(0, 120)) + '</div>';
+                            });
+                            t += '</div>';
+                        } else {
+                            t += '<span style="font-size:11px;color:var(--lg)">' + esc(String(val)) + '</span>';
+                        }
+                    } catch(e) {
+                        // Plain string — show multiline if has newlines
+                        if (val.indexOf('\n') !== -1) {
+                            t += '<pre style="font-size:10px;color:var(--lg);white-space:pre-wrap;margin:0;max-height:200px;overflow-y:auto;font-family:JetBrains Mono,monospace">' + esc(val) + '</pre>';
+                        } else {
+                            t += '<span style="font-size:11px;color:var(--lg);word-break:break-word">' + esc(val) + '</span>';
+                        }
+                    }
+                } else if (Array.isArray(val)) {
+                    t += '<div style="display:flex;flex-wrap:wrap;gap:4px">';
+                    val.forEach(function(item) {
+                        t += '<span style="background:var(--br);padding:2px 7px;border-radius:3px;font-size:11px;color:var(--lg)">' + esc(String(typeof item === 'object' ? JSON.stringify(item) : item)) + '</span>';
+                    });
+                    t += '</div>';
+                } else if (typeof val === 'object' && val !== null) {
+                    t += '<pre style="font-size:10px;color:var(--lg);white-space:pre-wrap;margin:0;max-height:150px;overflow-y:auto">' + esc(JSON.stringify(val, null, 2)) + '</pre>';
+                } else {
+                    t += '<span style="font-size:11px;color:var(--lg)">' + esc(String(val || '')) + '</span>';
+                }
+                t += '</div>';
             });
-            t += '</tbody></table>';
             return t;
         });
     }
