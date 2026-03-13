@@ -7,76 +7,145 @@ All prompt templates with placeholder variables.
 
 # ══════════════════════════════════════════════════════════════
 # 1. SYSTEM PROMPT — wysyłany jako system w każdym wywołaniu API
+# v2.0: Persona only — reguły przeniesione do user prompt
 # ══════════════════════════════════════════════════════════════
-SYSTEM_PROMPT = """Jesteś doświadczonym polskim redaktorem treści SEO. Piszesz artykuł na temat: "{{HASLO_GLOWNE}}".
-Encja główna: "{{ENCJA_GLOWNA}}" (salience: {{SALIENCE}})
+SYSTEM_PROMPT = """Jesteś doświadczonym polskim redaktorem treści SEO. Piszesz artykuły na podstawie planu i danych dostarczonych w instrukcji. Zwracasz gotowy artykuł w formacie określonym w <output_format>."""
 
-━━━ JĘZYK I STYL ━━━
-Pisz naturalnym, publicystycznym językiem polskim.
-Średnia długość zdania: 11–15 słów (norma NKJP dla publicystyki).
-Rytm: krótkie zdania (5–8 słów) przeplataj z dłuższymi (18–22 słów).
-Nie ma dwóch akapitów z identyczną liczbą zdań.
-Aktywna strona czasownika wszędzie tam, gdzie możliwe.
-Akapity: minimum 2, maksimum 6 zdań. Długość akapitu ma wynikać z funkcji — nie z nawyku.
-Mów do czytelnika bezpośrednio: "możesz", "warto", "pamiętaj", "jeśli szukasz".
+# ══════════════════════════════════════════════════════════════
+# 1b. ARTICLE WRITER — pełny prompt v2.0 (XML-structured)
+# Może być użyty w trybie full-article lub per-batch
+# ══════════════════════════════════════════════════════════════
+ARTICLE_WRITER_PROMPT = """<task>
+Napisz artykuł SEO na temat: „{{HASLO_GLOWNE}}".
+Encja główna: „{{ENCJA_GLOWNA}}" (salience: {{SALIENCE}}).
+Użyj WYŁĄCZNIE planu z <plan> i danych z <data>.
+Nie dodawaj sekcji spoza planu.
+</task>
 
-━━━ BEZWZGLĘDNIE ZAKAZANE FRAZY ━━━
-Następujące frazy i ich warianty są zakazane w każdym batchu. Jeśli któraś pojawi się w tekście — pomiń ją lub przepisz zdanie od nowa:
-"Warto zaznaczyć, że..."
-"Warto podkreślić, że..."
-"Należy zaznaczyć, że..."
-"Należy podkreślić, że..."
-"Jest to ważne, ponieważ..."
-"W dzisiejszym artykule..."
-"Kluczowym aspektem jest..."
-"Podsumowując powyższe..."
-"Jak wspomniano wcześniej..."
-"Nie sposób nie wspomnieć..."
-"Wiele osób błędnie sądzi..."
-"Co więcej,"
-"Ponadto,"
-"Niemniej jednak,"
-"W związku z powyższym,"
-"Mając na uwadze powyższe,"
-"Należy mieć na uwadze, że..."
+<style>
+1. JĘZYK: naturalny, publicystyczny polski. Mów do czytelnika bezpośrednio: „możesz", „warto", „pamiętaj", „jeśli szukasz".
+2. ZDANIA: średnia 11–15 słów. Rytm: krótkie (5–8 słów) przeplataj z dłuższymi (18–22 słów).
+3. AKAPITY: minimum 2, maksimum 6 zdań. Żadne dwa akapity w artykule nie mają identycznej liczby zdań. Długość akapitu wynika z funkcji, nie z nawyku.
+4. STRONA CZASOWNIKA: aktywna wszędzie, gdzie możliwe.
+5. PERYFRAZY: nie powtarzaj tych samych fraz. Rotuj synonimy z <periphrases> i <colloquial_variants>. Używaj ich naturalnie w tekście — nie upychaj na siłę.
+6. ZDANIE POMOSTOWE: każda sekcja H2 kończy się zdaniem łączącym z kolejną sekcją. Każde zdanie pomostowe ma inny schemat składniowy.
+</style>
 
-━━━ DANE TWARDE — PRIORYTET NAD WIEDZĄ WŁASNĄ ━━━
-SERP snippets, liczby, ceny i fakty podane w danych wejściowych mają absolutny priorytet nad wiedzą własną modelu.
-Jeśli snippet podaje cenę 65 zł — artykuł podaje 65 zł.
-Jeśli snippet podaje rok 2026 — artykuł podaje 2026.
-Nie zastępuj dostarczonych danych własnymi szacunkami.
+<banned_phrases>
+Nigdy nie używaj tych fraz (ani ich wariantów):
+- Warto zaznaczyć / Warto podkreślić / Należy zaznaczyć / Należy podkreślić
+- Jest to ważne / W dzisiejszym artykule / Kluczowym aspektem / Podsumowując powyższe
+- Jak wspomniano wcześniej / Co więcej, / Ponadto, / Niemniej jednak,
+- W związku z powyższym, / Mając na uwadze / Nie sposób nie wspomnieć / Wiele osób błędnie
+</banned_phrases>
 
-━━━ ENCJE — ZASADY ━━━
-Encja główna ({{ENCJA_GLOWNA}}):
-→ Musi pojawić się w H1
-→ Musi pojawić się w pierwszym akapicie
-→ Musi pojawić się przynajmniej raz w każdej sekcji H2
+<entity_rules>
+1. ENCJA GŁÓWNA („{{ENCJA_GLOWNA}}"): musi pojawić się w H1, w pierwszym akapicie intro, i minimum 1x w każdej sekcji H2 (odmieniana przez przypadki).
+2. ENCJE KRYTYCZNE (lista w <critical_entities>): każda minimum 1x w całym artykule. Odmieniaj przez przypadki — nie wstawiaj w mianowniku na siłę.
+3. Nie klastruj encji — rozłóż je równomiernie po artykule.
+</entity_rules>
 
-Encje krytyczne (lista w PRE-BATCH):
-→ Każda minimum 1x w całym artykule
-→ Odmieniaj przez przypadki — nie pisz zawsze w mianowniku
-→ Wpleć naturalnie w zdanie, nie na siłę
+<ngram_rules>
+Każdy n-gram z <ngrams> ma limit [min, max] wystąpień w CAŁYM artykule.
+- min = minimalna liczba wystąpień (obowiązkowa).
+- max = maksymalna (nie przekraczaj).
+- Odmiana fleksyjna liczy się jako wystąpienie.
+- Rozkładaj n-gramy równomiernie — nie koncentruj w jednej sekcji.
+</ngram_rules>
 
-━━━ SEMANTIC TRIPLETS — ZASADY ━━━
-Każdą przyczynę, mechanizm lub skutek wyjaśniaj przez DLACZEGO.
-Używaj spójników kauzalnych: "dlatego", "bo", "w efekcie", "prowadzi to do", "skutkiem jest", "ponieważ", "przez co".
+<causal_rules>
+Przyczyny i skutki z <causal_chains> wyjaśniaj przez schemat DLACZEGO → CO → EFEKT.
+Używaj spójników: dlatego / bo / w efekcie / ponieważ / przez co / w rezultacie.
+POPRAWNIE: „Przekroczenie 0,5 promila oznacza stan nietrzeźwości, przez co kierowca popełnia przestępstwo, a nie wykroczenie."
+BŁĘDNIE: „Jazda po alkoholu jest przestępstwem." (brak przyczyny i mechanizmu)
+</causal_rules>
 
-POPRAWNIE: "Mocno oczyszczające szampony wypłukują sebum, przez co bariera lipidowa zostaje uszkodzona i skóra traci wodę szybciej niż powinna."
-BŁĘDNIE: "Mocno oczyszczające szampony powodują suchość."
+<hard_facts_rules>
+Liczby, kwoty, progi i fakty z <hard_facts> mają ABSOLUTNY PRIORYTET nad Twoją wiedzą.
+- Nie zaokrąglaj, nie zastępuj własnymi szacunkami.
+- Jeśli fakt z <hard_facts> koliduje z Twoją wiedzą — użyj wersji z <hard_facts>.
+- Wplataj je naturalnie w tekst, nie wypisuj jako luźne liczby.
+</hard_facts_rules>
 
-Jeśli dane nie zawierają sekcji łańcuchów A→B→C — nie wymyślaj własnych mechanizmów. Opisuj fakty bez przypisywania im kauzalności której źródłem jest wiedza własna modelu.
+<formatting_rules>
+1. LISTY PUNKTOWE: tylko dla instrukcji krok po kroku, procedur, wymagań formalnych. Nie używaj list do opisywania abstrakcyjnych koncepcji.
+2. POGRUBIENIA: zakazane w tekście ciągłym.
+3. NAGŁÓWKI: używaj dokładnie nagłówków z <plan>. Nie przeformułowuj, nie dodawaj nowych.
+4. FAQ: każde pytanie jako H2, odpowiedź 2–4 zdania. Pierwsze zdanie odpowiada wprost na pytanie (snippet-friendly).
+</formatting_rules>
 
-━━━ FORMATOWANIE ━━━
-Listy punktowe: tylko tam gdzie kolejność lub równorzędność elementów jest kluczowa (instrukcja krok po kroku, procedura, wymagania).
-Nie używaj list jako substytutu zdania opisującego kilka cech naraz.
-Pogrubienia w tekście ciągłym: zakazane. Pogrubienia wyłącznie w nagłówkach i pytaniach FAQ.
-Każda sekcja H2 kończy się naturalnym zdaniem pomostowym prowadzącym do następnej sekcji — ale każde z tych zdań musi mieć inny schemat składniowy.
+<length_rules>
+1. CEL: {{DLUGOSC_CEL}} słów (±10%).
+2. INTRO (tekst przed pierwszym H2): {{DLUGOSC_INTRO}} słów (±15%).
+3. SEKCJE H2: rozłóż pozostałe słowa równomiernie między {{LICZBA_H2}} sekcji. Żadna sekcja nie może być krótsza niż 50% ani dłuższa niż 150% średniej.
+4. FAQ: odpowiedzi 40–80 słów każda.
+</length_rules>
 
-━━━ PLAN ARTYKUŁU ━━━
+<ymyl>
+{{YMYL_CONTEXT}}
+</ymyl>
+
+<plan>
+H1: {{H1}}
+
+Intro: tekst przed pierwszym H2 ({{DLUGOSC_INTRO}} słów).
+
+Sekcje H2 (w tej kolejności, nie zmieniaj):
 {{PLAN_ARTYKULU}}
 
-Cel długości: {{DLUGOSC_CEL}} słów
-Liczba sekcji H2: {{LICZBA_H2}}"""
+FAQ:
+{{PLAN_FAQ}}
+</plan>
+
+<data>
+
+<critical_entities>
+{{ENCJE_KRYTYCZNE_JSON}}
+</critical_entities>
+
+<ngrams>
+{{NGRAMY_Z_LIMITAMI_JSON}}
+</ngrams>
+
+<causal_chains>
+{{LANCUCHY_KAUZALNE_JSON}}
+</causal_chains>
+
+<hard_facts>
+{{HARD_FACTS_JSON}}
+</hard_facts>
+
+<periphrases>
+{{PERYFRAZY_JSON}}
+</periphrases>
+
+<colloquial_variants>
+{{WARIANTY_POTOCZNE_JSON}}
+</colloquial_variants>
+
+</data>
+
+<output_format>
+Zwróć artykuł jako czysty tekst z nagłówkami w markdown:
+- # dla H1 (dokładnie jeden, na początku)
+- ## dla każdego H2 (dokładnie w kolejności z <plan>)
+- ## dla każdego pytania FAQ
+- Bez pogrubień, bez HTML, bez metadanych.
+- Na samym końcu artykułu (po FAQ): disclaimer z <ymyl> jeśli niepusty.
+</output_format>
+
+<self_check>
+Przed zwróceniem artykułu zweryfikuj:
+1. Czy encja główna jest w H1, intro i każdej sekcji H2?
+2. Czy każda encja z <critical_entities> pojawia się min. 1x?
+3. Czy każdy n-gram z <ngrams> mieści się w limicie [min, max]?
+4. Czy żadna fraza z <banned_phrases> nie występuje w tekście?
+5. Czy artykuł ma {{LICZBA_H2}} sekcji H2 + FAQ?
+6. Czy długość intro ≈ {{DLUGOSC_INTRO}} słów, a całość ≈ {{DLUGOSC_CEL}} słów?
+7. Czy każda sekcja kończy się zdaniem pomostowym?
+8. Czy disclaimer jest na końcu (jeśli <ymyl> niepuste)?
+Jeśli cokolwiek nie przechodzi — popraw ZANIM zwrócisz tekst.
+</self_check>"""
 
 
 # ══════════════════════════════════════════════════════════════
@@ -104,7 +173,7 @@ Te reguły MUSZĄ być spełnione. Jeśli którakolwiek jest naruszona, plan jes
 1. LICZBA_H2: Wybierz dokładnie {{LICZBA_H2}} sekcji H2 (nie licząc FAQ).
 2. POKRYCIE_ENCJI: Każda encja z <must_cover_entities> musi pojawić się w co najmniej jednym polu "entities" w planie (w H2 lub FAQ).
 3. UNIKALNOŚĆ: Żadne dwa H2 nie mogą odpowiadać na tę samą intencję użytkownika. Jeśli dwóch kandydatów pokrywa ten sam temat — wybierz tego z wyższym score lub połącz w jedno lepsze H2.
-4. FAQ: Sekcja FAQ zawiera {{LICZBA_FAQ}} pytań. Priorytetowe pytania z <paa_priority> MUSZĄ być uwzględnione. Uzupełnij resztę z <paa_standard> lub wygeneruj na podstawie danych.
+4. FAQ: Sekcja FAQ zawiera {{LICZBA_FAQ}} pytań. Priorytetowe pytania z <paa_priority> MUSZĄ być uwzględnione. Uzupełnij resztę z <paa_standard> lub wygeneruj pytania pokrywające encje/n-gramy nieobecne w sekcjach H2. FAQ jest buforem na niepokryte frazy — im więcej pytań, tym większe pokrycie.
 5. KOLEJNOŚĆ: Pierwsza sekcja H2 powinna odpowiadać na główną intencję hasła. Kolejne sekcje — od ogólnych do szczegółowych, z logicznym flow.
 6. H2_KEYWORDS (jeśli podane): Każda fraza z <h2_keywords> musi pojawić się w tekście co najmniej jednego nagłówka H2 (dosłownie lub w odmianie fleksyjnej). Jeśli <h2_keywords> jest puste lub nieobecne — ignoruj tę regułę.
 </hard_constraints>
@@ -256,136 +325,181 @@ Zwróć JSON w formacie:
 # ══════════════════════════════════════════════════════════════
 # 3. BATCH 0 — WSTĘP + H1
 # ══════════════════════════════════════════════════════════════
-BATCH_0_PROMPT = """ZADANIE — BATCH 0: H1 i wstęp
-Napisz nagłówek H1 i wstępny akapit artykułu. Nie pisz żadnych sekcji H2.
+BATCH_0_PROMPT = """<task>
+Napisz WYŁĄCZNIE nagłówek H1 i wstępny akapit artykułu na temat „{{HASLO_GLOWNE}}".
+Nie pisz żadnych sekcji H2. Nie pisz FAQ.
+</task>
 
-━━━ CEL TEGO FRAGMENTU ━━━
-Pierwsze 100 słów musi działać jako samodzielna odpowiedź na pytanie: "{{PYTANIE_SNIPPETOWE}}"
+<snippet_goal>
+Pierwsze 100 słów musi działać jako samodzielna odpowiedź na pytanie: „{{PYTANIE_SNIPPETOWE}}"
 Google i modele AI często wyciągają właśnie ten fragment jako bezpośrednią odpowiedź.
 Struktura: definicja → główny mechanizm lub konsekwencja → zapowiedź artykułu.
+</snippet_goal>
 
-━━━ NAGŁÓWEK H1 ━━━
-Zawiera frazę "{{ENCJA_GLOWNA}}".
-Zawiera zapowiedź głównej wartości artykułu (co czytelnik znajdzie).
-Maksymalnie 70 znaków ze spacjami.
+<h1_rules>
+- Zawiera frazę „{{ENCJA_GLOWNA}}".
+- Zawiera zapowiedź głównej wartości artykułu (co czytelnik znajdzie).
+- Maksymalnie 70 znaków ze spacjami.
+</h1_rules>
 
-━━━ AKAPIT WSTĘPNY ━━━
-Długość: {{DLUGOSC_INTRO}} słów.
+<intro_rules>
+Długość: {{DLUGOSC_INTRO}} słów (±15%).
 
-MUSI zawierać: {{ENCJE_BATCH_0}}
-MUSI użyć co najmniej jednej z tych fraz: {{PERYFRAZY_BATCH_0}}
-MUSI wpleść te hard facts z SERP snippets: {{HARD_FACTS_BATCH_0}}
+MUSI zawierać encje: {{ENCJE_BATCH_0}}
+MUSI użyć co najmniej jednej peryfrazy: {{PERYFRAZY_BATCH_0}}
+MUSI wpleść hard facts: {{HARD_FACTS_BATCH_0}}
 
-{{NW_LUKI}}
-
-Pierwsze zdanie: zawiera encję główną "{{ENCJA_GLOWNA}}".
+Pierwsze zdanie: zawiera encję główną „{{ENCJA_GLOWNA}}" — ale NIE jako podmiot w mianowniku na początku.
+Zacznij od kontekstu, liczby, napięcia lub sytuacji.
 Ostatnie zdanie: pomostowe, prowadzi do pierwszej sekcji H2.
 
-ZAKAZ: nie zaczynaj pierwszego zdania od encji głównej w mianowniku jako podmiot gramatyczny ("Sucha skóra głowy to..."). Zacznij od kontekstu, liczby, napięcia lub sytuacji.
+{{NW_LUKI}}
+</intro_rules>
 
-━━━ SNIPPET ANSWER ━━━
-Jeśli dane zawierają PAA oznaczone jako "bez odpowiedzi w SERP" ({{PAA_BEZ_ODPOWIEDZI}}), wpleć krótką odpowiedź na pierwsze z tych pytań naturalnie w akapit wstępny lub jako osobne zdanie przed pomostem. To priorytet Featured Snippet."""
+<snippet_answer>
+Jeśli dane zawierają PAA bez odpowiedzi w SERP ({{PAA_BEZ_ODPOWIEDZI}}), wpleć krótką odpowiedź na pierwsze z tych pytań naturalnie w akapit wstępny. To priorytet Featured Snippet.
+</snippet_answer>
+
+<output_format>
+Zwróć:
+# [H1 — max 70 znaków]
+
+[Akapit wstępny — {{DLUGOSC_INTRO}} słów]
+</output_format>"""
 
 
 # ══════════════════════════════════════════════════════════════
-# 4. BATCH N — SZABLON SEKCJI H2
+# 4. BATCH N — SZABLON SEKCJI H2 (v2.0 XML)
 # ══════════════════════════════════════════════════════════════
-BATCH_N_PROMPT = """ZADANIE — BATCH {{N}}: {{NAZWA_SEKCJI}}
+BATCH_N_PROMPT = """<task>
+Napisz WYŁĄCZNIE sekcję H2 nr {{N}} artykułu „{{HASLO_GLOWNE}}".
+Nie pisz intro, nie pisz FAQ, nie pisz innych sekcji.
+</task>
 
-━━━ KONTEKST CIĄGŁOŚCI ━━━
-Poprzednia sekcja zakończyła się zdaniem: "{{OSTATNIE_ZDANIE_POPRZEDNIEGO_BATCHA}}"
+<continuity>
+Poprzednia sekcja zakończyła się zdaniem: „{{OSTATNIE_ZDANIE_POPRZEDNIEGO_BATCHA}}"
 Zacznij od naturalnego rozwinięcia tego pomosta. Nie powtarzaj treści poprzedniej sekcji.
-Nie zaczynaj od nagłówka H2 jako odpowiedzi na poprzednie zdanie.
+Poprzednie zdania pomostowe (nie powtarzaj ich schematu): {{POPRZEDNIE_ZDANIA_POMOSTOWE}}
+</continuity>
 
-━━━ NAGŁÓWEK H2 ━━━
-{{NAGLOWEK_H2}}
-Nagłówek zawiera przynajmniej jeden z popularnych wzorców H2 konkurencji: {{WZORCE_H2_KONKURENCJI}}
+<section_spec>
+Nagłówek H2: {{NAGLOWEK_H2}}
+Długość sekcji: {{DLUGOSC_SEKCJI}} słów (±15%)
+Akapity: 3–5 akapitów narracyjnych z naturalnym przepływem
+</section_spec>
 
-━━━ STRUKTURA WEWNĘTRZNA ━━━
-Liczba akapitów: {{LICZBA_AKAPITOW}}
-Łączna długość sekcji: {{DLUGOSC_SEKCJI}} słów
-Podział: {{OPIS_STRUKTURY_AKAPITOW}}
+<section_data>
 
-━━━ ENCJE OBOWIĄZKOWE W TYM BATCHU ━━━
+<entities>
 {{ENCJE_BATCH_N}}
-Każda encja z tej listy musi pojawić się przynajmniej raz. Odmień przez przypadki — nie używaj wyłącznie mianownika.
+Każda encja musi pojawić się min. 1x. Odmieniaj przez przypadki.
+Encja główna „{{ENCJA_GLOWNA}}" — obowiązkowa w każdej sekcji.
+</entities>
 
-━━━ NGRAMY DO WPLECENIA ━━━
-Poniżej lista ngrams przypisanych do tego batcha. Liczba po znaku "·" to dopuszczalny zakres użyć W CAŁYM ARTYKULE (nie tylko w tym batchu). Nie przekraczaj górnej granicy.
+<ngrams>
 {{NGRAMY_BATCH_N}}
-Ngramy z zakresem "1x" — użyj dokładnie raz, w tym batchu.
-Ngramy z zakresem "2x+" — możesz użyć w tym batchu lub rozłożyć na dalsze batche, ale priorytet jest tutaj.
+Liczba po „·" = dopuszczalny zakres użyć w CAŁYM artykule. Nie przekraczaj górnej granicy.
+</ngrams>
 
-━━━ SEMANTIC TRIPLETS DO WPLECENIA ━━━
+<causal_triplets>
 {{TRIPLETS_BATCH_N}}
-Dla każdego tripletu: wyjaśnij mechanizm (DLACZEGO), nie tylko opisz skutek.
-Użyj spójnika kauzalnego.
-Jeśli lista tripletów jest pusta — nie wymyślaj własnych łańcuchów przyczynowych.
+Dla każdego: wyjaśnij DLACZEGO (spójnik kauzalny). Jeśli lista pusta — nie wymyślaj.
+</causal_triplets>
 
-━━━ HARD FACTS DO UŻYCIA ━━━
+<hard_facts>
 {{HARD_FACTS_BATCH_N}}
-Te liczby, daty i fakty pochodzą z SERP snippets lub danych wejściowych. Użyj ich dokładnie — nie zaokrąglaj, nie zastępuj własnymi szacunkami.
+Użyj dokładnie — nie zaokrąglaj, nie zastępuj własnymi szacunkami.
+</hard_facts>
 
-━━━ PERYFRAZY I WARIANTY ━━━
-Wpleć naturalnie co najmniej {{MIN_PERYFRAZ}} z poniższych:
-{{PERYFRAZY_BATCH_N}}
+<periphrases>
+Wpleć naturalnie min. {{MIN_PERYFRAZ}} z: {{PERYFRAZY_BATCH_N}}
+</periphrases>
+
+</section_data>
 
 {{NW_LUKI}}
 
 {{YMYL_CONTEXT}}
 
-━━━ INTENCJA TRANSAKCYJNA ━━━
+<transactional>
 {{INTENCJA_TRANSAKCYJNA_AKTYWNA}}
-Jeśli ten batch jest sekcją zakupową lub porównawczą, wpleć naturalnie:
-- marki z Related Searches: {{MARKI_Z_RELATED_SEARCHES}}
-- frazy intencji transakcyjnej: {{FRAZY_TRANSAKCYJNE}}
-Marki wpleć w naturalnym kontekście porównawczym ("dostępne m.in. w IKEA, Decathlonie i JYSK") — nigdy jako rekomendację ani ocenę.
+Marki z Related Searches: {{MARKI_Z_RELATED_SEARCHES}}
+Frazy transakcyjne: {{FRAZY_TRANSAKCYJNE}}
+Marki wpleć w naturalnym kontekście porównawczym — nigdy jako rekomendację.
+</transactional>
 
-━━━ ZDANIE POMOSTOWE ━━━
-Zakończ sekcję jednym zdaniem prowadzącym do kolejnej sekcji.
-Schemat tego zdania musi być różny od pomostów w poprzednich batchach — sprawdź kontekst:
-{{POPRZEDNIE_ZDANIA_POMOSTOWE}}"""
+<bridge>
+Zakończ sekcję zdaniem pomostowym prowadzącym do kolejnej sekcji.
+Schemat składniowy musi być inny niż poprzednie pomosty.
+</bridge>
+
+<output_format>
+Zwróć:
+## {{NAGLOWEK_H2}}
+
+[Tekst sekcji — {{DLUGOSC_SEKCJI}} słów]
+</output_format>"""
 
 
 # ══════════════════════════════════════════════════════════════
-# 5. BATCH FAQ
+# 5. BATCH FAQ (v2.0 XML)
 # ══════════════════════════════════════════════════════════════
-BATCH_FAQ_PROMPT = """ZADANIE — BATCH FAQ: Najczęściej zadawane pytania
+BATCH_FAQ_PROMPT = """<task>
+Napisz WYŁĄCZNIE sekcję FAQ artykułu „{{HASLO_GLOWNE}}".
+Nie pisz intro, nie pisz sekcji H2.
+</task>
 
-━━━ KOLEJNOŚĆ PYTAŃ — PRIORYTET ━━━
-Pytania odpowiadaj w tej kolejności:
-
+<faq_questions>
 PRIORYTET 1 — PAA bez odpowiedzi w SERP (Featured Snippet):
 {{PAA_BEZ_ODPOWIEDZI}}
-Te pytania dostają pełną odpowiedź 3–4 zdania. Pierwsze zdanie musi zawierać odpowiedź bezpośrednią (tak/nie + wyjaśnienie), nie wstęp do odpowiedzi.
+Odpowiedź 3–4 zdania. Pierwsze zdanie = bezpośrednia odpowiedź (tak/nie + wyjaśnienie).
 
-PRIORYTET 2 — PAA z wysoką wartością long-tail:
+PRIORYTET 2 — PAA standardowe:
 {{PAA_STANDARDOWE}}
 Odpowiedź 2–3 zdania.
 
 PRIORYTET 3 — Related Searches jako pytania:
 {{RELATED_AS_QUESTIONS}}
 Odpowiedź 1–2 zdania jeśli nie pokryte wyżej.
+</faq_questions>
 
-━━━ FORMAT ━━━
-Pytanie jako <h3> lub pogrubione.
-Odpowiedź jako akapit — bez list punktowych wewnątrz odpowiedzi.
-Pierwsze zdanie każdej odpowiedzi = bezpośrednia odpowiedź na pytanie, bez wstępów.
+<faq_format>
+- Każde pytanie jako ## (nagłówek H2)
+- Odpowiedź jako akapit — bez list punktowych
+- Pierwsze zdanie = bezpośrednia odpowiedź na pytanie, bez wstępów
+- Odpowiedzi 40–80 słów każda
+</faq_format>
 
+<faq_banned>
 ZAKAZANE w FAQ:
-"To dobre pytanie."
-"Odpowiedź na to pytanie nie jest jednoznaczna."
-"Wiele zależy od..."
-"Każdy przypadek jest inny."
+- „To dobre pytanie."
+- „Odpowiedź na to pytanie nie jest jednoznaczna."
+- „Wiele zależy od..."
+- „Każdy przypadek jest inny."
+</faq_banned>
 
-━━━ NGRAMY W FAQ ━━━
-{{NGRAMY_FAQ}}
+<faq_data>
+N-gramy do wplecenia: {{NGRAMY_FAQ}}
+Hard facts: {{HARD_FACTS_FAQ}}
+</faq_data>
 
-━━━ HARD FACTS W FAQ ━━━
-{{HARD_FACTS_FAQ}}
+<disclaimer>
+{{DISCLAIMER_SECTION}}
+Na samym końcu (po ostatnim FAQ) dodaj disclaimer jeśli niepusty.
+</disclaimer>
 
-━━━ DISCLAIMER ━━━
-{{DISCLAIMER_SECTION}}"""
+<output_format>
+Zwróć:
+## [Pytanie FAQ 1]
+[Odpowiedź 40–80 słów]
+
+## [Pytanie FAQ 2]
+[Odpowiedź 40–80 słów]
+
+...
+
+[Disclaimer jeśli wymagany]
+</output_format>"""
 
 
 # ══════════════════════════════════════════════════════════════

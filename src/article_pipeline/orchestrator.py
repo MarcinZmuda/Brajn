@@ -14,6 +14,7 @@ from typing import Generator
 from src.common.llm import claude_call
 from src.article_pipeline.prompts import (
     SYSTEM_PROMPT,
+    ARTICLE_WRITER_PROMPT,
     H2_PLAN_SYSTEM,
     H2_PLAN_PROMPT,
     PRE_BATCH_PROMPT,
@@ -113,6 +114,57 @@ class ArticleOrchestrator:
                 "tokens_out": len(text.split()),
             })
         return text
+
+    def _calc_faq_count(self, target_h2: int, must_cover: list,
+                        paa_priority: list, paa_standard: list,
+                        candidates: list) -> int:
+        """
+        Dynamic FAQ count: base 4, increases if phrase/entity coverage is low.
+
+        Logic:
+        - Each H2 section can realistically cover ~2-3 entities and ~3-5 n-grams
+        - If we have more entities/n-grams than H2 sections can absorb, FAQ acts as overflow
+        - PAA priority questions are always included
+        - Range: 4-10
+        """
+        base = 4
+
+        # 1. PAA priority always included
+        paa_bonus = max(0, len(paa_priority) - base)  # if >4 priority PAA, add extra
+
+        # 2. Entity coverage pressure
+        entity_capacity = target_h2 * 3  # each H2 covers ~3 entities
+        entity_overflow = max(0, len(must_cover) - entity_capacity)
+        entity_bonus = min(2, entity_overflow // 2)  # +1 FAQ per 2 uncovered entities
+
+        # 3. N-gram coverage pressure
+        ngrams = self.variables.get("_ngrams", [])
+        total_ngrams = len(ngrams)
+        ngram_capacity = target_h2 * 5  # each H2 can weave ~5 n-grams
+        ngram_overflow = max(0, total_ngrams - ngram_capacity)
+        ngram_bonus = min(2, ngram_overflow // 4)  # +1 FAQ per 4 uncovered n-grams
+
+        # 4. Scored H2 candidates that didn't make it into sections
+        # These represent topics that should be covered somewhere
+        rejected_candidates = max(0, len([c for c in candidates if (c.get("score") or 0) >= 0.20]) - target_h2)
+        rejected_bonus = min(2, rejected_candidates // 2)
+
+        faq_count = base + paa_bonus + entity_bonus + ngram_bonus + rejected_bonus
+
+        # Clamp to 4-10
+        faq_count = max(4, min(10, faq_count))
+
+        if faq_count > base:
+            reasons = []
+            if paa_bonus: reasons.append(f"PAA+{paa_bonus}")
+            if entity_bonus: reasons.append(f"entities+{entity_bonus}")
+            if ngram_bonus: reasons.append(f"ngrams+{ngram_bonus}")
+            if rejected_bonus: reasons.append(f"rejected_h2+{rejected_bonus}")
+            print(f"[H2_PLAN] FAQ count: {faq_count} (base {base} + {', '.join(reasons)})")
+        else:
+            print(f"[H2_PLAN] FAQ count: {faq_count} (base)")
+
+        return faq_count
 
     def run_ymyl_detection(self) -> dict:
         """Detect YMYL category, then enrich with legal/medical sources."""
@@ -219,8 +271,14 @@ class ArticleOrchestrator:
         # Clamp to reasonable range
         target_h2 = max(4, min(10, target_h2))
 
-        # ── FAQ count: prioritize PAA unanswered, total 4-8 ──
-        faq_count = max(4, min(8, len(paa_priority) + min(3, len(paa_standard))))
+        # ── FAQ count: base 4, scale up if many uncovered phrases/entities ──
+        faq_count = self._calc_faq_count(
+            target_h2=target_h2,
+            must_cover=must_cover,
+            paa_priority=paa_priority,
+            paa_standard=paa_standard,
+            candidates=candidates,
+        )
 
         # ── Build prompt variables ──
         prompt_vars = {
@@ -393,7 +451,11 @@ class ArticleOrchestrator:
         batch_vars = {
             **self.variables,
             "ENCJE_BATCH_0": json.dumps(batch_0_data.get("encje_obowiazkowe", []), ensure_ascii=False),
-            "PERYFRAZY_BATCH_0": json.dumps(batch_0_data.get("peryfrazy", []), ensure_ascii=False),
+            "PERYFRAZY_BATCH_0": json.dumps(
+                batch_0_data.get("peryfrazy", []) or
+                json.loads(self.variables.get("PERYFRAZY", "[]"))[:3],
+                ensure_ascii=False
+            ),
             "HARD_FACTS_BATCH_0": json.dumps(batch_0_data.get("hard_facts_do_uzycia", []), ensure_ascii=False),
         }
 
@@ -411,6 +473,12 @@ class ArticleOrchestrator:
 
         self.batch_texts.append(text)
         self.bridge_sentences.append(_get_last_sentence(text))
+
+        # Extract H1 from batch_0 output for use in ARTICLE_WRITER_PROMPT
+        h1_match = re.match(r"#\s+(.+)", text.strip())
+        if h1_match:
+            self.variables["H1"] = h1_match.group(1).strip()
+
         return text
 
     def run_batch_n(self, n: int, section_name: str, h2_heading: str) -> str:
@@ -421,7 +489,27 @@ class ArticleOrchestrator:
         batch_data = (pre.get("batches") or {}).get(f"batch_{n}", {})
         target_length = self.variables.get("_target_length", 2000)
         h2_count = len(self.variables.get("_h2_plan_list", []))
-        section_length = max(200, target_length // max(1, h2_count + 1))
+        # Distribute words: subtract intro, divide rest among H2s
+        intro_words = int(self.variables.get("DLUGOSC_INTRO", "180") or "180")
+        section_length = max(200, (target_length - intro_words) // max(1, h2_count))
+
+        # Get section-specific data from H2 plan (v2.0)
+        h2_plan_full = getattr(self, "_h2_plan_full", [])
+        section_plan = h2_plan_full[n - 1] if n - 1 < len(h2_plan_full) and isinstance(h2_plan_full, list) else {}
+        if isinstance(section_plan, dict):
+            section_hard_facts = section_plan.get("hard_facts", [])
+            section_entities = section_plan.get("entities", [])
+        else:
+            section_hard_facts = []
+            section_entities = []
+
+        # Merge pre-batch entities with plan entities
+        pre_batch_entities = batch_data.get("encje_obowiazkowe", [])
+        merged_entities = list(dict.fromkeys(pre_batch_entities + section_entities))
+
+        # Merge hard facts
+        pre_batch_hf = batch_data.get("hard_facts_do_uzycia", [])
+        merged_hf = list(dict.fromkeys(pre_batch_hf + section_hard_facts))
 
         batch_vars = {
             **self.variables,
@@ -430,14 +518,16 @@ class ArticleOrchestrator:
             "NAGLOWEK_H2": h2_heading,
             "OSTATNIE_ZDANIE_POPRZEDNIEGO_BATCHA": self.bridge_sentences[-1] if self.bridge_sentences else "",
             "POPRZEDNIE_ZDANIA_POMOSTOWE": json.dumps(self.bridge_sentences, ensure_ascii=False),
-            "ENCJE_BATCH_N": json.dumps(batch_data.get("encje_obowiazkowe", []), ensure_ascii=False),
+            "ENCJE_BATCH_N": json.dumps(merged_entities, ensure_ascii=False),
             "NGRAMY_BATCH_N": "\n".join(batch_data.get("ngramy", [])),
             "TRIPLETS_BATCH_N": json.dumps(batch_data.get("lancuchy", []), ensure_ascii=False),
-            "HARD_FACTS_BATCH_N": json.dumps(batch_data.get("hard_facts_do_uzycia", []), ensure_ascii=False),
-            "PERYFRAZY_BATCH_N": json.dumps(batch_data.get("peryfrazy", []), ensure_ascii=False),
+            "HARD_FACTS_BATCH_N": json.dumps(merged_hf, ensure_ascii=False),
+            "PERYFRAZY_BATCH_N": json.dumps(
+                batch_data.get("peryfrazy", []) or
+                json.loads(self.variables.get("PERYFRAZY", "[]"))[:3],
+                ensure_ascii=False
+            ),
             "DLUGOSC_SEKCJI": str(section_length),
-            "LICZBA_AKAPITOW": "3-5",
-            "OPIS_STRUKTURY_AKAPITOW": "akapity narracyjne z naturalnym przepływem",
             "MIN_PERYFRAZ": "2",
             "INTENCJA_TRANSAKCYJNA_AKTYWNA": "false",
             "FRAZY_TRANSAKCYJNE": "[]",
@@ -623,6 +713,31 @@ class ArticleOrchestrator:
             "coverage_check": getattr(self, "_h2_coverage_check", {}),
             "h2_count": h2_count,
         }}
+
+        # Build PLAN_FAQ from faq_plan or PAA questions
+        faq_plan = getattr(self, "_faq_plan", [])
+        if faq_plan:
+            faq_questions = [f.get("question", "") for f in faq_plan if f.get("question")]
+        else:
+            faq_questions = (
+                self.variables.get("_paa_unanswered", [])[:4]
+                + self.variables.get("_paa_standard", [])[:3]
+            )
+        self.variables["PLAN_FAQ"] = "\n".join(f"- {q}" for q in faq_questions)
+
+        # Populate JSON data placeholders for ARTICLE_WRITER_PROMPT
+        self.variables["ENCJE_KRYTYCZNE_JSON"] = self.variables.get("ENCJE_KRYTYCZNE", "[]")
+        self.variables["NGRAMY_Z_LIMITAMI_JSON"] = self.variables.get("NGRAMY_Z_LIMITAMI", "[]")
+        self.variables["LANCUCHY_KAUZALNE_JSON"] = self.variables.get("LANCUCHY_KAUZALNE", "[]")
+        self.variables["HARD_FACTS_JSON"] = json.dumps(
+            _hard_facts_values(self.variables.get("_hard_facts", [])), ensure_ascii=False
+        )
+        self.variables["PERYFRAZY_JSON"] = self.variables.get("PERYFRAZY", "[]")
+        self.variables["WARIANTY_POTOCZNE_JSON"] = self.variables.get("WARIANTY_POTOCZNE", "[]")
+        # H1 placeholder — will be filled by batch_0, set default for now
+        if "H1" not in self.variables:
+            kw = self.variables.get("HASLO_GLOWNE", "")
+            self.variables["H1"] = f"{kw} — kompletny przewodnik"
 
         # Snapshot all input variables after H2 plan is ready
         self.input_variables = {k: v for k, v in self.variables.items() if not k.startswith("_")}
