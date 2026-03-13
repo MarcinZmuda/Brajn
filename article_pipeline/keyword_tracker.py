@@ -851,22 +851,22 @@ class KeywordTracker:
             remaining = budget["global_remaining"]
             ptype = budget["type"]
 
-            # Overshoot detection: if usage exceeds 2× NW target, hard stop even if budget remains
+            # Overshoot detection: if usage exceeds 1.3× NW target, hard stop even if budget remains
             nw_target = budget.get("nw_target", 0)
-            is_overshoot = nw_target > 0 and budget["global_used"] >= nw_target * 2
+            is_overshoot = nw_target > 0 and budget["global_used"] >= max(nw_target + 2, int(nw_target * 1.3))
 
             if remaining <= 0 or is_overshoot:
                 synonyms = _get_synonyms(phrase)
                 syn_hint = f' Zamienniki: {", ".join(synonyms)}.' if synonyms else ''
                 if ptype == "BASIC":
-                    if is_overshoot and remaining > 0:
+                    if is_overshoot:
                         stop_lines.append(
-                            f'⛔ HARD STOP — fraza "{phrase}" przekroczyła 2× limit '
+                            f'⛔ HARD STOP — fraza "{phrase}" przekroczyła limit '
                             f'({budget["global_used"]}/{nw_target}) — '
-                            f'ZAKAZANE w tym batchu.{syn_hint}')
+                            f'ZAKAZANE w tym batchu i kolejnych.{syn_hint}')
                     else:
                         stop_lines.append(
-                            f'🛑 STOP — nie używaj: "{phrase}".{syn_hint}')
+                            f'🛑 STOP — nie używaj: "{phrase}" (budżet wyczerpany).{syn_hint}')
                 elif ptype == "EXTENDED" and is_overshoot:
                     stop_lines.append(
                         f'🛑 STOP — "{phrase}" przekroczyła limit '
@@ -875,8 +875,17 @@ class KeywordTracker:
 
             allocated = max(1, -(-remaining // remaining_batches))
             allocated = min(allocated, remaining)
-            # Per-batch hard cap: never more than allocated × 2 in a single batch
-            batch_hard_cap = max(3, allocated * 2)
+            # Per-batch hard cap: tighter cap, reduced further for chronic overshooters
+            overshoot_history = budget.get("_batch_overshoot_count", 0)
+            if overshoot_history >= 2:
+                # Chronic overshooter: cap at exactly allocated, no slack
+                batch_hard_cap = max(1, allocated)
+            elif overshoot_history == 1:
+                # One prior overshoot: minimal slack
+                batch_hard_cap = max(2, allocated + 1)
+            else:
+                # Normal: allocated + 1 (was allocated × 2, too generous)
+                batch_hard_cap = max(2, allocated + 1)
             budget["allocated_this_batch"] = allocated
 
             line = (f'{phrase} · {allocated}x w tej sekcji (max {batch_hard_cap}x!) '
@@ -920,9 +929,11 @@ class KeywordTracker:
                     expected_used = budget["global_max"] * progress_ratio
                     if expected_used > 1 and actual_used < expected_used * 0.4:
                         deficit = int(expected_used - actual_used)
+                        alloc = budget.get("allocated_this_batch", 1)
+                        cap = max(2, alloc + 1)
                         coverage_alert_lines.append(
                             f'MUST: "{budget["phrase"]}" ({actual_used}/{budget["global_max"]} użyć, '
-                            f'zaległość: ~{deficit}× — priorytetyzuj)')
+                            f'zaległość: ~{deficit}× — użyj {alloc}–{cap}× w tej sekcji, NIE WIĘCEJ)')
                 else:  # EXTENDED
                     # Flag EXTENDED phrases at 0 usage past halfway point
                     if actual_used == 0 and progress_ratio >= 0.4:

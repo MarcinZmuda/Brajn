@@ -585,12 +585,28 @@ class ArticleOrchestrator:
 
         text = self._llm_call(system, user, max_tokens=3000, label=f"batch_{n}")
 
-        # Validate
+        # Validate forbidden phrases
         issues = check_forbidden_phrases(text)
         if issues:
             print(f"[ORCHESTRATOR] Batch {n}: {len(issues)} forbidden phrases, retrying...")
             retry_prompt = user + f"\n\nUWAGA: Przepisz bez zakazanych fraz: {', '.join(issues)}"
             text = self._llm_call(system, retry_prompt, max_tokens=3000)
+
+        # Validate section word count (±20% tolerance, retry once if too long)
+        word_count = len(text.split())
+        max_words = int(section_length * 1.20)
+        if word_count > max_words:
+            print(f"[ORCHESTRATOR] Batch {n}: {word_count} words > {max_words} max "
+                  f"(target {section_length}), retrying with stricter limit...")
+            retry_prompt = (
+                user + f"\n\nUWAGA: Poprzednia wersja miała {word_count} słów. "
+                f"BEZWZGLĘDNY LIMIT tej sekcji to {section_length} słów. "
+                f"Skróć tekst — usuń zbędne zdania, nie dodawaj nowych treści."
+            )
+            text = self._llm_call(system, retry_prompt, max_tokens=3000)
+            new_count = len(text.split())
+            print(f"[ORCHESTRATOR] Batch {n}: retry produced {new_count} words "
+                  f"(target {section_length})")
 
         self.batch_texts.append(text)
         self.bridge_sentences.append(_get_last_sentence(text))
