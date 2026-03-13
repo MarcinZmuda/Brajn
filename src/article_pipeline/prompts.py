@@ -496,13 +496,15 @@ Encja główna „{{ENCJA_GLOWNA}}" — obowiązkowa w każdej sekcji.
 <ngrams>
 {{NGRAMY_BATCH_N}}
 
-ZASADY:
-- MUST = frazy obowiązkowe. Użyj w dokładnej formie podanej powyżej.
+ZASADY (KRYTYCZNE — przestrzegaj ściśle):
+- MUST = frazy obowiązkowe. Użyj w formie podanej powyżej lub naturalnej odmianie.
 - NICE-TO-HAVE = frazy opcjonalne. Użyj tylko jeśli naturalnie pasują do sekcji.
-- Liczba po „·" = ile razy MOŻESZ użyć frazy w tej sekcji. Nie przekraczaj.
-- 🛑 STOP = budżet wyczerpany. NIE UŻYWAJ tej frazy w żadnej formie.
+- Liczba po „·" = ile razy MOŻESZ użyć frazy w tej sekcji. Wartość po „max" to ABSOLUTNE MAXIMUM — NIGDY nie przekraczaj.
+- 🛑 STOP = budżet wyczerpany. BEZWZGLĘDNY ZAKAZ użycia tej frazy i jej odmian. Użyj podanych zamienników.
+- ⛔ HARD STOP = fraza drastycznie przekroczona. KAŻDE kolejne użycie obniża jakość artykułu. Zamień na synonimy.
 - Jeśli fraza nie pasuje do kontekstu — POMIŃ. Lepiej 0 niż wciśnięta na siłę.
-- Odmienione formy (np. „szamponem", „szamponu") RÓWNIEŻ liczą się do budżetu. Pisz naturalnie — system rozpoznaje odmiany.
+- Odmienione formy (np. „szamponem", „szamponu", „meblami", „mebli") RÓWNIEŻ liczą się do budżetu.
+- STUFFING = powtarzanie frazy ponad limit. To OBNIŻA scoring SEO, nie podnosi. Mniej = lepiej gdy limit osiągnięty.
 </ngrams>
 
 <causal_triplets>
