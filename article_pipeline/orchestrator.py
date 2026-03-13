@@ -266,10 +266,21 @@ class ArticleOrchestrator:
         h2_keywords = getattr(self, "_h2_keywords", []) or []
 
         # ── Determine target H2 count ──
-        # Use existing LICZBA_H2 from variables (set by _build_h2_plan), or default
-        target_h2 = int(self.variables.get("LICZBA_H2", "6") or "6")
-        # Clamp to reasonable range
-        target_h2 = max(4, min(10, target_h2))
+        # Base on target article length: ~250 words per H2 section + intro + FAQ
+        target_length = int(self.variables.get("DLUGOSC_CEL", "2000") or "2000")
+        intro_words = int(self.variables.get("DLUGOSC_INTRO", "180") or "180")
+        faq_est_words = 400  # ~80 words x 5 questions
+        h2_words_available = target_length - intro_words - faq_est_words
+        target_h2_by_length = max(4, h2_words_available // 250)
+
+        # Also consider candidate count (don't ask for more than available + some gen)
+        candidate_count = len([c for c in candidates if (c.get("score") or 0) >= 0.20])
+        target_h2_by_candidates = max(candidate_count, 5)  # at least 5, or candidates
+
+        # Take the minimum of both, clamped 5-10
+        target_h2 = min(target_h2_by_length, target_h2_by_candidates)
+        target_h2 = max(5, min(10, target_h2))
+        print(f"[H2_PLAN] Target H2: {target_h2} (by_length={target_h2_by_length}, by_candidates={target_h2_by_candidates})")
 
         # ── FAQ count: base 4, scale up if many uncovered phrases/entities ──
         faq_count = self._calc_faq_count(
