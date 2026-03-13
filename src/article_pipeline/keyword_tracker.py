@@ -1,5 +1,6 @@
 """
-Keyword Budget Tracker — in-memory phrase frequency control across batches.
+Keyword Budget Tracker — in-memory phrase frequency control across batches,
+with optional Firestore persistence for real-time panel display.
 
 Tracks two separate budgets:
 1. _global_main_kw_count — main keyword (hasło główne), hardcoded max 6, hard ceiling 9
@@ -9,10 +10,23 @@ Counting method:
 - Main keyword: re.findall(r'\\b' + exact + r'\\b', text.lower()) — exact case-insensitive
 - Phrases: str.count(phrase_lower) — substring match, no lemmatization
 
-Budget lives in RAM for one workflow. No persistence (Firestore not involved).
+Budget lives in RAM. Firestore is write-only (for panel reads), never blocks generation.
+Collection: seo_keyword_budgets/{project_id}
 """
 import re
 from typing import Optional
+
+
+BUDGET_COLLECTION = "seo_keyword_budgets"
+
+
+def _get_db():
+    """Get Firestore client, returns None if unavailable."""
+    try:
+        from src.common.firebase import get_db
+        return get_db()
+    except ImportError:
+        return None
 
 # ── Main keyword constants ──
 _GLOBAL_KW_MAX = 6           # max occurrences in entire article
@@ -23,13 +37,15 @@ class KeywordTracker:
     """In-memory keyword budget tracker for a single article generation workflow."""
 
     def __init__(self, main_keyword: str, ngrams: list = None,
-                 extended_ngrams: list = None, total_batches: int = 6):
+                 extended_ngrams: list = None, total_batches: int = 6,
+                 project_id: Optional[str] = None):
         """
         Args:
             main_keyword: Hasło główne (e.g. "sucha skóra głowy").
             ngrams: BASIC ngrams from S1 — list of dicts with 'ngram', 'freq_max', 'weight'.
             extended_ngrams: EXTENDED ngrams from S1 — same format, lower budgets.
             total_batches: Total number of batches in pipeline (intro + H2s + FAQ).
+            project_id: Firestore doc ID for real-time panel display. None = no persistence.
         """
         self.main_keyword = main_keyword.strip()
         self._main_kw_lower = self.main_keyword.lower()
@@ -48,9 +64,16 @@ class KeywordTracker:
         self.batch_count = 0
         self.batch_reports = []
 
+        # Firestore — write-only for panel real-time display
+        self.project_id = project_id
+        self._db = _get_db() if project_id else None
+
         # Initialize budgets
         self._init_phrase_budget(ngrams or [], "BASIC")
         self._init_phrase_budget(extended_ngrams or [], "EXTENDED")
+
+        # Save initial budget snapshot to Firestore
+        self._save_to_firestore("init")
 
     def _init_phrase_budget(self, ngrams: list, ngram_type: str):
         """Initialize phrase budgets from S1 ngram data."""
@@ -82,6 +105,43 @@ class KeywordTracker:
                     "global_remaining": global_max,
                     "type": ngram_type,
                 }
+
+    # ── Firestore persistence (write-only, for panel real-time display) ──
+
+    def _save_to_firestore(self, batch_label: str = ""):
+        """Write current budget state to Firestore. Never blocks generation on failure."""
+        if not self._db or not self.project_id:
+            return
+        try:
+            doc_ref = self._db.collection(BUDGET_COLLECTION).document(self.project_id)
+            doc_ref.set({
+                "main_keyword": {
+                    "keyword": self.main_keyword,
+                    "used": self._global_main_kw_count,
+                    "max": _GLOBAL_KW_MAX,
+                    "hard_ceiling": _KW_HARD_CEILING,
+                    "status": self._main_kw_status(),
+                },
+                "phrases": {
+                    k: {
+                        "phrase": v["phrase"],
+                        "global_max": v["global_max"],
+                        "global_used": v["global_used"],
+                        "global_remaining": v["global_remaining"],
+                        "type": v["type"],
+                    }
+                    for k, v in self._global_phrase_budget.items()
+                },
+                "batch_count": self.batch_count,
+                "last_batch": batch_label,
+            }, merge=True)
+
+            # Per-batch snapshot
+            if batch_label and batch_label != "init":
+                latest = self.batch_reports[-1] if self.batch_reports else {}
+                doc_ref.collection("batches").document(batch_label).set(latest)
+        except Exception as e:
+            print(f"[BUDGET] Firestore save error (non-blocking): {e}")
 
     # ── Counting ──
 
@@ -157,6 +217,9 @@ class KeywordTracker:
         if over:
             names = ", ".join(f"{p['phrase']}({p['total_used']}/{p['remaining'] + p['total_used']})" for p in over)
             print(f"[BUDGET] {batch_label}: OVER-BUDGET: {names}")
+
+        # Persist to Firestore for panel real-time display
+        self._save_to_firestore(batch_label)
 
         return report
 

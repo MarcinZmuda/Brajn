@@ -94,13 +94,14 @@ class ArticleOrchestrator:
         self.validation_result = None
         self.ymyl_result = None
         self.search_variants_result = None
-        # In-memory keyword budget tracker (no Firestore — lives for one workflow)
+        # Keyword budget tracker (in-memory + Firestore write-only for panel)
         self.keyword_tracker = KeywordTracker(
             main_keyword=self.variables.get("HASLO_GLOWNE", ""),
             ngrams=self.variables.get("_ngrams", []),
             extended_ngrams=(self.variables.get("_ngrams_full", [])
                              [len(self.variables.get("_ngrams", [])):]),  # extended only
             total_batches=max(3, len(self.variables.get("_h2_plan_list", [])) + 2),
+            project_id=project_id,
         )
         # Logging for "Dane wsadowe" panel tab
         self.prompt_log = []   # [{label, system, user}]
