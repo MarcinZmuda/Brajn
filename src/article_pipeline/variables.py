@@ -171,10 +171,46 @@ def extract_global_variables(s1_data: dict, target_length: int = 2000) -> dict:
 
 # ── helpers ───────────────────────────────────────────────────
 
+def _is_natural_polish_phrase(text: str) -> bool:
+    """Check if text looks like a natural Polish phrase (not a lemma cluster like 'alkohol wpływ')."""
+    if not text or len(text) < 3:
+        return False
+    words = text.split()
+    # Single word is OK
+    if len(words) == 1:
+        return True
+    # Check for common patterns that indicate unnatural lemma clusters:
+    # - all words in nominative (lowercase, no prepositions/articles)
+    # - no connecting words (po, na, w, z, do, pod, za, dla, od, przy, o, ze, bez)
+    connectors = {"po", "na", "w", "z", "do", "pod", "za", "dla", "od", "przy",
+                  "o", "ze", "bez", "przed", "nad", "między", "wobec", "versus",
+                  "i", "a", "lub", "czy", "oraz", "albo", "jak", "co", "który",
+                  "która", "które", "to", "jest", "się"}
+    has_connector = any(w.lower() in connectors for w in words)
+    # If 2+ words and no connector, likely a lemma cluster
+    if len(words) >= 2 and not has_connector:
+        # Exception: compound nouns like "dieta ketogeniczna" (adj+noun or noun+adj)
+        # Check if it looks like a proper noun phrase (at least one word > 4 chars)
+        long_words = [w for w in words if len(w) > 4]
+        if len(long_words) >= 2:
+            # Could be "dieta ketogeniczna" — check if it reads naturally
+            # Heuristic: if no word ends in typical Polish case endings for nominative
+            # adjectives (-y, -a, -e, -i, -owy, -owa, -owe), it's suspicious
+            adj_endings = ("y", "a", "e", "i", "owy", "owa", "owe", "ny", "na", "ne",
+                          "ski", "ska", "skie", "czy", "cza", "cze", "iczny", "iczna")
+            has_adj = any(w.lower().endswith(adj_endings) for w in words)
+            if not has_adj:
+                return False  # e.g. "alkohol wpływ" — two bare nouns, no adj
+        else:
+            return False
+    return True
+
+
 def _extract_main_entity(s1_data):
     """
     Wyciąga encję główną z S1.
     Garbage filtering delegated to web_garbage_filter.is_entity_garbage (Level 1-11).
+    Natural language validation: rejects lemma clusters like 'alkohol wpływ'.
     Fallback → main_keyword jeśli lista jest pusta lub same garbage.
     """
     entity_seo = s1_data.get("entity_seo") or {}
@@ -203,7 +239,7 @@ def _extract_main_entity(s1_data):
                 continue
             text = item.get("entity") or item.get("text") or ""
             score = float(item.get("salience") or item.get("score") or 0.5)
-            if text and not _is_garbage(text):
+            if text and not _is_garbage(text) and _is_natural_polish_phrase(text):
                 return text, score
 
     # 2. entities sorted by importance
@@ -217,7 +253,7 @@ def _extract_main_entity(s1_data):
         for top in sorted_ents:
             text = top.get("text") or ""
             score = float(top.get("importance") or top.get("salience") or 0.5)
-            if text and not _is_garbage(text):
+            if text and not _is_garbage(text) and _is_natural_polish_phrase(text):
                 return text, score
 
     # 3. fallback → main_keyword
