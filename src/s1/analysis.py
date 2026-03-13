@@ -25,6 +25,13 @@ except ImportError:
     print("[S1] Causal Extractor not available")
 
 try:
+    from src.s1.factographic_extractor import extract_factographic_triplets, format_factographic_for_agent
+    _FACTOGRAPHIC_AVAILABLE = True
+except ImportError:
+    _FACTOGRAPHIC_AVAILABLE = False
+    print("[S1] Factographic Extractor not available")
+
+try:
     from src.s1.gap_analyzer import analyze_content_gaps
     _GAP_ANALYZER_AVAILABLE = True
 except ImportError:
@@ -199,6 +206,26 @@ def run_s1_analysis(
             print(f"[S1] Causal extraction error: {e}")
             causal_data = {"error": str(e), "status": "FAILED"}
 
+    # Factographic Triplets (SPO/EAV — non-causal)
+    factographic_data = None
+    if _FACTOGRAPHIC_AVAILABLE and sources:
+        try:
+            facto_triplets = extract_factographic_triplets(
+                texts=[s.get("content", "") for s in sources],
+                main_keyword=main_keyword,
+            )
+            factographic_data = {
+                "count": len(facto_triplets),
+                "spo": [t.to_dict() for t in facto_triplets if t.triplet_type == "spo"],
+                "eav": [t.to_dict() for t in facto_triplets if t.triplet_type == "eav"],
+                "agent_instruction": format_factographic_for_agent(facto_triplets, main_keyword),
+            }
+            print(f"[S1] Factographic: {len(facto_triplets)} triplets "
+                  f"(SPO: {len(factographic_data['spo'])}, EAV: {len(factographic_data['eav'])})")
+        except Exception as e:
+            print(f"[S1] Factographic extraction error: {e}")
+            factographic_data = {"error": str(e), "status": "FAILED"}
+
     # Content Gaps
     content_gaps_data = None
     if _GAP_ANALYZER_AVAILABLE and sources:
@@ -226,6 +253,7 @@ def run_s1_analysis(
         "serp_analysis": serp_analysis_data,
         "entity_seo": entity_seo_data,
         "causal_triplets": causal_data,
+        "factographic_triplets": factographic_data,
         "content_gaps": content_gaps_data,
         "summary": {
             "total_sources": len(sources),
@@ -237,6 +265,7 @@ def run_s1_analysis(
             "entity_seo_enabled": ENTITY_SEO_ENABLED,
             "entities_found": (entity_seo_data or {}).get("entity_seo_summary", {}).get("total_entities", 0),
             "causal_triplets_found": (causal_data or {}).get("count", 0),
+            "factographic_triplets_found": (factographic_data or {}).get("count", 0),
             "content_gaps_found": (content_gaps_data or {}).get("total_gaps", 0),
             "extended_terms_count": len(ngram_result["extended_terms"]),
             "lsi_candidates": len(semantic_keyphrases),

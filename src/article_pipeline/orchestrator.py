@@ -231,6 +231,9 @@ class ArticleOrchestrator:
         self.variables["WARIANTY_FORMALNE"] = json.dumps(
             self.search_variants_result.get("warianty_formalne", []), ensure_ascii=False
         )
+        mention_forms = self.search_variants_result.get("mention_forms", {})
+        self.variables["MENTION_FORMS_JSON"] = json.dumps(mention_forms, ensure_ascii=False)
+        self.variables["_mention_forms"] = mention_forms
         return self.search_variants_result
 
     def run_h2_plan(self) -> list:
@@ -430,6 +433,41 @@ class ArticleOrchestrator:
         self.pre_batch_map = parsed
         return parsed
 
+    def _get_factographic_for_batch(self, batch_n: int) -> list:
+        """Return factographic triplets assigned to a specific batch by round-robin."""
+        all_facto = self.variables.get("_factographic_triplets") or []
+        if not all_facto:
+            return []
+        h2_count = len(self.variables.get("_h2_plan_list", [])) or 1
+        total_batches = h2_count + 2  # intro + H2s + FAQ
+        return [t for i, t in enumerate(all_facto) if i % total_batches == batch_n]
+
+    def _get_spo_for_batch(self, batch_n: int) -> list:
+        """Return entity relationships (SPO) assigned to a specific batch by round-robin."""
+        all_spo = self.variables.get("_entity_relationships") or []
+        if not all_spo:
+            return []
+        h2_count = len(self.variables.get("_h2_plan_list", [])) or 1
+        total_batches = h2_count + 2
+        return [t for i, t in enumerate(all_spo) if i % total_batches == batch_n]
+
+    def _get_cooccurrence_for_batch(self, batch_n: int, batch_entities: list) -> list:
+        """Return cooccurrence pairs relevant to this batch's entities."""
+        all_pairs = self.variables.get("_cooccurrence_pairs") or []
+        if not all_pairs or not batch_entities:
+            return all_pairs[:3] if batch_n <= 1 else []
+        # Filter pairs where at least one entity matches batch entities
+        batch_ents_lower = {e.lower() for e in batch_entities if isinstance(e, str)}
+        relevant = []
+        for p in all_pairs:
+            if not isinstance(p, dict):
+                continue
+            a = (p.get("entity_a") or "").lower()
+            b = (p.get("entity_b") or "").lower()
+            if a in batch_ents_lower or b in batch_ents_lower:
+                relevant.append(p)
+        return relevant[:3]
+
     def _generate_fallback_pre_batch(self) -> dict:
         """Generate minimal pre-batch map when LLM fails."""
         h2_plan = self.variables.get("_h2_plan_list", [])
@@ -573,6 +611,9 @@ class ArticleOrchestrator:
             "ENCJE_BATCH_N_JSON": json.dumps(merged_entities, ensure_ascii=False),
             "NGRAMY_BATCH_N": ngrams_formatted,
             "TRIPLETS_BATCH_N_JSON": json.dumps(batch_data.get("lancuchy", []), ensure_ascii=False),
+            "TROJKI_BATCH_N_JSON": json.dumps(self._get_factographic_for_batch(n), ensure_ascii=False),
+            "SPO_BATCH_N_JSON": json.dumps(self._get_spo_for_batch(n), ensure_ascii=False),
+            "COOCCURRENCE_BATCH_N_JSON": json.dumps(self._get_cooccurrence_for_batch(n, merged_entities), ensure_ascii=False),
             "HARD_FACTS_BATCH_N_JSON": json.dumps(merged_hf, ensure_ascii=False),
             "PERYFRAZY_BATCH_N_JSON": json.dumps(periphrases, ensure_ascii=False),
             "DLUGOSC_SEKCJI": str(section_length),

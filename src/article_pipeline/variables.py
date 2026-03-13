@@ -39,8 +39,11 @@ def extract_global_variables(s1_data: dict, target_length: int = 2000) -> dict:
     )
     h2_patterns = _clean_h2_list(h2_patterns_raw)[:15]
 
-    peryfrazy, warianty_potoczne, warianty_formalne, anglicyzmy = \
+    peryfrazy, warianty_potoczne, warianty_formalne, anglicyzmy, mention_forms = \
         _extract_search_variants(s1_data)
+
+    factographic = s1_data.get("factographic_triplets") or {}
+    facto_all = (factographic.get("spo") or []) + (factographic.get("eav") or [])
 
     # ── AI Overview & Featured Snippet text ──
     ai_overview_text = _extract_ai_overview_text(serp)
@@ -54,6 +57,37 @@ def extract_global_variables(s1_data: dict, target_length: int = 2000) -> dict:
     concept_entities = entity_seo.get("concept_entities") or []
     entity_placement = entity_seo.get("entity_placement") or {}
 
+    # ── Entity signals for writer prompts ──
+    placement_instruction = entity_placement.get("placement_instruction", "")
+    cooccurrence_pairs = entity_seo.get("cooccurrence_pairs") or []
+    entity_relationships = entity_seo.get("entity_relationships") or []
+    salience_list = entity_seo.get("entity_salience") or []
+
+    # Subject ratio for main entity
+    subject_ratio_pct = _extract_subject_ratio(salience_list, main_entity)
+
+    # Early entities (avg_first_position in top 20% → intro)
+    early_entities = _extract_early_entities(salience_list)
+
+    # Strong cooccurrence pairs (strength >= 0.2, sentence_count >= 3)
+    strong_cooccurrence = [
+        p for p in cooccurrence_pairs
+        if isinstance(p, dict) and p.get("strength", 0) >= 0.2
+           and p.get("sentence_co_occurrences", p.get("sentence_count", 0)) >= 3
+    ][:8]
+
+    # Heading patterns from competitors
+    heading_examples = _extract_heading_examples(salience_list, main_entity)
+
+    # Competitor opening patterns
+    competitor_openings = _extract_competitor_openings(serp)
+
+    # Depth opportunities from content gaps
+    depth_missing = _extract_depth_missing(s1_data)
+
+    # Must cover with coverage/role info
+    must_cover_enriched = _enrich_must_cover(must_cover, salience_list)
+
     return {
         "HASLO_GLOWNE":             s1_data.get("main_keyword", ""),
         "ENCJA_GLOWNA":             main_entity,
@@ -63,6 +97,15 @@ def extract_global_variables(s1_data: dict, target_length: int = 2000) -> dict:
         "PLAN_ARTYKULU":            "\n".join(f"{i+1}. {h}" for i, h in enumerate(h2_plan)),
         "PLAN_H2":                  json.dumps(h2_plan, ensure_ascii=False),
         "ENCJE_KRYTYCZNE":          json.dumps(must_cover, ensure_ascii=False),
+        "ENCJE_KRYTYCZNE_Z_KONTEKSTEM": json.dumps(must_cover_enriched, ensure_ascii=False),
+        "PLACEMENT_INSTRUCTION":    placement_instruction,
+        "COOCCURRENCE_PAIRS_JSON":  json.dumps(strong_cooccurrence[:5], ensure_ascii=False),
+        "ENTITY_RELATIONSHIPS_JSON": json.dumps(entity_relationships[:10], ensure_ascii=False),
+        "SUBJECT_RATIO_PCT":        subject_ratio_pct,
+        "EARLY_ENTITIES_JSON":      json.dumps(early_entities, ensure_ascii=False),
+        "HEADING_EXAMPLES_JSON":    json.dumps(heading_examples, ensure_ascii=False),
+        "COMPETITOR_OPENINGS_JSON": json.dumps(competitor_openings, ensure_ascii=False),
+        "DEPTH_MISSING_JSON":       json.dumps(depth_missing, ensure_ascii=False),
         "NGRAMY_Z_CZESTOTLIWOSCIA": ngrams_formatted,
         "NGRAMY_Z_LIMITAMI":        json.dumps(
             [{"ngram": ng.get("ngram",""), "min": ng.get("freq_min",0), "max": ng.get("freq_max",5)}
@@ -74,6 +117,8 @@ def extract_global_variables(s1_data: dict, target_length: int = 2000) -> dict:
         "WARIANTY_POTOCZNE":        json.dumps(warianty_potoczne, ensure_ascii=False),
         "WARIANTY_FORMALNE":        json.dumps(warianty_formalne, ensure_ascii=False),
         "ANGLICYZMY":               json.dumps(anglicyzmy, ensure_ascii=False),
+        "MENTION_FORMS_JSON":       json.dumps(mention_forms, ensure_ascii=False),
+        "TROJKI_FAKTOGRAFICZNE_JSON": json.dumps(facto_all[:15], ensure_ascii=False),
         "HARD_FACTS_ALL":           json.dumps(hard_facts, ensure_ascii=False),
         "PAA_BEZ_ODPOWIEDZI":       json.dumps(paa_unanswered, ensure_ascii=False),
         "PAA_STANDARDOWE":          json.dumps(paa_standard, ensure_ascii=False),
@@ -104,6 +149,11 @@ def extract_global_variables(s1_data: dict, target_length: int = 2000) -> dict:
         "_ngrams_full":             ngrams + extended,
         "_concept_entities":        concept_entities,
         "_entity_placement":        entity_placement,
+        "_cooccurrence_pairs":      strong_cooccurrence,
+        "_entity_relationships":    entity_relationships,
+        "_early_entities":          early_entities,
+        "_mention_forms":            mention_forms,
+        "_factographic_triplets":    facto_all,
         "_chains":                  chains,
         "_relations":               relations,
         "_h2_patterns":             h2_patterns,
@@ -377,10 +427,117 @@ def _extract_hard_facts(s1_data, serp):
     return unique[:25]
 
 
+def _extract_subject_ratio(salience_list: list, main_entity: str) -> str:
+    """Extract subject_ratio percentage for the main entity."""
+    if not salience_list or not main_entity:
+        return "70"  # sensible default
+    entity_lower = main_entity.lower()
+    for item in salience_list:
+        if not isinstance(item, dict):
+            continue
+        text = (item.get("entity") or item.get("entity_text") or "").lower()
+        if text == entity_lower or entity_lower in text:
+            signals = item.get("signals", {})
+            ratio = signals.get("subject_ratio", 0.7)
+            return str(int(ratio * 100))
+    return "70"
+
+
+def _extract_early_entities(salience_list: list) -> list:
+    """Extract entities that appear early in competitor texts (top 20%)."""
+    early = []
+    for item in salience_list:
+        if not isinstance(item, dict):
+            continue
+        signals = item.get("signals", {})
+        position = signals.get("position", 0)  # higher = earlier
+        early_mentions = signals.get("early_mentions", 0)
+        entity = item.get("entity") or item.get("entity_text") or ""
+        if entity and (position >= 0.8 or early_mentions >= 3):
+            early.append(entity)
+    return early[:6]
+
+
+def _extract_heading_examples(salience_list: list, main_entity: str) -> list:
+    """Extract heading examples from competitors for the main entity."""
+    entity_lower = main_entity.lower()
+    for item in salience_list:
+        if not isinstance(item, dict):
+            continue
+        text = (item.get("entity") or item.get("entity_text") or "").lower()
+        if text == entity_lower or entity_lower in text:
+            return item.get("heading_examples", [])[:5]
+    return []
+
+
+def _extract_competitor_openings(serp: dict) -> list:
+    """Extract first paragraphs from competitors for opening pattern analysis."""
+    competitors = serp.get("competitors") or []
+    openings = []
+    for c in competitors[:5]:
+        if not isinstance(c, dict):
+            continue
+        fp = (c.get("first_paragraph") or "").strip()
+        if fp and len(fp) > 50:
+            openings.append(fp[:200])
+    return openings
+
+
+def _extract_depth_missing(s1_data: dict) -> list:
+    """Extract depth opportunities from content gaps."""
+    gaps = s1_data.get("content_gaps") or {}
+    depth = gaps.get("depth_missing") or gaps.get("shallow_topics") or []
+    result = []
+    for item in depth[:5]:
+        if isinstance(item, str):
+            result.append({"topic": item})
+        elif isinstance(item, dict):
+            result.append({
+                "topic": item.get("topic") or item.get("subtopic") or "",
+                "avg_words": item.get("avg_words") or item.get("word_count") or 0,
+            })
+    return result
+
+
+def _enrich_must_cover(must_cover: list, salience_list: list) -> list:
+    """Enrich must_cover entities with coverage/role context from salience data."""
+    salience_lookup = {}
+    for item in salience_list:
+        if not isinstance(item, dict):
+            continue
+        entity = (item.get("entity") or item.get("entity_text") or "").lower()
+        if entity:
+            signals = item.get("signals", {})
+            dist = signals.get("distribution", "0/0")
+            salience_lookup[entity] = dist
+
+    enriched = []
+    for entity in must_cover:
+        dist = salience_lookup.get(entity.lower(), "")
+        if dist:
+            parts = dist.split("/")
+            try:
+                count = int(parts[0])
+                total = int(parts[1]) if len(parts) > 1 else 8
+                if count >= total * 0.7:
+                    role = "MUST"
+                elif count >= total * 0.4:
+                    role = "SHOULD"
+                else:
+                    role = "DIFFERENTIATOR"
+            except (ValueError, IndexError):
+                role = "SHOULD"
+        else:
+            role = "SHOULD"
+        enriched.append({"entity": entity, "coverage": dist, "role": role})
+    return enriched
+
+
 def _extract_search_variants(s1_data):
     v = s1_data.get("search_variants") or {}
     return (v.get("peryfrazy") or [], v.get("warianty_potoczne") or [],
-            v.get("warianty_formalne") or [], v.get("anglicyzmy") or [])
+            v.get("warianty_formalne") or [], v.get("anglicyzmy") or [],
+            v.get("mention_forms") or {})
 
 
 def _extract_brands_from_related(related_searches):

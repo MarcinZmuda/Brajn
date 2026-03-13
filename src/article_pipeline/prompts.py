@@ -42,6 +42,12 @@ Nigdy nie używaj tych fraz (ani ich wariantów):
 1. ENCJA GŁÓWNA („{{ENCJA_GLOWNA}}"): musi pojawić się w H1, w pierwszym akapicie intro, i w co najmniej 2 sekcjach H2 (odmieniana przez przypadki). Nie wciskaj na siłę w każdą sekcję.
 2. ENCJE KRYTYCZNE (lista w <critical_entities>): staraj się użyć każdą w artykule, ale tylko tam gdzie pasuje do kontekstu. Odmieniaj przez przypadki — nie wstawiaj w mianowniku na siłę.
 3. Nie klastruj encji — rozłóż je równomiernie po artykule.
+4. KONSYSTENCJA NAZEWNICTWA: Przy pierwszym użyciu encji podaj pełną nazwę (z akronimem lub wariantem w nawiasie, jeśli istnieje). Następnie konsekwentnie używaj JEDNEJ formy skróconej. Nie mieszaj pisowni tej samej encji (np. „dieta keto" vs „dieta ketogeniczna" — wybierz jedną po pierwszym użyciu pełnej nazwy).
+5. ROTACJA WZMIANEK (Named / Nominal / Pronominal):
+   - Named = pełna nazwa encji (np. „{{ENCJA_GLOWNA}}") — używaj przy pierwszym użyciu w sekcji i w kluczowych momentach.
+   - Nominal = peryfraza rzeczownikowa z <mention_forms> (np. „ten sposób odżywiania", „omawiany zabieg") — używaj w środku akapitu.
+   - Pronominal = zaimek z <mention_forms> (np. „on/ona/to", „jego/jej") — używaj w następnym zdaniu po Named/Nominal.
+   Wzorzec: pierwsze zdanie sekcji = Named, środek akapitu = Nominal, kolejne zdanie = Pronominal. Potem rotuj.
 </entity_rules>
 
 <ngram_rules>
@@ -70,6 +76,35 @@ Liczby, kwoty, progi i fakty z <hard_facts> mają ABSOLUTNY PRIORYTET nad Twoją
 - Jeśli fakt z <hard_facts> koliduje z Twoją wiedzą — użyj wersji z <hard_facts>.
 - Wplataj je naturalnie w tekst, nie wypisuj jako luźne liczby.
 </hard_facts_rules>
+
+<voice_guidance>
+Encja główna „{{ENCJA_GLOWNA}}": u konkurencji jest podmiotem w {{SUBJECT_RATIO_PCT}}% zdań.
+Twój tekst powinien utrzymywać podobny stosunek — encja główna jako PODMIOT gramatyczny, nie dopełnienie.
+✅ „Dieta ketogeniczna redukuje poziom insuliny" (podmiot)
+✅ „Dieta ketogeniczna wymaga ograniczenia węglowodanów" (podmiot)
+❌ „Insulina jest redukowana przez dietę ketogeniczną" (dopełnienie)
+❌ „Ograniczenie węglowodanów jest wymagane w diecie keto" (dopełnienie)
+</voice_guidance>
+
+<cooccurrence_rules>
+Pary encji z <cooccurrence_pairs> współwystępują u konkurencji w wielu zdaniach.
+Trzymaj je w TYM SAMYM akapicie lub sąsiednich zdaniach — Google mierzy relatedness encji na podstawie bliskości.
+Nie rozdzielaj tych par na osobne sekcje.
+</cooccurrence_rules>
+
+<spo_rules>
+Relacje encji z <entity_relationships> to fakty ekstrahowane z konkurencji (kto co robi, co czego wymaga, co co reguluje).
+Pisz każdy kluczowy fakt w czytelnej strukturze SPO (Podmiot-Orzeczenie-Dopełnienie):
+✅ „Dieta ketogeniczna wymaga ograniczenia węglowodanów do 20–50 g dziennie." (czyste SPO)
+❌ „Istnieje wymóg dotyczący ograniczenia węglowodanów w kontekście diety." (nieparsowalny ogólnik)
+</spo_rules>
+
+<factographic_rules>
+Trójki faktograficzne z <factographic_triplets> to fakty wyekstrahowane z tekstów konkurencji (SPO: podmiot→czasownik→dopełnienie, EAV: encja→atrybut→wartość).
+- Wplataj je naturalnie w tekst, nie wypisuj jako luźne stwierdzenia.
+- Mają niższy priorytet niż <hard_facts>, ale wyższy niż Twoja wiedza ogólna.
+- Jeśli trójka pokrywa się z hard_fact — użyj wersji z hard_facts.
+</factographic_rules>
 
 <formatting_rules>
 1. LISTY PUNKTOWE: tylko dla instrukcji krok po kroku, procedur, wymagań formalnych. Nie używaj list do opisywania abstrakcyjnych koncepcji.
@@ -101,8 +136,20 @@ FAQ:
 <data>
 
 <critical_entities>
-{{ENCJE_KRYTYCZNE_JSON}}
+{{ENCJE_KRYTYCZNE_Z_KONTEKSTEM}}
 </critical_entities>
+
+<entity_architecture>
+{{PLACEMENT_INSTRUCTION}}
+</entity_architecture>
+
+<cooccurrence_pairs>
+{{COOCCURRENCE_PAIRS_JSON}}
+</cooccurrence_pairs>
+
+<entity_relationships>
+{{ENTITY_RELATIONSHIPS_JSON}}
+</entity_relationships>
 
 <ngrams>
 {{NGRAMY_Z_LIMITAMI_JSON}}
@@ -124,6 +171,14 @@ FAQ:
 {{WARIANTY_POTOCZNE_JSON}}
 </colloquial_variants>
 
+<mention_forms>
+{{MENTION_FORMS_JSON}}
+</mention_forms>
+
+<factographic_triplets>
+{{TROJKI_FAKTOGRAFICZNE_JSON}}
+</factographic_triplets>
+
 </data>
 
 <output_format>
@@ -144,6 +199,8 @@ Przed zwróceniem artykułu zweryfikuj:
 5. Czy artykuł ma {{LICZBA_H2}} sekcji H2 + FAQ?
 6. Czy tekst jest zwięzły i nie leje wody?
 7. Czy sekcje płynnie przechodzą jedna w drugą?
+9. Czy encja główna jest podmiotem (nie dopełnieniem) w większości zdań?
+10. Czy pary z <cooccurrence_pairs> są w tych samych akapitach?
 8. Czy disclaimer jest na końcu (jeśli <ymyl> niepuste)?
 Jeśli cokolwiek nie przechodzi — popraw ZANIM zwrócisz tekst.
 </self_check>"""
@@ -220,6 +277,19 @@ Reguły wyboru i tworzenia H2 z listy kandydatów:
 <h2_keywords>
 {{H2_KEYWORDS_JSON}}
 </h2_keywords>
+
+<heading_patterns>
+Jak konkurencja wplata encję główną w nagłówki:
+{{HEADING_EXAMPLES_JSON}}
+Uwzględnij encję główną w minimum 2 nagłówkach H2 (odmienioną naturalnie).
+</heading_patterns>
+
+<depth_opportunities>
+Te tematy SĄ u konkurencji, ale opisane PŁYTKO (< 120 słów):
+{{DEPTH_MISSING_JSON}}
+Jeśli te tematy trafią do planu H2 — pisz je GŁĘBIEJ niż konkurencja.
+Dodaj: mechanizm (DLACZEGO), dane liczbowe, konkretny timeline, przykład praktyczny.
+</depth_opportunities>
 
 </data>
 
@@ -427,6 +497,26 @@ Nigdy nie używaj (ani wariantów):
 {{HARD_FACTS_BATCH_0_JSON}}
 </hard_facts>
 
+<early_entities>
+Te encje pojawiają się u konkurencji w pierwszych 200 słowach. Wpleć je w intro:
+{{EARLY_ENTITIES_JSON}}
+</early_entities>
+
+<competitor_openings>
+Jak konkurencja otwiera artykuły na to hasło (wzorce — nie kopiuj, dopasuj format otwarcia):
+{{COMPETITOR_OPENINGS_JSON}}
+</competitor_openings>
+
+<entity_architecture>
+{{PLACEMENT_INSTRUCTION}}
+Użyj powyższej mapy jako szkieletu rozmieszczenia encji. W intro: encja główna + encje z "PIERWSZY AKAPIT".
+</entity_architecture>
+
+<cooccurrence_pairs>
+{{COOCCURRENCE_PAIRS_JSON}}
+Pary encji, które u konkurencji współwystępują w wielu zdaniach — trzymaj je w tym samym akapicie intro.
+</cooccurrence_pairs>
+
 </data>
 
 <output_format>
@@ -450,6 +540,7 @@ Przed zwróceniem zweryfikuj:
 7. Jeśli <key_ngram> niepuste — czy fraza pojawia się w intro?
 8. Jeśli <key_triplet> niepuste — czy triplet przyczyna→skutek jest użyty?
 9. Ostatnie zdanie nawiązuje do tematu „{{PIERWSZY_H2}}"?
+10. Czy encje z <early_entities> pojawiają się w intro?
 10. Żadna fraza z <banned_phrases> nie występuje?
 11. Żadne zdanie nie jest ogólnikiem bez konkretnej informacji?
 Jeśli nie przechodzi — popraw ZANIM zwrócisz tekst.
@@ -496,6 +587,8 @@ Nigdy nie używaj (ani wariantów):
 Encja główna „{{ENCJA_GLOWNA}}" — wpleć jeśli naturalnie pasuje do sekcji. Nie każda sekcja musi ją zawierać.
 Encje sekcji (z <section_entities>): staraj się wpleść te, które naturalnie pasują do tematu. Odmieniaj przez przypadki.
 Jeśli któraś encja nie pasuje do kontekstu — pomiń ją. Lepiej 0 niż wciśnięta na siłę.
+ROTACJA WZMIANEK: Nie powtarzaj encji głównej pełną nazwą w każdym zdaniu.
+Używaj form z <mention_forms>: Named (pełna nazwa) → Nominal (peryfraza) → Pronominal (zaimek), potem rotuj.
 </entity_rules>
 
 <ngram_rules>
@@ -530,6 +623,19 @@ Jeśli fakt koliduje z Twoją wiedzą — użyj wersji z <section_hard_facts>.
 Wplataj naturalnie w tekst, nie wypisuj jako luźne liczby.
 </hard_facts_rules>
 
+<voice_guidance>
+Encja główna „{{ENCJA_GLOWNA}}": u konkurencji jest podmiotem w {{SUBJECT_RATIO_PCT}}% zdań.
+Gdy ją użyjesz — niech będzie PODMIOTEM, nie dopełnieniem w stronie biernej.
+</voice_guidance>
+
+<spo_structure>
+Relacje encji z <section_entity_relationships>: opisz je czytelną strukturą SPO.
+Dla każdej relacji:
+1. Zdanie SPO: [PODMIOT] [ORZECZENIE] [DOPEŁNIENIE] + konkretna wartość
+2. Wyjaśnienie: dlaczego/jak to działa (1-2 zdania)
+NIE pisz ogólników bez SPO. Każde kluczowe zdanie musi mieć czytelny podmiot, orzeczenie i dopełnienie.
+</spo_structure>
+
 <formatting_rules>
 1. Listy punktowe: TYLKO dla instrukcji krok po kroku, procedur, wymagań formalnych.
 2. Pogrubienia w tekście ciągłym: zakazane.
@@ -559,6 +665,23 @@ Wplataj naturalnie w tekst, nie wypisuj jako luźne liczby.
 Staraj się wpleść naturalnie kilka z powyższych, jeśli pasują do kontekstu. Jeśli lista pusta — ignoruj.
 </section_periphrases>
 
+<mention_forms>
+{{MENTION_FORMS_JSON}}
+</mention_forms>
+
+<section_factographic_triplets>
+{{TROJKI_BATCH_N_JSON}}
+</section_factographic_triplets>
+
+<section_entity_relationships>
+{{SPO_BATCH_N_JSON}}
+</section_entity_relationships>
+
+<section_cooccurrence>
+{{COOCCURRENCE_BATCH_N_JSON}}
+Pary encji, które u konkurencji współwystępują — trzymaj je w TYM SAMYM akapicie.
+</section_cooccurrence>
+
 </data>
 
 <output_format>
@@ -580,6 +703,8 @@ Przed zwróceniem zweryfikuj:
 5. Żaden n-gram ze statusem 🛑 STOP lub ⛔ HARD STOP nie został użyty?
 6. Żadna fraza z <banned_phrases> nie występuje?
 7. Hard facts użyte dokładnie (nie zaokrąglone)?
+8. Pary z <section_cooccurrence> są w tym samym akapicie?
+9. Encja główna jest podmiotem (nie dopełnieniem) w zdaniach, w których występuje?
 Jeśli nie przechodzi — popraw ZANIM zwrócisz tekst.
 </self_check>"""
 
