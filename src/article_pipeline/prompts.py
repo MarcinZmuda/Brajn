@@ -80,10 +80,7 @@ Liczby, kwoty, progi i fakty z <hard_facts> mają ABSOLUTNY PRIORYTET nad Twoją
 </formatting_rules>
 
 <length_rules>
-1. CEL: {{DLUGOSC_CEL}} słów (±10%).
-2. INTRO (tekst przed pierwszym H2): {{DLUGOSC_INTRO}} słów (±15%).
-3. SEKCJE H2: rozłóż pozostałe słowa równomiernie między {{LICZBA_H2}} sekcji. Żadna sekcja nie może być krótsza niż 50% ani dłuższa niż 150% średniej.
-4. FAQ: odpowiedzi 40–80 słów każda.
+Pisz tyle, ile wymaga temat — ani więcej, ani mniej. Nie lej wody. Jeśli sekcja wyczerpuje temat w 80 słowach, to 80 słów wystarczy. Orientacyjny cel: {{DLUGOSC_CEL}} słów, ale jakość i zwięzłość są ważniejsze niż liczba słów.
 </length_rules>
 
 <ymyl>
@@ -367,7 +364,7 @@ ZASADA FALLBACK — użyj PIERWSZEGO dostępnego źródła:
 </h1_rules>
 
 <intro_rules>
-1. DŁUGOŚĆ: {{DLUGOSC_INTRO}} słów (±15%).
+1. DŁUGOŚĆ: zwięzłe intro — tyle słów, ile potrzeba, orientacyjnie ~{{DLUGOSC_INTRO}}.
 
 2. PIERWSZE ZDANIE:
    - Zawiera encję główną, ale NIE jako podmiot w mianowniku.
@@ -447,7 +444,7 @@ Bez komentarzy, metadanych, ani tekstu przed/po. Markdown: # dla H1, potem akapi
 Przed zwróceniem zweryfikuj:
 1. H1 ≤ 70 znaków ze spacjami?
 2. H1 zawiera encję główną i NIE zaczyna się od niej w mianowniku?
-3. Intro ma ≈ {{DLUGOSC_INTRO}} słów (±15%)?
+3. Intro jest zwięzłe i na temat?
 4. Pierwsze zdanie zawiera encję główną, ale nie jako podmiot w mianowniku?
 5. Pierwsze 100 słów pokrywa kluczowe informacje ze źródła referencyjnego (AI Overview / Featured Snippet)?
 6. Minimum 2 hard facts z <hard_facts> są wplecione?
@@ -479,7 +476,7 @@ Poprzednie schematy zdań pomostowych (NIE powtarzaj żadnego z nich): {{POPRZED
 <section_spec>
 Nagłówek H2: {{NAGLOWEK_H2}}
 Następna sekcja: {{NASTEPNY_H2}}
-Długość sekcji: {{DLUGOSC_SEKCJI}} słów (±15%).
+Orientacyjna długość sekcji: ~{{DLUGOSC_SEKCJI}} słów, ale pisz tyle ile wymaga temat.
 </section_spec>
 
 <style>
@@ -587,7 +584,7 @@ Bez komentarzy, metadanych, ani tekstu przed/po.
 
 <self_check>
 Przed zwróceniem zweryfikuj:
-1. Sekcja ma ≈ {{DLUGOSC_SEKCJI}} słów (±15%)?
+1. Sekcja jest zwięzła i wyczerpuje temat bez lania wody?
 2. Encja główna pojawia się min. 1x?
 3. Żaden n-gram nie przekracza swojego max budżetu?
 4. Każdy MUST n-gram jest użyty min. 1x?
