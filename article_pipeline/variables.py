@@ -72,6 +72,8 @@ def extract_global_variables(s1_data: dict, target_length: int = 2000) -> dict:
         "MARKI_Z_RELATED_SEARCHES": json.dumps(brands, ensure_ascii=False),
         "WZORCE_H2_KONKURENCJI":    json.dumps(h2_patterns, ensure_ascii=False),
         "YMYL_KLASYFIKACJA":        "none",
+        "NW_LUKI":                   "",  # filled by orchestrator if nw_terms provided
+        "YMYL_CONTEXT":              "",  # filled by orchestrator legal/medical enricher
         "PUBMED_CYTAT":             "",
         "PYTANIE_SNIPPETOWE":       (paa_unanswered[0] if paa_unanswered
                                      else paa_standard[0] if paa_standard
@@ -100,16 +102,38 @@ def extract_global_variables(s1_data: dict, target_length: int = 2000) -> dict:
 # ── helpers ───────────────────────────────────────────────────
 
 def _extract_main_entity(s1_data):
+    """
+    Wyciąga encję główną z S1.
+    Garbage filtering delegated to web_garbage_filter.is_entity_garbage (Level 1-11).
+    Fallback → main_keyword jeśli lista jest pusta lub same garbage.
+    """
     entity_seo = s1_data.get("entity_seo") or {}
+    main_keyword = s1_data.get("main_keyword") or ""
 
-    # 1. entity_salience list
+    try:
+        try:
+            from src.s1.web_garbage_filter import is_entity_garbage
+        except ImportError:
+            from web_garbage_filter import is_entity_garbage
+    except ImportError:
+        is_entity_garbage = None
+
+    def _is_garbage(text):
+        if not text:
+            return True
+        if is_entity_garbage:
+            return is_entity_garbage(text)
+        return False
+
+    # 1. entity_salience list (already filtered by entity_salience.py v3.1)
     salience_list = entity_seo.get("entity_salience") or []
     if salience_list and isinstance(salience_list, list):
-        top = salience_list[0]
-        if isinstance(top, dict):
-            text = top.get("entity") or top.get("text") or ""
-            score = float(top.get("salience") or top.get("score") or 0.5)
-            if text:
+        for item in salience_list:
+            if not isinstance(item, dict):
+                continue
+            text = item.get("entity") or item.get("text") or ""
+            score = float(item.get("salience") or item.get("score") or 0.5)
+            if text and not _is_garbage(text):
                 return text, score
 
     # 2. entities sorted by importance
@@ -120,13 +144,14 @@ def _extract_main_entity(s1_data):
             key=lambda e: float(e.get("importance") or e.get("salience") or 0),
             reverse=True,
         )
-        if sorted_ents:
-            top = sorted_ents[0]
-            return (top.get("text") or ""), float(top.get("importance") or top.get("salience") or 0.5)
+        for top in sorted_ents:
+            text = top.get("text") or ""
+            score = float(top.get("importance") or top.get("salience") or 0.5)
+            if text and not _is_garbage(text):
+                return text, score
 
-    # 3. fallback
-    kw = s1_data.get("main_keyword") or ""
-    return kw, 1.0
+    # 3. fallback → main_keyword
+    return main_keyword, 1.0
 
 
 def _extract_must_cover(s1_data, main_entity):
@@ -257,27 +282,47 @@ def _get_related_searches(serp):
 
 
 def _extract_hard_facts(s1_data, serp):
-    facts = []
+    """Extract hard facts with category and source context."""
+    raw_facts = []
     sources = list(serp.get("competitor_snippets") or serp.get("serp_snippets") or [])
     featured = serp.get("featured_snippet") or {}
     sources.append(featured.get("answer") or "" if isinstance(featured, dict) else str(featured))
     ai_ov = serp.get("ai_overview") or {}
     sources.append(ai_ov.get("text") or "" if isinstance(ai_ov, dict) else "")
 
+    patterns = [
+        ("price", r"\d[\d\s]*[,.]?\d*\s*(?:zł|PLN|EUR|USD|€|\$|tys\.\s*zł|mln\s*zł)"),
+        ("date", r"(?:20[12]\d|19\d{2})\s*(?:r\.|roku|rok)"),
+        ("percent", r"\d+[,.]?\d*\s*(?:proc\.|%|procent)"),
+        ("measure", r"\d+[,.]?\d*\s*(?:kg|g|cm|mm|m²|m2|km|l|ml|h|min|godzin|dni|lat|miesięcy)"),
+    ]
+
     for text in sources:
         if not text or not isinstance(text, str):
             continue
-        facts += re.findall(r"\d[\d\s]*[,.]?\d*\s*(?:zł|PLN|EUR|USD|€|\$|tys\. zł|mln zł)", text)
-        facts += re.findall(r"(?:20[12]\d|19\d{2})\s*(?:r\.|roku|rok)", text)
-        facts += re.findall(r"\d+[,.]?\d*\s*(?:proc\.|%|procent)", text)
-        facts += re.findall(r"\d+[,.]?\d*\s*(?:kg|g|cm|mm|m²|m2|km|l|ml|h|min|godzin|dni|lat|miesięcy)", text)
+        for category, pattern in patterns:
+            for match in re.finditer(pattern, text):
+                value = match.group().strip()
+                # Extract surrounding context (up to 60 chars each side)
+                start = max(0, match.start() - 60)
+                end = min(len(text), match.end() + 60)
+                snippet = text[start:end].replace("\n", " ").strip()
+                if start > 0:
+                    snippet = "..." + snippet
+                if end < len(text):
+                    snippet = snippet + "..."
+                raw_facts.append({
+                    "value": value,
+                    "category": category,
+                    "source_snippet": snippet,
+                })
 
     seen, unique = set(), []
-    for f in facts:
-        k = re.sub(r"\s+", " ", f).strip().lower()
+    for f in raw_facts:
+        k = re.sub(r"\s+", " ", f["value"]).strip().lower()
         if k not in seen and len(k) > 2:
             seen.add(k)
-            unique.append(f.strip())
+            unique.append(f)
     return unique[:25]
 
 
