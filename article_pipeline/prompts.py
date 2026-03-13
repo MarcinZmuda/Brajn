@@ -84,84 +84,116 @@ Liczba sekcji H2: {{LICZBA_H2}}"""
 # ══════════════════════════════════════════════════════════════
 
 # ══════════════════════════════════════════════════════════════
-# 2. H2 PLAN PROMPT
+# 2. H2 PLAN PROMPT — v2.0
 # Wykonywany po Search Variants, przed Pre-Batch
-# Generuje plan artykułu jako JSON
+# Generuje plan artykułu jako JSON z coverage_check
+# System prompt osobno, user prompt z XML tags
 # ══════════════════════════════════════════════════════════════
-H2_PLAN_PROMPT = """Jesteś strategiem treści SEO. Twoim zadaniem jest zbudowanie planu artykułu dla hasła "{{HASLO_GLOWNE}}".
 
-NIE pisz treści. Zwróć wyłącznie JSON z planem.
+H2_PLAN_SYSTEM = """Planujesz strukturę artykułów SEO. Na podstawie danych wejściowych zwracasz plan artykułu jako JSON zgodny ze schematem podanym w instrukcji. Nie pisz treści artykułu — tylko plan."""
 
-DANE WEJŚCIOWE:
+H2_PLAN_PROMPT = """<task>
+Zbuduj plan artykułu SEO dla hasła „{{HASLO_GLOWNE}}".
+Zwróć WYŁĄCZNIE poprawny JSON zgodny ze schematem w <output_schema>.
+Bez markdown, bez komentarzy, bez tekstu przed/po JSON.
+</task>
 
-Scored H2 od konkurencji (text + score + powód):
-{{H2_SCORED_CANDIDATES}}
+<hard_constraints>
+Te reguły MUSZĄ być spełnione. Jeśli którakolwiek jest naruszona, plan jest niepoprawny.
 
-Must-cover encje (muszą być pokryte w artykule):
-{{ENCJE_KRYTYCZNE}}
+1. LICZBA_H2: Wybierz dokładnie {{LICZBA_H2}} sekcji H2 (nie licząc FAQ).
+2. POKRYCIE_ENCJI: Każda encja z <must_cover_entities> musi pojawić się w co najmniej jednym polu "entities" w planie (w H2 lub FAQ).
+3. UNIKALNOŚĆ: Żadne dwa H2 nie mogą odpowiadać na tę samą intencję użytkownika. Jeśli dwóch kandydatów pokrywa ten sam temat — wybierz tego z wyższym score lub połącz w jedno lepsze H2.
+4. FAQ: Sekcja FAQ zawiera {{LICZBA_FAQ}} pytań. Priorytetowe pytania z <paa_priority> MUSZĄ być uwzględnione. Uzupełnij resztę z <paa_standard> lub wygeneruj na podstawie danych.
+5. KOLEJNOŚĆ: Pierwsza sekcja H2 powinna odpowiadać na główną intencję hasła. Kolejne sekcje — od ogólnych do szczegółowych, z logicznym flow.
+6. H2_KEYWORDS (jeśli podane): Każda fraza z <h2_keywords> musi pojawić się w tekście co najmniej jednego nagłówka H2 (dosłownie lub w odmianie fleksyjnej). Jeśli <h2_keywords> jest puste lub nieobecne — ignoruj tę regułę.
+</hard_constraints>
 
-Entity salience (które encje są "o czym jest temat", score 0-1):
-{{ENTITY_SALIENCE}}
+<selection_criteria>
+Reguły wyboru i tworzenia H2 z listy kandydatów:
 
-Top n-gramy (frazy dominujące u konkurencji):
-{{NGRAMY_TOP10}}
+1. SCORE >= 0.30 → kandydat kwalifikuje się automatycznie do rozważenia.
+2. SCORE 0.20-0.29 → uwzględnij TYLKO jeśli pokrywa encję z <must_cover_entities> nieobecną w kandydatach >= 0.30.
+3. SCORE < 0.20 → odrzuć.
+4. Jeśli dwóch kandydatów pokrywa ten sam temat (np. "Co grozi za jazdę..." i "Jaka kara za jazdę...") — wybierz lepszy score LUB przeformułuj w jedno H2 łączące oba.
+5. Możesz przeformułować tekst H2 dla lepszego brzmienia, ale zachowaj intencję i główne frazy. Jeśli <h2_keywords> zawiera frazy — wplataj je w tekst H2 przy przeformułowywaniu (nie doklejaj mechanicznie, niech brzmią naturalnie).
+6. Jeśli po selekcji masz < {{LICZBA_H2}} sekcji — wygeneruj brakujące na podstawie <must_cover_entities> i <entity_salience>.
+7. Jeśli masz > {{LICZBA_H2}} — odrzuć te z najniższym score, chyba że pokrywają unikatową encję.
+</selection_criteria>
 
-Łańcuchy kauzalne (A→B→C — mechanizmy do wyjaśnienia):
-{{LANCUCHY_KAUZALNE}}
+<data>
 
-PAA questions (pytania z Google):
-{{PAA_QUESTIONS}}
+<scored_h2>
+{{SCORED_H2_JSON}}
+</scored_h2>
 
-Related searches:
-{{RELATED_SEARCHES}}
+<must_cover_entities>
+{{MUST_COVER_ENTITIES_JSON}}
+</must_cover_entities>
 
-Luki treściowe (czego brakuje u konkurencji):
-{{CONTENT_GAPS}}
+<entity_salience>
+{{ENTITY_SALIENCE_JSON}}
+</entity_salience>
 
-Jak konkurenci organizują artykuł (top 5, ich sekcje H2):
-{{COMPETITOR_SECTIONS}}
+<hard_facts>
+{{HARD_FACTS_JSON}}
+</hard_facts>
 
-Intencja wyszukiwania: {{SEARCH_INTENT}}
-YMYL kategoria: {{YMYL_KLASYFIKACJA}}
-Docelowa długość artykułu: {{DLUGOSC_CEL}} słów
+<paa_priority>
+{{PAA_PRIORITY_JSON}}
+</paa_priority>
 
-ZADANIE:
+<paa_standard>
+{{PAA_STANDARD_JSON}}
+</paa_standard>
 
-Zbuduj plan 5-8 sekcji H2 który:
-1. Naturalnie prowadzi czytelnika — od pytania/problemu przez mechanizm do rozwiązania
-2. Pokrywa H2 z wysokim score (must_have obowiązkowo, high_priority jeśli pasuje tematycznie)
-3. Uwzględnia must-cover encje — każda musi znaleźć się w przynajmniej jednej sekcji
-4. Wplata łańcuchy kauzalne w sekcje tematycznie pasujące
-5. Odpowiada na PAA questions — albo bezpośrednio w sekcji H2 albo w FAQ
-6. Wypełnia luki których nie ma konkurencja (content_gaps) jeśli są wartościowe
-7. Nie kopiuje mechanicznie top scored H2 — możesz łączyć, dzielić lub przeformułować
+<h2_keywords>
+{{H2_KEYWORDS_JSON}}
+</h2_keywords>
 
-ZASADY:
-- Każda sekcja H2 powinna mieć inny cel (definicja / mechanizm / konsekwencje / procedura / porównanie / porada)
-- Nie twórz sekcji które będą się powtarzać treściowo
-- Dla YMYL=prawo: zacznij od definicji/progu, potem konsekwencje, potem procedury, na końcu porady
-- Dla YMYL=zdrowie: zacznij od objawów/mechanizmu, potem diagnoza, leczenie, profilaktyka
-- Dla intencja=transakcyjna: sekcje porównawcze i "jak wybrać" przed FAQ; dla informacyjna: mechanizm i wyjaśnienia na początku
-- Przejrzyj competitor_sections — jeśli wszyscy mają tę samą sekcję której Ty nie masz, rozważ dodanie; jeśli mają coś zbędnego, pomiń
-- Pierwsze 2 sekcje muszą odpowiadać na najczęstsze pytanie czytelnika
+</data>
 
-Zwróć JSON:
+<output_schema>
 {
-  "h2_plan": [
+  "keyword": "string — hasło główne",
+  "h2_count": "integer — liczba sekcji H2 (bez FAQ)",
+  "sections": [
     {
-      "heading": "Tekst nagłówka H2",
-      "cel": "definicja|mechanizm|konsekwencje|procedura|porównanie|porada",
-      "encje_do_pokrycia": ["encja1", "encja2"],
-      "paa_odpowiada_na": ["pytanie z PAA jeśli ta sekcja je pokrywa"],
-      "lancuch_kauzalny": "A→B→C jeśli dotyczy, null jeśli nie",
-      "score_bazowy": 0.0,
-      "uzasadnienie": "dlaczego ta sekcja jest w planie"
+      "order": "integer — kolejność sekcji (1-based)",
+      "h2": "string — tekst nagłówka H2",
+      "intent": "string — jedno zdanie: na jaką intencję użytkownika odpowiada ta sekcja",
+      "entities": ["string — encje z must_cover pokryte w tej sekcji"],
+      "hard_facts": ["string — hard facts pasujące do tej sekcji (opcjonalne, puste [] jeśli brak)"],
+      "source_score": "number|null — score kandydata źródłowego, null jeśli H2 wygenerowane",
+      "h2_keywords_used": ["string — frazy z h2_keywords użyte w tym H2 (puste [] jeśli brak)"]
     }
   ],
-  "paa_do_faq": ["pytania PAA które nie weszły do H2 — idą do FAQ"],
-  "uwagi": "opcjonalne uwagi do orchestratora"
+  "faq": [
+    {
+      "question": "string — pytanie FAQ",
+      "entities": ["string — encje pokryte w odpowiedzi"],
+      "hard_facts": ["string — hard facts pasujące do odpowiedzi (opcjonalne)"],
+      "source": "paa_priority | paa_standard | generated"
+    }
+  ],
+  "coverage_check": {
+    "all_entities_covered": "boolean — true jeśli każda encja z must_cover jest w co najmniej jednym section/faq",
+    "uncovered_entities": ["string — lista encji NIEpokrytych (powinna być pusta)"],
+    "all_h2_keywords_used": "boolean|null — true jeśli każda fraza z h2_keywords jest w co najmniej jednym H2, null jeśli h2_keywords puste",
+    "unused_h2_keywords": ["string — frazy z h2_keywords nieużyte w żadnym H2 (powinna być pusta)"]
+  }
 }
-"""
+</output_schema>
+
+<self_check>
+Przed zwróceniem JSON zweryfikuj:
+1. Czy all_entities_covered === true? Jeśli nie — przypisz brakujące encje do istniejących sekcji lub dodaj sekcję.
+2. Czy h2_count === {{LICZBA_H2}}?
+3. Czy żadne dwa H2 nie odpowiadają na identyczną intencję?
+4. Czy pytania z paa_priority są w FAQ?
+5. Jeśli <h2_keywords> niepuste — czy all_h2_keywords_used === true? Jeśli nie — przeformułuj istniejące H2, żeby wpleść brakujące frazy.
+Jeśli cokolwiek nie przechodzi — popraw plan ZANIM zwrócisz JSON.
+</self_check>"""
 
 PRE_BATCH_PROMPT = """Na podstawie poniższych danych wejściowych zbuduj mapę rozmieszczeń encji i fraz dla artykułu "{{HASLO_GLOWNE}}".
 NIE generuj tekstu artykułu. Zwróć wyłącznie JSON.
