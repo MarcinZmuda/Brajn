@@ -224,11 +224,7 @@
                 <textarea id="h2Input" rows="4" placeholder="Jedna sekcja H2 na linie..."></textarea>
 
                 <label class="lbl">Slowa kluczowe (opcjonalnie)</label>
-                <textarea id="kwInput" rows="6" placeholder="Wklej frazy z NeuronWriter/Surfer (format: fraza: actual/min-max)
-Przykład:
-kurs barberski: 32/7-18
-szkolenia barberskie: 0/2-5
-techniki strzyżenia: 2/3-6"></textarea>
+                <textarea id="kwInput" rows="3" placeholder="Dodatkowe frazy kluczowe..."></textarea>
 
                 <button class="btn-primary" id="btnStart" onclick="startWorkflow()">Uruchom workflow</button>
                 <button class="btn-stop" id="btnStop" onclick="stopWorkflow()">Zatrzymaj</button>
@@ -255,9 +251,8 @@ techniki strzyżenia: 2/3-6"></textarea>
             <div class="tabs">
                 <div class="tab on" data-tab="workflow" onclick="switchTab('workflow')">Workflow</div>
                 <div class="tab" data-tab="s1" onclick="switchTab('s1')">Analiza S1</div>
+                <div class="tab" data-tab="prebatch" onclick="switchTab('prebatch')">Dane wsadowe</div>
                 <div class="tab" data-tab="article" onclick="switchTab('article')">Artykul</div>
-                <div class="tab" data-tab="h2plan" onclick="switchTab('h2plan')">Plan H2</div>
-                <div class="tab" data-tab="prompts" onclick="switchTab('prompts')">Dane wsadowe</div>
                 <div class="tab" data-tab="optional" onclick="switchTab('optional')">Moduly opcjonalne</div>
             </div>
 
@@ -294,6 +289,16 @@ techniki strzyżenia: 2/3-6"></textarea>
                 </div>
             </div>
 
+            <!-- ═══ PRE-BATCH / DANE WSADOWE TAB ═══ -->
+            <div class="tab-content" id="tab-prebatch">
+                <div id="prebatchContent">
+                    <div class="empty-state">
+                        <div class="icon">&#128202;</div>
+                        <p>Dane wsadowe pojawia sie po kroku Pre-Batch</p>
+                    </div>
+                </div>
+            </div>
+
             <!-- ═══ ARTICLE TAB ═══ -->
             <div class="tab-content" id="tab-article">
                 <div class="article-bar" id="articleActions" style="display:none">
@@ -307,49 +312,6 @@ techniki strzyżenia: 2/3-6"></textarea>
                         <div class="icon">&#128196;</div>
                         <p>Artykul pojawi sie tutaj po wygenerowaniu</p>
                     </div>
-                </div>
-            </div>
-
-            <!-- ═══ PROMPTS / INPUT DATA TAB ═══ -->
-            <!-- ═══ PLAN H2 TAB ═══ -->
-            <div class="tab-content" id="tab-h2plan">
-                <div id="h2planEmpty" style="padding:60px 0;text-align:center;color:var(--mg)">
-                    <div style="font-size:48px;margin-bottom:12px">&#128196;</div>
-                    <p style="font-size:14px">Plan H2 pojawi się po Step 3 (generowanie przez Claude)</p>
-                </div>
-                <div id="h2planContent" style="display:none;padding:16px"></div>
-            </div>
-
-            <div class="tab-content" id="tab-prompts">
-                <div id="promptsEmpty" class="empty-state" style="padding:60px 0">
-                    <div class="icon">&#128196;</div>
-                    <p>Dane wsadowe pojawia sie po wygenerowaniu artykulu</p>
-                </div>
-                <div id="promptsContent" style="display:none;padding:16px;display:flex;flex-direction:column;gap:12px">
-
-                    <!-- Variables -->
-                    <div class="card" id="cardVariables">
-                        <div class="card-title" style="cursor:pointer;display:flex;justify-content:space-between" onclick="toggleCard('variables')">
-                            <span>&#128196; Zmienne globalne (dane wsadowe)</span><span id="ico-variables">&#9660;</span>
-                        </div>
-                        <div id="body-variables" class="card-body">
-                            <div id="variablesContent"></div>
-                        </div>
-                    </div>
-
-                    <!-- Pre-batch map -->
-                    <div class="card" id="cardPreBatch">
-                        <div class="card-title" style="cursor:pointer;display:flex;justify-content:space-between" onclick="toggleCard('prebatch')">
-                            <span>&#128205; Pre-Batch Map (plan rozmieszczen)</span><span id="ico-prebatch">&#9660;</span>
-                        </div>
-                        <div id="body-prebatch" class="card-body">
-                            <pre id="preBatchContent" style="font-family:'JetBrains Mono',monospace;font-size:11px;white-space:pre-wrap;color:var(--lg)"></pre>
-                        </div>
-                    </div>
-
-                    <!-- Prompt log -->
-                    <div id="promptLogContainer"></div>
-
                 </div>
             </div>
 
@@ -520,7 +482,6 @@ function setStepDone(step, data) {
         if (data.word_count) details.push(data.word_count + ' slow');
         if (data.ymyl !== undefined) details.push('YMYL: ' + (data.ymyl ? 'TAK' : 'NIE'));
         if (data.variants_count) details.push(data.variants_count + ' wariantow');
-        if (data.h2_count !== undefined) { details.push(data.h2_count + ' sekcji'); renderH2Plan(data); }
         if (data.pre_batch_keys) details.push(data.pre_batch_keys + ' kluczy');
         if (data.validation) {
             const vs = data.validation.score || data.validation.validation_score;
@@ -879,20 +840,14 @@ function renderS1(data) {
         html += buildSection('coverage', 'Pokrycie tematyczne', topicalCoverage.length, function() {
             let t = '';
             topicalCoverage.forEach(function(tc) {
-                // coverage_percent już obliczony w backendzie; fallback na ręczne liczenie
-                let pct = tc.coverage_percent;
-                if (pct === undefined || pct === null || isNaN(pct)) {
-                    const total = typeof tc.total_sources === 'number' ? tc.total_sources : 1;
-                    const covered = typeof tc.covered_by === 'number' ? tc.covered_by : 0;
-                    pct = total > 0 ? Math.round((covered / total) * 100) : 0;
-                }
-                pct = Math.min(100, Math.max(0, pct || 0));
+                const total = tc.total_sources || 1;
+                const covered = tc.covered_by || 0;
+                const pct = Math.round((covered / total) * 100);
                 const color = pct >= 70 ? 'var(--gn)' : pct >= 40 ? 'var(--yl)' : 'var(--rd)';
-                const label = tc.covered_by_label || (tc.covered_by + '/' + (tc.total_sources || '?'));
                 t += '<div class="coverage-row">';
                 t += '<div class="coverage-label">' + esc(tc.subtopic || '') + '</div>';
                 t += '<div class="coverage-track"><div class="coverage-fill" style="width:' + pct + '%;background:' + color + '"></div></div>';
-                t += '<div class="coverage-pct" style="color:' + color + '">' + pct + '% <span style="font-size:10px;opacity:.6">' + esc(label) + '</span></div>';
+                t += '<div class="coverage-pct" style="color:' + color + '">' + pct + '%</div>';
                 t += '</div>';
             });
             return t;
@@ -916,25 +871,46 @@ function renderS1(data) {
         });
     }
 
-    // ── 13. H2 Kandydaci (input dla Claude Step 3) ──
-    const allCands = (mustHave.length + highPriority.length + allCandidates.length);
-    if (allCands > 0) {
-        html += buildSection('h2plan', 'Kandydaci H2 → input dla Claude', allCands, function() {
-            let t = '<table class="s1-table"><thead><tr><th>H2</th><th>Score</th><th>Źródło</th></tr></thead><tbody>';
-            const allRows = [...mustHave, ...highPriority, ...allCandidates];
-            allRows.forEach(function(h) {
-                const score = h.score !== undefined ? h.score : 0;
-                const color = score >= 0.65 ? 'var(--gn)' : score >= 0.40 ? 'var(--yl)' : 'var(--mg)';
-                const srcLabel = {competitor: 'konkur.', paa_unanswered: 'PAA', content_gap: 'luka', depth_missing: 'głębokość'}[h.source] || h.source || '';
-                t += '<tr>';
-                t += '<td>' + esc(h.text || '') + '</td>';
-                t += '<td style="color:' + color + ';font-weight:600">' + score.toFixed(2) + '</td>';
-                t += '<td style="color:var(--mg);font-size:11px">' + esc(srcLabel) + '</td>';
-                t += '</tr>';
-            });
-            t += '</tbody></table>';
+    // ── 13. H2 Plan ──
+    if (mustHave.length > 0 || highPriority.length > 0 || allCandidates.length > 0) {
+        html += buildSection('h2plan', 'Plan H2 (scored)', mustHave.length + highPriority.length, function() {
+            let t = '';
+
+            if (mustHave.length > 0) {
+                t += '<div style="margin-bottom:10px"><div style="font-weight:600;color:var(--gn);font-size:12px;margin-bottom:6px">Must Have</div>';
+                mustHave.forEach(function(h, i) {
+                    t += '<div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--b1)">';
+                    t += '<span style="color:var(--gn);font-weight:700;font-size:14px;width:24px">' + (i + 1) + '</span>';
+                    t += '<span style="color:var(--white);font-size:13px;flex:1">' + esc(h.text || '') + '</span>';
+                    if (h.score !== undefined) t += '<span style="color:var(--gn);font-size:12px;font-weight:600">' + h.score.toFixed(1) + '</span>';
+                    t += '</div>';
+                });
+                t += '</div>';
+            }
+
+            if (highPriority.length > 0) {
+                t += '<div style="margin-bottom:10px"><div style="font-weight:600;color:var(--yl);font-size:12px;margin-bottom:6px">High Priority</div>';
+                highPriority.forEach(function(h, i) {
+                    t += '<div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--b1)">';
+                    t += '<span style="color:var(--yl);font-weight:700;font-size:14px;width:24px">' + (i + 1) + '</span>';
+                    t += '<span style="color:var(--white);font-size:13px;flex:1">' + esc(h.text || '') + '</span>';
+                    if (h.score !== undefined) t += '<span style="color:var(--yl);font-size:12px;font-weight:600">' + h.score.toFixed(1) + '</span>';
+                    t += '</div>';
+                });
+                t += '</div>';
+            }
+
+            if (allCandidates.length > 0) {
+                t += '<div><div style="font-weight:600;color:var(--mg);font-size:12px;margin-bottom:6px">All Candidates (' + allCandidates.length + ')</div>';
+                t += '<table class="s1-table"><thead><tr><th>H2</th><th>Score</th></tr></thead><tbody>';
+                allCandidates.forEach(function(h) {
+                    t += '<tr><td>' + esc(h.text || '') + '</td><td style="color:var(--orange)">' + (h.score !== undefined ? h.score.toFixed(1) : '-') + '</td></tr>';
+                });
+                t += '</tbody></table></div>';
+            }
+
             return t;
-        }, false);
+        }, true);
     }
 
     c.innerHTML = html || '<div class="empty-state"><div class="icon">&#128269;</div><p>Brak danych S1</p></div>';
@@ -951,63 +927,141 @@ function buildSection(id, title, count, contentFn, openByDefault) {
         '</div>';
 }
 
-// ── Coverage Check Render ──
-function renderCoverage(cov) {
-    const stats = cov.stats || {};
-    const pct = stats.coverage_pct || 0;
-    const color = pct >= 70 ? 'var(--gn)' : pct >= 40 ? 'var(--yl)' : 'var(--rd)';
+// ── Pre-Batch / Dane wsadowe Render ──
+function renderPreBatch(preBatchMap, inputVars, promptLog) {
+    const c = document.getElementById('prebatchContent');
+    let html = '';
+    const batches = (preBatchMap || {}).batches || {};
+    const batchKeys = Object.keys(batches);
 
-    let html = '<div style="margin-bottom:16px">';
-    html += '<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:12px">';
-    html += '<span style="color:var(--gn);font-size:13px">✅ OK: ' + (stats.ok||0) + '</span>';
-    html += '<span style="color:var(--rd);font-size:13px">✗ Brakuje: ' + (stats.missing||0) + '</span>';
-    html += '<span style="color:var(--yl);font-size:13px">↑ Za mało: ' + (stats.under||0) + '</span>';
-    html += '<span style="color:var(--mg);font-size:13px">↓ Za dużo: ' + (stats.over||0) + '</span>';
-    html += '<span style="color:' + color + ';font-weight:700;font-size:13px">Pokrycie: ' + pct + '%</span>';
+    // 1. Global overview
+    const hardFacts = preBatchMap.hard_facts || [];
+    const paaBez = preBatchMap.paa_bez_odpowiedzi || [];
+    const brands = preBatchMap.related_searches_brands || [];
+
+    html += '<div class="stats-grid">';
+    html += '<div class="stat-card"><div class="stat-val">' + batchKeys.length + '</div><div class="stat-lbl">Batche</div></div>';
+    html += '<div class="stat-card"><div class="stat-val">' + hardFacts.length + '</div><div class="stat-lbl">Hard facts</div></div>';
+    html += '<div class="stat-card"><div class="stat-val">' + paaBez.length + '</div><div class="stat-lbl">PAA bez odpowiedzi</div></div>';
+    html += '<div class="stat-card"><div class="stat-val">' + brands.length + '</div><div class="stat-lbl">Marki</div></div>';
     html += '</div>';
 
-    if ((cov.missing||[]).length > 0) {
-        html += '<div style="margin-bottom:10px"><div style="font-weight:600;color:var(--rd);font-size:12px;margin-bottom:6px">✗ BRAKUJĄCE frazy (0 użyć w artykule)</div>';
-        html += '<table class="s1-table"><thead><tr><th>Fraza</th><th>Min</th><th>Max</th><th>Waga S1</th></tr></thead><tbody>';
-        (cov.missing||[]).forEach(function(t) {
-            html += '<tr><td style="color:var(--rd)">' + esc(t.term||'') + '</td><td>' + t.min + '</td><td>' + t.max + '</td><td style="color:var(--mg)">' + (t.weight||0).toFixed(2) + '</td></tr>';
-        });
-        html += '</tbody></table></div>';
+    // 2. Hard facts
+    if (hardFacts.length > 0) {
+        html += buildSection('pb-hardfacts', 'Hard Facts (priorytetowe)', hardFacts.length, function() {
+            return '<ul style="margin:0;padding-left:16px">' + hardFacts.map(function(f) {
+                return '<li style="color:var(--lg);margin-bottom:4px">' + esc(String(f)) + '</li>';
+            }).join('') + '</ul>';
+        }, true);
     }
 
-    if ((cov.under||[]).length > 0) {
-        html += '<div style="margin-bottom:10px"><div style="font-weight:600;color:var(--yl);font-size:12px;margin-bottom:6px">↑ ZA MAŁO (poniżej min)</div>';
-        html += '<table class="s1-table"><thead><tr><th>Fraza</th><th>Masz</th><th>Min</th><th>Max</th></tr></thead><tbody>';
-        (cov.under||[]).forEach(function(t) {
-            html += '<tr><td style="color:var(--yl)">' + esc(t.term||'') + '</td><td>' + t.actual + '</td><td>' + t.min + '</td><td>' + t.max + '</td></tr>';
-        });
-        html += '</tbody></table></div>';
+    // 3. Per-batch breakdown
+    if (batchKeys.length > 0) {
+        html += buildSection('pb-batches', 'Mapa rozmieszczeń na batche', batchKeys.length, function() {
+            let t = '';
+            batchKeys.forEach(function(key) {
+                const b = batches[key];
+                const label = key === 'batch_0' ? 'Batch 0 — H1 + wstep' :
+                              key === 'batch_faq' ? 'Batch FAQ' :
+                              key.replace('batch_', 'Batch ') + ' — sekcja H2';
+                t += '<div style="margin-bottom:12px;padding:8px;background:var(--bg);border-radius:6px;border:1px solid var(--br)">';
+                t += '<div style="font-weight:600;color:var(--white);margin-bottom:6px">' + esc(label) + '</div>';
+
+                if (b.encje_obowiazkowe && b.encje_obowiazkowe.length > 0) {
+                    t += '<div style="margin-bottom:4px"><span style="color:var(--mg);font-size:11px">Encje:</span> ';
+                    t += b.encje_obowiazkowe.map(function(e) {
+                        return '<span style="background:var(--br);padding:1px 6px;border-radius:3px;margin-right:4px;font-size:11px;color:var(--cyan)">' + esc(String(e)) + '</span>';
+                    }).join('');
+                    t += '</div>';
+                }
+                if (b.ngramy && b.ngramy.length > 0) {
+                    t += '<div style="margin-bottom:4px"><span style="color:var(--mg);font-size:11px">N-gramy:</span> ';
+                    t += '<span style="font-size:11px;color:var(--lg)">' + b.ngramy.map(function(n) { return esc(String(n)); }).join(', ') + '</span></div>';
+                }
+                if (b.peryfrazy && b.peryfrazy.length > 0) {
+                    t += '<div style="margin-bottom:4px"><span style="color:var(--mg);font-size:11px">Peryfrazy:</span> ';
+                    t += '<span style="font-size:11px;color:var(--orange)">' + b.peryfrazy.map(function(p) { return esc(String(p)); }).join(', ') + '</span></div>';
+                }
+                if (b.lancuchy && b.lancuchy.length > 0) {
+                    t += '<div style="margin-bottom:4px"><span style="color:var(--mg);font-size:11px">Lancuchy kauzalne:</span> ';
+                    t += '<span style="font-size:11px;color:var(--lg)">' + b.lancuchy.length + ' lancuchow</span></div>';
+                }
+                if (b.hard_facts_do_uzycia && b.hard_facts_do_uzycia.length > 0) {
+                    t += '<div style="margin-bottom:4px"><span style="color:var(--mg);font-size:11px">Hard facts:</span> ';
+                    t += '<span style="font-size:11px;color:var(--yl)">' + b.hard_facts_do_uzycia.map(function(f) { return esc(String(f)); }).join('; ') + '</span></div>';
+                }
+                // FAQ-specific
+                if (b.pytania_priorytetowe && b.pytania_priorytetowe.length > 0) {
+                    t += '<div style="margin-bottom:4px"><span style="color:var(--mg);font-size:11px">Pytania priorytetowe:</span> ';
+                    t += '<span style="font-size:11px;color:var(--cyan)">' + b.pytania_priorytetowe.map(function(q) { return esc(String(q)); }).join('; ') + '</span></div>';
+                }
+                if (b.pytania_standardowe && b.pytania_standardowe.length > 0) {
+                    t += '<div style="margin-bottom:4px"><span style="color:var(--mg);font-size:11px">Pytania standardowe:</span> ';
+                    t += '<span style="font-size:11px;color:var(--lg)">' + b.pytania_standardowe.map(function(q) { return esc(String(q)); }).join('; ') + '</span></div>';
+                }
+
+                t += '</div>';
+            });
+            return t;
+        }, true);
     }
 
-    if ((cov.over||[]).length > 0) {
-        html += '<div><div style="font-weight:600;color:var(--mg);font-size:12px;margin-bottom:6px">↓ ZA DUŻO (powyżej max)</div>';
-        html += '<table class="s1-table"><thead><tr><th>Fraza</th><th>Masz</th><th>Max</th></tr></thead><tbody>';
-        (cov.over||[]).forEach(function(t) {
-            html += '<tr><td>' + esc(t.term||'') + '</td><td style="color:var(--rd)">' + t.actual + '</td><td>' + t.max + '</td></tr>';
+    // 4. Input variables snapshot
+    if (inputVars && Object.keys(inputVars).length > 0) {
+        const varKeys = Object.keys(inputVars).filter(function(k) { return !k.startsWith('_'); });
+        html += buildSection('pb-vars', 'Zmienne wejsciowe (template)', varKeys.length, function() {
+            let t = '<table class="s1-table"><thead><tr><th>Zmienna</th><th>Wartosc</th></tr></thead><tbody>';
+            varKeys.sort().forEach(function(k) {
+                const v = String(inputVars[k] || '');
+                const short = v.length > 120 ? v.substring(0, 120) + '...' : v;
+                t += '<tr><td style="color:var(--cyan);white-space:nowrap;font-size:11px">' + esc(k) + '</td>';
+                t += '<td style="font-size:11px;word-break:break-all;max-width:400px">' + esc(short) + '</td></tr>';
+            });
+            t += '</tbody></table>';
+            return t;
         });
-        html += '</tbody></table></div>';
     }
 
-    html += '</div>';
+    // 5. Prompt log
+    if (promptLog && promptLog.length > 0) {
+        html += buildSection('pb-prompts', 'Log promptow LLM', promptLog.length, function() {
+            let t = '';
+            promptLog.forEach(function(p, i) {
+                t += '<div style="margin-bottom:10px;padding:8px;background:var(--bg);border-radius:6px;border:1px solid var(--br)">';
+                t += '<div style="font-weight:600;color:var(--cyan);font-size:12px;margin-bottom:4px">' + (i + 1) + '. ' + esc(p.label || 'unknown') + '</div>';
+                if (p.tokens_out) t += '<div style="font-size:11px;color:var(--mg);margin-bottom:4px">Tokens out: ~' + p.tokens_out + '</div>';
+                t += '<details style="margin-bottom:4px"><summary style="cursor:pointer;font-size:11px;color:var(--orange)">System prompt</summary>';
+                t += '<pre style="font-size:10px;color:var(--lg);white-space:pre-wrap;max-height:200px;overflow:auto;margin:4px 0;padding:6px;background:var(--card);border-radius:4px">' + esc(p.system || '') + '</pre></details>';
+                t += '<details><summary style="cursor:pointer;font-size:11px;color:var(--orange)">User prompt</summary>';
+                t += '<pre style="font-size:10px;color:var(--lg);white-space:pre-wrap;max-height:200px;overflow:auto;margin:4px 0;padding:6px;background:var(--card);border-radius:4px">' + esc(p.user || '') + '</pre></details>';
+                t += '</div>';
+            });
+            return t;
+        });
+    }
 
-    // Inject into article tab below article preview
-    const existing = document.getElementById('coverageReport');
-    if (existing) { existing.innerHTML = html; return; }
-    const wrap = document.createElement('div');
-    wrap.id = 'coverageReport';
-    wrap.style.cssText = 'margin-top:16px;padding:12px;background:var(--s2);border-radius:var(--rs);border:1px solid var(--b1)';
-    const title = document.createElement('div');
-    title.style.cssText = 'font-weight:700;font-size:13px;color:var(--white);margin-bottom:10px';
-    title.textContent = 'Coverage ngrams S1';
-    wrap.appendChild(title);
-    wrap.innerHTML = '<div style="font-weight:700;font-size:13px;color:var(--white);margin-bottom:10px">Coverage ngrams S1</div>' + html;
-    const preview = document.getElementById('articlePreview');
-    if (preview && preview.parentNode) preview.parentNode.insertBefore(wrap, preview.nextSibling);
+    // 6. PAA & brands
+    if (paaBez.length > 0 || brands.length > 0) {
+        html += buildSection('pb-paa-brands', 'PAA bez odpowiedzi + Marki', paaBez.length + brands.length, function() {
+            let t = '';
+            if (paaBez.length > 0) {
+                t += '<div style="margin-bottom:8px"><div style="font-weight:600;color:var(--white);font-size:12px;margin-bottom:4px">PAA bez odpowiedzi</div>';
+                t += '<ul style="margin:0;padding-left:16px">' + paaBez.map(function(q) {
+                    return '<li style="color:var(--lg);font-size:11px;margin-bottom:2px">' + esc(String(q)) + '</li>';
+                }).join('') + '</ul></div>';
+            }
+            if (brands.length > 0) {
+                t += '<div><div style="font-weight:600;color:var(--white);font-size:12px;margin-bottom:4px">Marki z Related Searches</div>';
+                t += brands.map(function(b) {
+                    return '<span style="background:var(--br);padding:2px 8px;border-radius:3px;margin:2px;display:inline-block;font-size:11px;color:var(--orange)">' + esc(String(b)) + '</span>';
+                }).join(' ');
+                t += '</div>';
+            }
+            return t;
+        });
+    }
+
+    c.innerHTML = html || '<div class="empty-state"><div class="icon">&#128202;</div><p>Brak danych Pre-Batch</p></div>';
 }
 
 // ── Article Render ──
@@ -1131,7 +1185,7 @@ async function startWorkflow() {
         const h2Val = document.getElementById('h2Input').value.trim();
         const kwVal = document.getElementById('kwInput').value.trim();
         if (h2Val) body.h2_structure = h2Val.split('\n').filter(function(l) { return l.trim(); });
-        if (kwVal) body.nw_terms = kwVal.split('\n').filter(function(l) { return l.trim(); });
+        if (kwVal) body.extra_keywords = kwVal.split('\n').filter(function(l) { return l.trim(); });
 
         const startResp = await fetch('/api/start', {
             method: 'POST',
@@ -1167,6 +1221,10 @@ async function startWorkflow() {
                     setStepDone(d.step, d.data || {});
                     const wc = d.data ? d.data.word_count : null;
                     log('Step ' + d.step + ' done' + (wc ? ' (' + wc + ' slow)' : ''), 'ok');
+                    // Render pre-batch tab when pre-batch data arrives
+                    if (d.data && d.data.pre_batch_map) {
+                        renderPreBatch(d.data.pre_batch_map, d.data.input_variables || {}, []);
+                    }
                 }
                 else if (d.event === 'article_assembled') {
                     if (d.data && d.data.full_text) {
@@ -1181,10 +1239,10 @@ async function startWorkflow() {
                         if (d.data.validation_score !== undefined || d.data.validation) {
                             showValidation(d.data.validation || { score: d.data.validation_score });
                         }
-                        // Render coverage check
-                        if (d.data.coverage) renderCoverage(d.data.coverage);
-                        // Render prompt log and input variables
-                        renderPrompts(d.data);
+                        // Update pre-batch tab with full data including prompt log
+                        if (d.data.pre_batch_map) {
+                            renderPreBatch(d.data.pre_batch_map, d.data.input_variables || {}, d.data.prompt_log || []);
+                        }
                     }
                     // Mark all remaining steps as done
                     Object.keys(pipelineSteps).forEach(function(k) {
@@ -1295,159 +1353,6 @@ function downloadText(text, filename, mime) {
 
 function copyArticle() {
     navigator.clipboard.writeText(articleText).then(function() { log('Skopiowano do schowka', 'ok'); });
-}
-
-// ── Prompt / Input Data Viewer ──
-function toggleCard(id) {
-    const body = document.getElementById('body-' + id);
-    const ico = document.getElementById('ico-' + id);
-    if (!body) return;
-    const hidden = body.style.display === 'none';
-    body.style.display = hidden ? '' : 'none';
-    if (ico) ico.textContent = hidden ? '▼' : '▶';
-}
-
-// ── CEL badge colors ──
-const CEL_COLORS = {
-    'definicja':    '#4a90d9',
-    'mechanizm':    '#e67e22',
-    'konsekwencje': '#c0392b',
-    'procedura':    '#27ae60',
-    'porównanie':   '#8e44ad',
-    'porada':       '#16a085',
-};
-
-function renderH2Plan(data) {
-    const plan = data.h2_plan;
-    if (!plan || !plan.length) return;
-
-    document.getElementById('h2planEmpty').style.display = 'none';
-    const container = document.getElementById('h2planContent');
-    container.style.display = 'block';
-
-    // If plan is just strings (fallback), render simple list
-    const isRich = plan.length && typeof plan[0] === 'object';
-
-    let html = '<div style="display:flex;flex-direction:column;gap:10px">';
-
-    plan.forEach(function(item, i) {
-        const heading  = isRich ? (item.heading || '') : item;
-        const cel      = isRich ? (item.cel || '') : '';
-        const encje    = isRich ? (item.encje_do_pokrycia || []) : [];
-        const paa      = isRich ? (item.paa_odpowiada_na || []) : [];
-        const lancuch  = isRich ? (item.lancuch_kauzalny || null) : null;
-        const uzasadnienie = isRich ? (item.uzasadnienie || '') : '';
-        const score    = isRich ? (item.score_bazowy || null) : null;
-
-        const celColor = CEL_COLORS[cel] || 'var(--mg)';
-
-        html += '<div style="background:var(--s1);border:1px solid var(--b1);border-radius:8px;padding:14px 16px">';
-
-        // Row 1: number + heading + cel badge + score
-        html += '<div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">';
-        html += '<div style="width:24px;height:24px;border-radius:50%;background:var(--orange);color:#000;font-weight:700;font-size:12px;display:flex;align-items:center;justify-content:center;flex-shrink:0">' + (i+1) + '</div>';
-        html += '<div style="font-size:14px;font-weight:600;color:var(--white);flex:1">' + esc(heading) + '</div>';
-        if (cel) html += '<div style="padding:2px 8px;border-radius:12px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;background:' + celColor + '22;color:' + celColor + ';border:1px solid ' + celColor + '44">' + esc(cel) + '</div>';
-        if (score !== null) html += '<div style="font-size:11px;color:var(--mg);white-space:nowrap">score: <span style="color:var(--orange)">' + score.toFixed ? score.toFixed(2) : score + '</span></div>';
-        html += '</div>';
-
-        // Row 2: meta chips
-        if (encje.length || paa.length || lancuch) {
-            html += '<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:' + (uzasadnienie ? '8' : '0') + 'px">';
-            encje.forEach(function(e) {
-                html += '<span style="background:rgba(74,144,217,.12);border:1px solid rgba(74,144,217,.3);color:#4a90d9;border-radius:4px;padding:1px 6px;font-size:11px">🏷 ' + esc(e) + '</span>';
-            });
-            paa.forEach(function(q) {
-                html += '<span style="background:rgba(39,174,96,.1);border:1px solid rgba(39,174,96,.25);color:#27ae60;border-radius:4px;padding:1px 6px;font-size:11px">❓ ' + esc(q) + '</span>';
-            });
-            if (lancuch) {
-                html += '<span style="background:rgba(230,126,34,.1);border:1px solid rgba(230,126,34,.25);color:#e67e22;border-radius:4px;padding:1px 6px;font-size:11px">⛓ ' + esc(lancuch) + '</span>';
-            }
-            html += '</div>';
-        }
-
-        // Row 3: uzasadnienie
-        if (uzasadnienie) {
-            html += '<div style="font-size:11px;color:var(--mg);font-style:italic;border-top:1px solid var(--b1);padding-top:6px">' + esc(uzasadnienie) + '</div>';
-        }
-
-        html += '</div>';
-    });
-
-    html += '</div>';
-
-    // PAA to FAQ notice
-    if (data.paa_do_faq && data.paa_do_faq.length) {
-        html += '<div style="margin-top:16px;background:var(--s1);border:1px solid var(--b1);border-radius:8px;padding:12px 16px">';
-        html += '<div style="font-size:11px;font-weight:700;color:var(--mg);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">❓ PAA → FAQ (' + data.paa_do_faq.length + ' pytań)</div>';
-        html += '<div style="display:flex;flex-wrap:wrap;gap:6px">';
-        data.paa_do_faq.forEach(function(q) {
-            html += '<span style="background:rgba(255,255,255,.04);border:1px solid var(--b1);color:var(--lg);border-radius:4px;padding:2px 8px;font-size:11px">' + esc(q) + '</span>';
-        });
-        html += '</div></div>';
-    }
-
-    container.innerHTML = html;
-}
-
-function renderPrompts(data) {
-    const vars = data.input_variables || {};
-    const preBatch = data.pre_batch_map || null;
-    const promptLog = data.prompt_log || [];
-
-    document.getElementById('promptsEmpty').style.display = 'none';
-    document.getElementById('promptsContent').style.display = 'flex';
-
-    // Variables
-    const varEl = document.getElementById('variablesContent');
-    let vHtml = '<table class="s1-table"><thead><tr><th>Zmienna</th><th>Wartość</th></tr></thead><tbody>';
-    const skipKeys = ['PLAN_H2','NGRAMY_Z_LIMITAMI','LANCUCHY_KAUZALNE','RELACJE_KAUZALNE'];
-    Object.entries(vars).forEach(function([k, v]) {
-        if (skipKeys.includes(k)) return;
-        const val = typeof v === 'string' && v.length > 200 ? v.slice(0, 200) + '…' : String(v);
-        vHtml += '<tr><td style="color:var(--orange);font-family:JetBrains Mono,monospace;font-size:11px;white-space:nowrap">' + esc(k) + '</td><td style="font-size:12px;color:var(--lg)">' + esc(val) + '</td></tr>';
-    });
-    vHtml += '</tbody></table>';
-    varEl.innerHTML = vHtml;
-
-    // Pre-batch
-    if (preBatch) {
-        document.getElementById('preBatchContent').textContent = JSON.stringify(preBatch, null, 2);
-    } else {
-        document.getElementById('preBatchContent').textContent = 'Brak danych pre-batch';
-    }
-
-    // Prompt log
-    const container = document.getElementById('promptLogContainer');
-    container.innerHTML = '';
-    if (promptLog.length === 0) {
-        container.innerHTML = '<div style="color:var(--mg);font-size:12px">Brak zalogowanych promptów</div>';
-        return;
-    }
-    promptLog.forEach(function(p, i) {
-        const id = 'prompt_' + i;
-        const card = document.createElement('div');
-        card.className = 'card';
-        card.innerHTML = `
-            <div class="card-title" style="cursor:pointer;display:flex;justify-content:space-between" onclick="toggleCard('${id}')">
-                <span>&#129302; ${esc(p.label || 'Prompt ' + (i+1))} <small style="color:var(--mg)">(${p.max_tokens} max tokens)</small></span>
-                <span id="ico-${id}">&#9660;</span>
-            </div>
-            <div id="body-${id}" class="card-body" style="display:none">
-                <div style="margin-bottom:10px">
-                    <div style="font-size:11px;font-weight:600;color:var(--orange);margin-bottom:4px">SYSTEM PROMPT</div>
-                    <pre style="font-family:'JetBrains Mono',monospace;font-size:11px;white-space:pre-wrap;color:var(--lg);background:var(--b1);padding:10px;border-radius:6px;max-height:300px;overflow-y:auto">${esc(p.system || '')}</pre>
-                </div>
-                <div>
-                    <div style="font-size:11px;font-weight:600;color:var(--gn);margin-bottom:4px">USER PROMPT</div>
-                    <pre style="font-family:'JetBrains Mono',monospace;font-size:11px;white-space:pre-wrap;color:var(--lg);background:var(--b1);padding:10px;border-radius:6px;max-height:400px;overflow-y:auto">${esc(p.user || '')}</pre>
-                </div>
-                <div style="margin-top:8px;text-align:right">
-                    <button onclick="navigator.clipboard.writeText(${JSON.stringify(JSON.stringify({system: p.system, user: p.user}))})" style="background:transparent;border:1px solid var(--b3);color:var(--lg);font-size:11px;padding:4px 10px;border-radius:4px;cursor:pointer">Kopiuj JSON</button>
-                </div>
-            </div>`;
-        container.appendChild(card);
-    });
 }
 
 // ── Init ──

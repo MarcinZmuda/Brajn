@@ -251,6 +251,7 @@
             <div class="tabs">
                 <div class="tab on" data-tab="workflow" onclick="switchTab('workflow')">Workflow</div>
                 <div class="tab" data-tab="s1" onclick="switchTab('s1')">Analiza S1</div>
+                <div class="tab" data-tab="prebatch" onclick="switchTab('prebatch')">Dane wsadowe</div>
                 <div class="tab" data-tab="article" onclick="switchTab('article')">Artykul</div>
                 <div class="tab" data-tab="optional" onclick="switchTab('optional')">Moduly opcjonalne</div>
             </div>
@@ -284,6 +285,16 @@
                     <div class="empty-state">
                         <div class="icon">&#128269;</div>
                         <p>Uruchom workflow, aby zobaczyc analize S1</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ═══ PRE-BATCH / DANE WSADOWE TAB ═══ -->
+            <div class="tab-content" id="tab-prebatch">
+                <div id="prebatchContent">
+                    <div class="empty-state">
+                        <div class="icon">&#128202;</div>
+                        <p>Dane wsadowe pojawia sie po kroku Pre-Batch</p>
                     </div>
                 </div>
             </div>
@@ -916,6 +927,143 @@ function buildSection(id, title, count, contentFn, openByDefault) {
         '</div>';
 }
 
+// ── Pre-Batch / Dane wsadowe Render ──
+function renderPreBatch(preBatchMap, inputVars, promptLog) {
+    const c = document.getElementById('prebatchContent');
+    let html = '';
+    const batches = (preBatchMap || {}).batches || {};
+    const batchKeys = Object.keys(batches);
+
+    // 1. Global overview
+    const hardFacts = preBatchMap.hard_facts || [];
+    const paaBez = preBatchMap.paa_bez_odpowiedzi || [];
+    const brands = preBatchMap.related_searches_brands || [];
+
+    html += '<div class="stats-grid">';
+    html += '<div class="stat-card"><div class="stat-val">' + batchKeys.length + '</div><div class="stat-lbl">Batche</div></div>';
+    html += '<div class="stat-card"><div class="stat-val">' + hardFacts.length + '</div><div class="stat-lbl">Hard facts</div></div>';
+    html += '<div class="stat-card"><div class="stat-val">' + paaBez.length + '</div><div class="stat-lbl">PAA bez odpowiedzi</div></div>';
+    html += '<div class="stat-card"><div class="stat-val">' + brands.length + '</div><div class="stat-lbl">Marki</div></div>';
+    html += '</div>';
+
+    // 2. Hard facts
+    if (hardFacts.length > 0) {
+        html += buildSection('pb-hardfacts', 'Hard Facts (priorytetowe)', hardFacts.length, function() {
+            return '<ul style="margin:0;padding-left:16px">' + hardFacts.map(function(f) {
+                return '<li style="color:var(--lg);margin-bottom:4px">' + esc(String(f)) + '</li>';
+            }).join('') + '</ul>';
+        }, true);
+    }
+
+    // 3. Per-batch breakdown
+    if (batchKeys.length > 0) {
+        html += buildSection('pb-batches', 'Mapa rozmieszczeń na batche', batchKeys.length, function() {
+            let t = '';
+            batchKeys.forEach(function(key) {
+                const b = batches[key];
+                const label = key === 'batch_0' ? 'Batch 0 — H1 + wstep' :
+                              key === 'batch_faq' ? 'Batch FAQ' :
+                              key.replace('batch_', 'Batch ') + ' — sekcja H2';
+                t += '<div style="margin-bottom:12px;padding:8px;background:var(--bg);border-radius:6px;border:1px solid var(--br)">';
+                t += '<div style="font-weight:600;color:var(--white);margin-bottom:6px">' + esc(label) + '</div>';
+
+                if (b.encje_obowiazkowe && b.encje_obowiazkowe.length > 0) {
+                    t += '<div style="margin-bottom:4px"><span style="color:var(--mg);font-size:11px">Encje:</span> ';
+                    t += b.encje_obowiazkowe.map(function(e) {
+                        return '<span style="background:var(--br);padding:1px 6px;border-radius:3px;margin-right:4px;font-size:11px;color:var(--cyan)">' + esc(String(e)) + '</span>';
+                    }).join('');
+                    t += '</div>';
+                }
+                if (b.ngramy && b.ngramy.length > 0) {
+                    t += '<div style="margin-bottom:4px"><span style="color:var(--mg);font-size:11px">N-gramy:</span> ';
+                    t += '<span style="font-size:11px;color:var(--lg)">' + b.ngramy.map(function(n) { return esc(String(n)); }).join(', ') + '</span></div>';
+                }
+                if (b.peryfrazy && b.peryfrazy.length > 0) {
+                    t += '<div style="margin-bottom:4px"><span style="color:var(--mg);font-size:11px">Peryfrazy:</span> ';
+                    t += '<span style="font-size:11px;color:var(--orange)">' + b.peryfrazy.map(function(p) { return esc(String(p)); }).join(', ') + '</span></div>';
+                }
+                if (b.lancuchy && b.lancuchy.length > 0) {
+                    t += '<div style="margin-bottom:4px"><span style="color:var(--mg);font-size:11px">Lancuchy kauzalne:</span> ';
+                    t += '<span style="font-size:11px;color:var(--lg)">' + b.lancuchy.length + ' lancuchow</span></div>';
+                }
+                if (b.hard_facts_do_uzycia && b.hard_facts_do_uzycia.length > 0) {
+                    t += '<div style="margin-bottom:4px"><span style="color:var(--mg);font-size:11px">Hard facts:</span> ';
+                    t += '<span style="font-size:11px;color:var(--yl)">' + b.hard_facts_do_uzycia.map(function(f) { return esc(String(f)); }).join('; ') + '</span></div>';
+                }
+                // FAQ-specific
+                if (b.pytania_priorytetowe && b.pytania_priorytetowe.length > 0) {
+                    t += '<div style="margin-bottom:4px"><span style="color:var(--mg);font-size:11px">Pytania priorytetowe:</span> ';
+                    t += '<span style="font-size:11px;color:var(--cyan)">' + b.pytania_priorytetowe.map(function(q) { return esc(String(q)); }).join('; ') + '</span></div>';
+                }
+                if (b.pytania_standardowe && b.pytania_standardowe.length > 0) {
+                    t += '<div style="margin-bottom:4px"><span style="color:var(--mg);font-size:11px">Pytania standardowe:</span> ';
+                    t += '<span style="font-size:11px;color:var(--lg)">' + b.pytania_standardowe.map(function(q) { return esc(String(q)); }).join('; ') + '</span></div>';
+                }
+
+                t += '</div>';
+            });
+            return t;
+        }, true);
+    }
+
+    // 4. Input variables snapshot
+    if (inputVars && Object.keys(inputVars).length > 0) {
+        const varKeys = Object.keys(inputVars).filter(function(k) { return !k.startsWith('_'); });
+        html += buildSection('pb-vars', 'Zmienne wejsciowe (template)', varKeys.length, function() {
+            let t = '<table class="s1-table"><thead><tr><th>Zmienna</th><th>Wartosc</th></tr></thead><tbody>';
+            varKeys.sort().forEach(function(k) {
+                const v = String(inputVars[k] || '');
+                const short = v.length > 120 ? v.substring(0, 120) + '...' : v;
+                t += '<tr><td style="color:var(--cyan);white-space:nowrap;font-size:11px">' + esc(k) + '</td>';
+                t += '<td style="font-size:11px;word-break:break-all;max-width:400px">' + esc(short) + '</td></tr>';
+            });
+            t += '</tbody></table>';
+            return t;
+        });
+    }
+
+    // 5. Prompt log
+    if (promptLog && promptLog.length > 0) {
+        html += buildSection('pb-prompts', 'Log promptow LLM', promptLog.length, function() {
+            let t = '';
+            promptLog.forEach(function(p, i) {
+                t += '<div style="margin-bottom:10px;padding:8px;background:var(--bg);border-radius:6px;border:1px solid var(--br)">';
+                t += '<div style="font-weight:600;color:var(--cyan);font-size:12px;margin-bottom:4px">' + (i + 1) + '. ' + esc(p.label || 'unknown') + '</div>';
+                if (p.tokens_out) t += '<div style="font-size:11px;color:var(--mg);margin-bottom:4px">Tokens out: ~' + p.tokens_out + '</div>';
+                t += '<details style="margin-bottom:4px"><summary style="cursor:pointer;font-size:11px;color:var(--orange)">System prompt</summary>';
+                t += '<pre style="font-size:10px;color:var(--lg);white-space:pre-wrap;max-height:200px;overflow:auto;margin:4px 0;padding:6px;background:var(--card);border-radius:4px">' + esc(p.system || '') + '</pre></details>';
+                t += '<details><summary style="cursor:pointer;font-size:11px;color:var(--orange)">User prompt</summary>';
+                t += '<pre style="font-size:10px;color:var(--lg);white-space:pre-wrap;max-height:200px;overflow:auto;margin:4px 0;padding:6px;background:var(--card);border-radius:4px">' + esc(p.user || '') + '</pre></details>';
+                t += '</div>';
+            });
+            return t;
+        });
+    }
+
+    // 6. PAA & brands
+    if (paaBez.length > 0 || brands.length > 0) {
+        html += buildSection('pb-paa-brands', 'PAA bez odpowiedzi + Marki', paaBez.length + brands.length, function() {
+            let t = '';
+            if (paaBez.length > 0) {
+                t += '<div style="margin-bottom:8px"><div style="font-weight:600;color:var(--white);font-size:12px;margin-bottom:4px">PAA bez odpowiedzi</div>';
+                t += '<ul style="margin:0;padding-left:16px">' + paaBez.map(function(q) {
+                    return '<li style="color:var(--lg);font-size:11px;margin-bottom:2px">' + esc(String(q)) + '</li>';
+                }).join('') + '</ul></div>';
+            }
+            if (brands.length > 0) {
+                t += '<div><div style="font-weight:600;color:var(--white);font-size:12px;margin-bottom:4px">Marki z Related Searches</div>';
+                t += brands.map(function(b) {
+                    return '<span style="background:var(--br);padding:2px 8px;border-radius:3px;margin:2px;display:inline-block;font-size:11px;color:var(--orange)">' + esc(String(b)) + '</span>';
+                }).join(' ');
+                t += '</div>';
+            }
+            return t;
+        });
+    }
+
+    c.innerHTML = html || '<div class="empty-state"><div class="icon">&#128202;</div><p>Brak danych Pre-Batch</p></div>';
+}
+
 // ── Article Render ──
 function renderArticle(text) {
     articleText = text;
@@ -1073,6 +1221,10 @@ async function startWorkflow() {
                     setStepDone(d.step, d.data || {});
                     const wc = d.data ? d.data.word_count : null;
                     log('Step ' + d.step + ' done' + (wc ? ' (' + wc + ' slow)' : ''), 'ok');
+                    // Render pre-batch tab when pre-batch data arrives
+                    if (d.data && d.data.pre_batch_map) {
+                        renderPreBatch(d.data.pre_batch_map, d.data.input_variables || {}, []);
+                    }
                 }
                 else if (d.event === 'article_assembled') {
                     if (d.data && d.data.full_text) {
@@ -1086,6 +1238,10 @@ async function startWorkflow() {
                         if (d.data.full_text) renderArticle(d.data.full_text);
                         if (d.data.validation_score !== undefined || d.data.validation) {
                             showValidation(d.data.validation || { score: d.data.validation_score });
+                        }
+                        // Update pre-batch tab with full data including prompt log
+                        if (d.data.pre_batch_map) {
+                            renderPreBatch(d.data.pre_batch_map, d.data.input_variables || {}, d.data.prompt_log || []);
                         }
                     }
                     // Mark all remaining steps as done
