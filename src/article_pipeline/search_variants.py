@@ -25,10 +25,19 @@ Zwróć TYLKO JSON:
   "peryfrazy": ["alternatywne sposoby wyrażenia tego samego", "min 5 peryfraz"],
   "warianty_potoczne": ["jak ludzie mówią nieformalnie", "min 3 warianty"],
   "warianty_formalne": ["oficjalna/profesjonalna terminologia", "min 3 warianty"],
-  "anglicyzmy": ["terminy angielskie używane w polskim kontekście"]
+  "anglicyzmy": ["terminy angielskie używane w polskim kontekście"],
+  "mention_forms": {{
+    "named": "pełna nazwa encji głównej, np. '{main_keyword}'",
+    "nominal": ["formy nominalne — peryfrazy rzeczownikowe zastępujące encję, np. 'ten sposób odżywiania', 'ta metoda', 'omawiany preparat'"],
+    "pronominal": ["formy zaimkowe — zaimki wskazujące, dzierżawcze i osobowe zastępujące encję, np. 'on', 'ona', 'to', 'jego', 'jej', 'tego typu rozwiązanie'"]
+  }}
 }}
 
-Wygeneruj naturalne polskie warianty. Peryfrazy to najważniejsze — muszą brzmieć naturalnie w artykule publicystycznym."""
+WAŻNE:
+- mention_forms.named = kanoniczny zapis encji głównej (pełna nazwa, jak w tytule)
+- mention_forms.nominal = 3-5 peryfraz rzeczownikowych (bez powtarzania pełnej nazwy), np. "ten zabieg", "omawiana dieta"
+- mention_forms.pronominal = 2-4 formy zaimkowe pasujące gramatycznie do encji głównej (rodzaj gramatyczny!)
+- Peryfrazy to najważniejsze — muszą brzmieć naturalnie w artykule publicystycznym."""
 
     try:
         response, _ = claude_call(
@@ -48,6 +57,7 @@ Wygeneruj naturalne polskie warianty. Peryfrazy to najważniejsze — muszą brz
                 "warianty_potoczne": data.get("warianty_potoczne", []),
                 "warianty_formalne": data.get("warianty_formalne", []),
                 "anglicyzmy": data.get("anglicyzmy", []),
+                "mention_forms": data.get("mention_forms", {}),
             }
 
     except Exception as e:
@@ -64,4 +74,9 @@ def _deterministic_fallback(keyword: str) -> dict:
         "warianty_potoczne": [],
         "warianty_formalne": [],
         "anglicyzmy": [],
+        "mention_forms": {
+            "named": keyword,
+            "nominal": [],
+            "pronominal": [],
+        },
     }

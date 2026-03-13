@@ -42,6 +42,12 @@ Nigdy nie używaj tych fraz (ani ich wariantów):
 1. ENCJA GŁÓWNA („{{ENCJA_GLOWNA}}"): musi pojawić się w H1, w pierwszym akapicie intro, i w co najmniej 2 sekcjach H2 (odmieniana przez przypadki). Nie wciskaj na siłę w każdą sekcję.
 2. ENCJE KRYTYCZNE (lista w <critical_entities>): staraj się użyć każdą w artykule, ale tylko tam gdzie pasuje do kontekstu. Odmieniaj przez przypadki — nie wstawiaj w mianowniku na siłę.
 3. Nie klastruj encji — rozłóż je równomiernie po artykule.
+4. KONSYSTENCJA NAZEWNICTWA: Przy pierwszym użyciu encji podaj pełną nazwę (z akronimem lub wariantem w nawiasie, jeśli istnieje). Następnie konsekwentnie używaj JEDNEJ formy skróconej. Nie mieszaj pisowni tej samej encji (np. „dieta keto" vs „dieta ketogeniczna" — wybierz jedną po pierwszym użyciu pełnej nazwy).
+5. ROTACJA WZMIANEK (Named / Nominal / Pronominal):
+   - Named = pełna nazwa encji (np. „{{ENCJA_GLOWNA}}") — używaj przy pierwszym użyciu w sekcji i w kluczowych momentach.
+   - Nominal = peryfraza rzeczownikowa z <mention_forms> (np. „ten sposób odżywiania", „omawiany zabieg") — używaj w środku akapitu.
+   - Pronominal = zaimek z <mention_forms> (np. „on/ona/to", „jego/jej") — używaj w następnym zdaniu po Named/Nominal.
+   Wzorzec: pierwsze zdanie sekcji = Named, środek akapitu = Nominal, kolejne zdanie = Pronominal. Potem rotuj.
 </entity_rules>
 
 <ngram_rules>
@@ -70,6 +76,13 @@ Liczby, kwoty, progi i fakty z <hard_facts> mają ABSOLUTNY PRIORYTET nad Twoją
 - Jeśli fakt z <hard_facts> koliduje z Twoją wiedzą — użyj wersji z <hard_facts>.
 - Wplataj je naturalnie w tekst, nie wypisuj jako luźne liczby.
 </hard_facts_rules>
+
+<factographic_rules>
+Trójki faktograficzne z <factographic_triplets> to fakty wyekstrahowane z tekstów konkurencji (SPO: podmiot→czasownik→dopełnienie, EAV: encja→atrybut→wartość).
+- Wplataj je naturalnie w tekst, nie wypisuj jako luźne stwierdzenia.
+- Mają niższy priorytet niż <hard_facts>, ale wyższy niż Twoja wiedza ogólna.
+- Jeśli trójka pokrywa się z hard_fact — użyj wersji z hard_facts.
+</factographic_rules>
 
 <formatting_rules>
 1. LISTY PUNKTOWE: tylko dla instrukcji krok po kroku, procedur, wymagań formalnych. Nie używaj list do opisywania abstrakcyjnych koncepcji.
@@ -123,6 +136,14 @@ FAQ:
 <colloquial_variants>
 {{WARIANTY_POTOCZNE_JSON}}
 </colloquial_variants>
+
+<mention_forms>
+{{MENTION_FORMS_JSON}}
+</mention_forms>
+
+<factographic_triplets>
+{{TROJKI_FAKTOGRAFICZNE_JSON}}
+</factographic_triplets>
 
 </data>
 
@@ -496,6 +517,8 @@ Nigdy nie używaj (ani wariantów):
 Encja główna „{{ENCJA_GLOWNA}}" — wpleć jeśli naturalnie pasuje do sekcji. Nie każda sekcja musi ją zawierać.
 Encje sekcji (z <section_entities>): staraj się wpleść te, które naturalnie pasują do tematu. Odmieniaj przez przypadki.
 Jeśli któraś encja nie pasuje do kontekstu — pomiń ją. Lepiej 0 niż wciśnięta na siłę.
+ROTACJA WZMIANEK: Nie powtarzaj encji głównej pełną nazwą w każdym zdaniu.
+Używaj form z <mention_forms>: Named (pełna nazwa) → Nominal (peryfraza) → Pronominal (zaimek), potem rotuj.
 </entity_rules>
 
 <ngram_rules>
@@ -558,6 +581,14 @@ Wplataj naturalnie w tekst, nie wypisuj jako luźne liczby.
 {{PERYFRAZY_BATCH_N_JSON}}
 Staraj się wpleść naturalnie kilka z powyższych, jeśli pasują do kontekstu. Jeśli lista pusta — ignoruj.
 </section_periphrases>
+
+<mention_forms>
+{{MENTION_FORMS_JSON}}
+</mention_forms>
+
+<section_factographic_triplets>
+{{TROJKI_BATCH_N_JSON}}
+</section_factographic_triplets>
 
 </data>
 

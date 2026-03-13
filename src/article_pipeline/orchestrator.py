@@ -231,6 +231,9 @@ class ArticleOrchestrator:
         self.variables["WARIANTY_FORMALNE"] = json.dumps(
             self.search_variants_result.get("warianty_formalne", []), ensure_ascii=False
         )
+        mention_forms = self.search_variants_result.get("mention_forms", {})
+        self.variables["MENTION_FORMS_JSON"] = json.dumps(mention_forms, ensure_ascii=False)
+        self.variables["_mention_forms"] = mention_forms
         return self.search_variants_result
 
     def run_h2_plan(self) -> list:
@@ -430,6 +433,16 @@ class ArticleOrchestrator:
         self.pre_batch_map = parsed
         return parsed
 
+    def _get_factographic_for_batch(self, batch_n: int) -> list:
+        """Return factographic triplets assigned to a specific batch by round-robin."""
+        all_facto = self.variables.get("_factographic_triplets") or []
+        if not all_facto:
+            return []
+        h2_count = len(self.variables.get("_h2_plan_list", [])) or 1
+        total_batches = h2_count + 2  # intro + H2s + FAQ
+        # Round-robin: assign triplets to batches
+        return [t for i, t in enumerate(all_facto) if i % total_batches == batch_n]
+
     def _generate_fallback_pre_batch(self) -> dict:
         """Generate minimal pre-batch map when LLM fails."""
         h2_plan = self.variables.get("_h2_plan_list", [])
@@ -573,6 +586,7 @@ class ArticleOrchestrator:
             "ENCJE_BATCH_N_JSON": json.dumps(merged_entities, ensure_ascii=False),
             "NGRAMY_BATCH_N": ngrams_formatted,
             "TRIPLETS_BATCH_N_JSON": json.dumps(batch_data.get("lancuchy", []), ensure_ascii=False),
+            "TROJKI_BATCH_N_JSON": json.dumps(self._get_factographic_for_batch(n), ensure_ascii=False),
             "HARD_FACTS_BATCH_N_JSON": json.dumps(merged_hf, ensure_ascii=False),
             "PERYFRAZY_BATCH_N_JSON": json.dumps(periphrases, ensure_ascii=False),
             "DLUGOSC_SEKCJI": str(section_length),

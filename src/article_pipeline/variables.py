@@ -39,8 +39,11 @@ def extract_global_variables(s1_data: dict, target_length: int = 2000) -> dict:
     )
     h2_patterns = _clean_h2_list(h2_patterns_raw)[:15]
 
-    peryfrazy, warianty_potoczne, warianty_formalne, anglicyzmy = \
+    peryfrazy, warianty_potoczne, warianty_formalne, anglicyzmy, mention_forms = \
         _extract_search_variants(s1_data)
+
+    factographic = s1_data.get("factographic_triplets") or {}
+    facto_all = (factographic.get("spo") or []) + (factographic.get("eav") or [])
 
     # ── AI Overview & Featured Snippet text ──
     ai_overview_text = _extract_ai_overview_text(serp)
@@ -74,6 +77,8 @@ def extract_global_variables(s1_data: dict, target_length: int = 2000) -> dict:
         "WARIANTY_POTOCZNE":        json.dumps(warianty_potoczne, ensure_ascii=False),
         "WARIANTY_FORMALNE":        json.dumps(warianty_formalne, ensure_ascii=False),
         "ANGLICYZMY":               json.dumps(anglicyzmy, ensure_ascii=False),
+        "MENTION_FORMS_JSON":       json.dumps(mention_forms, ensure_ascii=False),
+        "TROJKI_FAKTOGRAFICZNE_JSON": json.dumps(facto_all[:15], ensure_ascii=False),
         "HARD_FACTS_ALL":           json.dumps(hard_facts, ensure_ascii=False),
         "PAA_BEZ_ODPOWIEDZI":       json.dumps(paa_unanswered, ensure_ascii=False),
         "PAA_STANDARDOWE":          json.dumps(paa_standard, ensure_ascii=False),
@@ -104,6 +109,8 @@ def extract_global_variables(s1_data: dict, target_length: int = 2000) -> dict:
         "_ngrams_full":             ngrams + extended,
         "_concept_entities":        concept_entities,
         "_entity_placement":        entity_placement,
+        "_mention_forms":            mention_forms,
+        "_factographic_triplets":    facto_all,
         "_chains":                  chains,
         "_relations":               relations,
         "_h2_patterns":             h2_patterns,
@@ -380,7 +387,8 @@ def _extract_hard_facts(s1_data, serp):
 def _extract_search_variants(s1_data):
     v = s1_data.get("search_variants") or {}
     return (v.get("peryfrazy") or [], v.get("warianty_potoczne") or [],
-            v.get("warianty_formalne") or [], v.get("anglicyzmy") or [])
+            v.get("warianty_formalne") or [], v.get("anglicyzmy") or [],
+            v.get("mention_forms") or {})
 
 
 def _extract_brands_from_related(related_searches):
