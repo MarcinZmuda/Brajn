@@ -503,13 +503,17 @@ class KeywordTracker:
 
     def __init__(self, main_keyword: str, ngrams: list = None,
                  extended_ngrams: list = None, total_batches: int = 6,
-                 project_id: Optional[str] = None):
+                 project_id: Optional[str] = None,
+                 target_length: int = 0,
+                 section_length: int = 0):
         self.main_keyword = main_keyword.strip()
         self._main_kw_lower = self.main_keyword.lower()
         self._main_kw_pattern = re.compile(
             r'\b' + re.escape(self._main_kw_lower) + r'\b'
         )
         self.total_batches = max(2, total_batches)
+        self.target_length = target_length  # Real article target from orchestrator
+        self.section_length = section_length  # Real per-H2 word count
 
         # Dynamic main keyword max based on article length
         self._kw_max = _compute_main_kw_max(self.total_batches)
@@ -538,10 +542,10 @@ class KeywordTracker:
         extended = filter_garbage_ngrams(extended)
 
         # Step 0b: Clamp rigid freq_min/freq_max limits from S1
-        # Estimate article length from total_batches (~250 words/batch)
-        est_article_length = self.total_batches * 250
-        basic = clamp_freq_limits(basic, est_article_length)
-        extended = clamp_freq_limits(extended, est_article_length)
+        # Use real target_length from orchestrator, fallback to estimate
+        article_length = self.target_length if self.target_length > 0 else self.total_batches * 250
+        basic = clamp_freq_limits(basic, article_length)
+        extended = clamp_freq_limits(extended, article_length)
 
         # Step 1: Remove subsumed short phrases
         basic = remove_subsumed_basic(basic, self.main_keyword)
@@ -586,7 +590,12 @@ class KeywordTracker:
         - EXTENDED: max(2, freq_max) — same as before
         - Topic phrases: ×1.3 (mild boost, not ×2 which doubled stuffing)
         - Stores original S1 freq_max as 'nw_target' for overshoot detection
+        - Density ceiling: no phrase should exceed 1 use per 150 words of article
         """
+        # Density ceiling: max reasonable uses based on real article length
+        article_len = self.target_length if self.target_length > 0 else self.total_batches * 250
+        density_ceiling = max(4, article_len // 150)  # ~13 for 2000w, ~23 for 3500w
+
         for ng in ngrams:
             text = (ng.get("ngram") or ng.get("text") or "").strip()
             if not text:
@@ -612,6 +621,12 @@ class KeywordTracker:
                 global_max = max(2, target_max)
                 if is_topic:
                     global_max = int(global_max * 1.3)  # Was ×1.5
+
+            # Cap by density ceiling — no phrase should dominate the article
+            if global_max > density_ceiling:
+                print(f"[BUDGET] density_cap: {text} {global_max} → {density_ceiling} "
+                      f"(article={article_len}w, max 1/{150}w)")
+                global_max = density_ceiling
 
             key = text.lower()
             if key not in self._global_phrase_budget:
