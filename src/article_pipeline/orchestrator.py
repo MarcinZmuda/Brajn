@@ -25,7 +25,7 @@ from src.article_pipeline.prompts import (
     FORBIDDEN_PHRASES,
     DISCLAIMERS,
 )
-from src.article_pipeline.variables import extract_global_variables, fill_template
+from src.article_pipeline.variables import extract_global_variables, fill_template, format_ngrams_for_section
 from src.article_pipeline.validators import (
     validate_batch,
     validate_global,
@@ -92,6 +92,8 @@ class ArticleOrchestrator:
         self.validation_result = None
         self.ymyl_result = None
         self.search_variants_result = None
+        # Stateful n-gram budget tracking across batches
+        self._keyword_state = self._init_keyword_state()
         # Logging for "Dane wsadowe" panel tab
         self.prompt_log = []   # [{label, system, user}]
         self.input_variables = {}  # snapshot after all variables are ready
@@ -114,6 +116,68 @@ class ArticleOrchestrator:
                 "tokens_out": len(text.split()),
             })
         return text
+
+    def _init_keyword_state(self) -> dict:
+        """Build initial keyword budget from ngrams with freq_min/freq_max."""
+        ngrams = self.variables.get("_ngrams", [])
+        state = {}
+        for ng in ngrams:
+            text = (ng.get("ngram") or ng.get("text") or "").strip()
+            if not text:
+                continue
+            fmin = ng.get("freq_min", 0)
+            fmax = ng.get("freq_max", 0)
+            weight = ng.get("weight", 0)
+            if fmin == fmax == 0:
+                fmin = max(1, int(weight * 5))
+                fmax = max(fmin, int(weight * 10))
+            state[text] = {"min": fmin, "max": fmax}
+        return state
+
+    def _update_keyword_budget(self, batch_text: str, label: str = "") -> dict:
+        """Run compliance report on batch text and update remaining budget.
+        Returns the compliance report for logging."""
+        if not self._keyword_state or not batch_text:
+            return {}
+        try:
+            from src.s1.generate_compliance_report import generate_compliance_report
+            result = generate_compliance_report(batch_text, self._keyword_state)
+            report = result.get("compliance_report", [])
+            self._keyword_state = result.get("new_keyword_state", self._keyword_state)
+
+            # Log over-budget phrases
+            over = [r for r in report if r.get("status") == "OVER"]
+            if over:
+                phrases = ", ".join(f"{r['keyword']}({r['actual_in_batch']})" for r in over)
+                print(f"[ORCHESTRATOR] {label}: OVER-BUDGET phrases: {phrases}")
+            return result
+        except Exception as e:
+            print(f"[ORCHESTRATOR] Compliance check failed: {e}")
+            return {}
+
+    def _format_ngrams_from_budget(self, ngram_names: list) -> str:
+        """Format ngrams for prompt using REMAINING budget from keyword_state."""
+        lines = []
+        for name in ngram_names:
+            if not name or not isinstance(name, str):
+                continue
+            budget = self._keyword_state.get(name.strip())
+            if not budget:
+                # Try case-insensitive lookup
+                for k, v in self._keyword_state.items():
+                    if k.lower() == name.strip().lower():
+                        budget = v
+                        break
+            if budget:
+                remaining_max = budget.get("max", 0)
+                remaining_min = budget.get("min", 0)
+                if remaining_max <= 0:
+                    lines.append(f"{name} · STOP — budżet wyczerpany, nie używaj")
+                else:
+                    lines.append(f"{name} · zostało {remaining_min}-{remaining_max}x (nie przekraczaj {remaining_max})")
+            else:
+                lines.append(f"{name} · max 1-2x")
+        return "\n".join(lines)
 
     def _calc_faq_count(self, target_h2: int, must_cover: list,
                         paa_priority: list, paa_standard: list,
@@ -484,6 +548,9 @@ class ArticleOrchestrator:
         self.batch_texts.append(text)
         self.bridge_sentences.append(_get_last_sentence(text))
 
+        # Update n-gram budget after batch 0
+        self._update_keyword_budget(text, label="batch_0")
+
         # Extract H1 from batch_0 output for use in ARTICLE_WRITER_PROMPT
         h1_match = re.match(r"#\s+(.+)", text.strip())
         if h1_match:
@@ -521,6 +588,10 @@ class ArticleOrchestrator:
         pre_batch_hf = batch_data.get("hard_facts_do_uzycia", [])
         merged_hf = list(dict.fromkeys(pre_batch_hf + section_hard_facts))
 
+        # Format ngrams with REMAINING budget from compliance tracker
+        assigned_ngrams = batch_data.get("ngramy", [])
+        ngrams_formatted = self._format_ngrams_from_budget(assigned_ngrams)
+
         batch_vars = {
             **self.variables,
             "N": str(n),
@@ -529,7 +600,7 @@ class ArticleOrchestrator:
             "OSTATNIE_ZDANIE_POPRZEDNIEGO_BATCHA": self.bridge_sentences[-1] if self.bridge_sentences else "",
             "POPRZEDNIE_ZDANIA_POMOSTOWE": json.dumps(self.bridge_sentences, ensure_ascii=False),
             "ENCJE_BATCH_N": json.dumps(merged_entities, ensure_ascii=False),
-            "NGRAMY_BATCH_N": "\n".join(batch_data.get("ngramy", [])),
+            "NGRAMY_BATCH_N": ngrams_formatted,
             "TRIPLETS_BATCH_N": json.dumps(batch_data.get("lancuchy", []), ensure_ascii=False),
             "HARD_FACTS_BATCH_N": json.dumps(merged_hf, ensure_ascii=False),
             "PERYFRAZY_BATCH_N": json.dumps(
@@ -557,6 +628,10 @@ class ArticleOrchestrator:
 
         self.batch_texts.append(text)
         self.bridge_sentences.append(_get_last_sentence(text))
+
+        # Update n-gram budget after each H2 section
+        self._update_keyword_budget(text, label=f"batch_{n}")
+
         return text
 
     def run_batch_faq(self) -> str:

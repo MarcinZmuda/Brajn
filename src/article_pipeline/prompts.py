@@ -48,9 +48,14 @@ Nigdy nie używaj tych fraz (ani ich wariantów):
 <ngram_rules>
 Każdy n-gram z <ngrams> ma limit [min, max] wystąpień w CAŁYM artykule.
 - min = minimalna liczba wystąpień (obowiązkowa).
-- max = maksymalna (nie przekraczaj).
-- Odmiana fleksyjna liczy się jako wystąpienie.
+- max = maksymalna — TWARDA GRANICA. Przekroczenie max = nadoptymalizacja i kara od Google.
+- Odmiana fleksyjna liczy się jako wystąpienie (np. „mebli", „meblom", „meble" = to samo).
+- Parafrazy i synonimy bliskie też się liczą — „zabezpieczyć meble" ≈ „zabezpieczanie mebli".
 - Rozkładaj n-gramy równomiernie — nie koncentruj w jednej sekcji.
+- Jeśli n-gram nie pasuje naturalnie do kontekstu zdania — POMIŃ GO. Naturalność > SEO.
+
+ANTY-STUFFING: Pisz dla czytelnika, nie dla robota. Jeśli zdanie brzmi jak lista słów kluczowych
+— przepisz je. Czytelnik nie powinien czuć, że tekst jest zoptymalizowany.
 </ngram_rules>
 
 <causal_rules>
@@ -486,7 +491,11 @@ Encja główna „{{ENCJA_GLOWNA}}" — obowiązkowa w każdej sekcji.
 
 <ngrams>
 {{NGRAMY_BATCH_N}}
-Liczba po „·" = dopuszczalny zakres użyć w CAŁYM artykule. Nie przekraczaj górnej granicy.
+
+TWARDE LIMITY — nie przekraczaj wartości „max Nx" podanej przy każdym n-gramie.
+To jest budżet DLA TEJ SEKCJI. Jeśli n-gram ma „max 1x" — użyj go najwyżej 1 raz.
+Jeśli n-gram nie pasuje do kontekstu sekcji — POMIŃ GO. Lepiej 0 niż wciśnięty na siłę.
+Nie parafrazuj n-gramu żeby ominąć limit — warianty też się liczą.
 </ngrams>
 
 <causal_triplets>
@@ -515,6 +524,14 @@ Marki z Related Searches: {{MARKI_Z_RELATED_SEARCHES}}
 Frazy transakcyjne: {{FRAZY_TRANSAKCYJNE}}
 Marki wpleć w naturalnym kontekście porównawczym — nigdy jako rekomendację.
 </transactional>
+
+<anti_stuffing>
+PRIORYTET: naturalność tekstu > nasycenie frazami SEO.
+- Nie powtarzaj tego samego n-gramu w sąsiednich zdaniach.
+- Nie zaczynaj dwóch akapitów od tej samej frazy kluczowej.
+- Jeśli zdanie brzmi sztucznie z powodu wciśniętego n-gramu — usuń go.
+- Lepiej mieć 0 użyć frazy niż 1 użycie, które psuje tekst.
+</anti_stuffing>
 
 <bridge>
 Zakończ sekcję zdaniem pomostowym prowadzącym do kolejnej sekcji.
