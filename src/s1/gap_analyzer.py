@@ -101,10 +101,14 @@ def analyze_content_gaps(
     # Przygotuj dane
     combined_competitor = " ".join(t.lower() for t in competitor_texts if t)[:500000]
     
-    # Normalizuj H2 konkurencji
+    # Normalizuj H2 konkurencji (h2 may be str or dict with "text" key)
     competitor_h2_normalized = set()
     competitor_h2_words = []
     for h2 in competitor_h2s:
+        if isinstance(h2, dict):
+            h2 = h2.get("text") or h2.get("pattern") or ""
+        if not isinstance(h2, str) or not h2:
+            continue
         norm = _normalize_h2(h2)
         if norm:
             competitor_h2_normalized.add(norm)
@@ -159,9 +163,11 @@ def analyze_content_gaps(
     # 2. SUBTOPIC MISSING
     # ═══════════════════════════════════════
     for search in related_searches:
-        if not search or len(search) < 5:
+        if isinstance(search, dict):
+            search = search.get("query") or search.get("text") or ""
+        if not search or not isinstance(search, str) or len(search) < 5:
             continue
-            
+
         search_words = _extract_content_words(search)
         if len(search_words) < 2:
             continue
@@ -190,7 +196,11 @@ def analyze_content_gaps(
     # 3. DEPTH MISSING — płytkie sekcje
     # ═══════════════════════════════════════
     # Policz H2 pojawiające się u wielu konkurentów
-    h2_counter = Counter(_normalize_h2(h) for h in competitor_h2s if h.strip())
+    h2_counter = Counter(
+        _normalize_h2(h.get("text") or h.get("pattern") or "" if isinstance(h, dict) else h)
+        for h in competitor_h2s
+        if (h.get("text") or "" if isinstance(h, dict) else h).strip()
+    )
     common_h2s = [h2 for h2, count in h2_counter.items() if count >= 3 and h2]
 
     for h2_norm in common_h2s:
@@ -311,8 +321,9 @@ def _estimate_section_lengths(
 def _find_original_h2(h2_list: List[str], normalized: str) -> Optional[str]:
     """Znajduje oryginalny (nienormalizowany) H2."""
     for h2 in h2_list:
-        if _normalize_h2(h2) == normalized:
-            return h2
+        text = h2.get("text") or h2.get("pattern") or "" if isinstance(h2, dict) else h2
+        if text and _normalize_h2(text) == normalized:
+            return text
     return None
 
 

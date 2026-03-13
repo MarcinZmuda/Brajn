@@ -61,6 +61,8 @@ class ArticleStartRequest(BaseModel):
     engine: str = Field(default="claude", description="LLM engine: claude or openai")
     model: Optional[str] = Field(default=None, description="Model override")
     project_id: Optional[str] = Field(default=None)
+    h2_structure: Optional[list[str]] = Field(default=None, description="Custom H2 structure")
+    nw_terms: Optional[list[str]] = Field(default=None, description="NW/Surfer terms for coverage analysis")
 
 
 class ArticleEditRequest(BaseModel):
@@ -137,7 +139,7 @@ async def start_workflow(req: ArticleStartRequest):
             raise HTTPException(status_code=400, detail=s1_data["error"])
 
     model = req.model or "claude-sonnet-4-6"
-    orchestrator = ArticleOrchestrator(s1_data=s1_data, engine=req.engine, model=model)
+    orchestrator = ArticleOrchestrator(s1_data=s1_data, engine=req.engine, model=model, nw_terms=req.nw_terms)
 
     with _jobs_lock:
         _jobs[job_id] = {
