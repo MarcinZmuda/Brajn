@@ -95,13 +95,19 @@ class ArticleOrchestrator:
         self.ymyl_result = None
         self.search_variants_result = None
         # Keyword budget tracker (in-memory + Firestore write-only for panel)
+        h2_count = len(self.variables.get("_h2_plan_list", []))
+        _target_length = int(self.variables.get("_target_length", 0) or 0)
+        _intro_words = int(self.variables.get("DLUGOSC_INTRO", "180") or 180)
+        _section_length = max(200, (_target_length - _intro_words) // max(1, h2_count)) if _target_length and h2_count else 0
         self.keyword_tracker = KeywordTracker(
             main_keyword=self.variables.get("HASLO_GLOWNE", ""),
             ngrams=self.variables.get("_ngrams", []),
             extended_ngrams=(self.variables.get("_ngrams_full", [])
                              [len(self.variables.get("_ngrams", [])):]),  # extended only
-            total_batches=max(3, len(self.variables.get("_h2_plan_list", [])) + 2),
+            total_batches=max(3, h2_count + 2),
             project_id=project_id,
+            target_length=_target_length,
+            section_length=_section_length,
         )
         # Logging for "Dane wsadowe" panel tab
         self.prompt_log = []   # [{label, system, user}]
