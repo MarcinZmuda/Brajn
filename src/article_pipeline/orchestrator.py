@@ -454,20 +454,19 @@ class ArticleOrchestrator:
 
     def run_batch_0(self) -> str:
         """
-        Step 2: Generate H1 + intro paragraph.
+        Step 2: Generate H1 + intro paragraph (v2 — AI Overview strategy).
         """
         pre = self.pre_batch_map or {}
         batch_0_data = (pre.get("batches") or {}).get("batch_0", {})
 
+        # Hard facts for batch 0: from pre-batch allocation or global
+        hard_facts_b0 = batch_0_data.get("hard_facts_do_uzycia", [])
+        if not hard_facts_b0:
+            hard_facts_b0 = _hard_facts_values(self.variables.get("_hard_facts", [])[:5])
+
         batch_vars = {
             **self.variables,
-            "ENCJE_BATCH_0": json.dumps(batch_0_data.get("encje_obowiazkowe", []), ensure_ascii=False),
-            "PERYFRAZY_BATCH_0": json.dumps(
-                batch_0_data.get("peryfrazy", []) or
-                json.loads(self.variables.get("PERYFRAZY", "[]"))[:3],
-                ensure_ascii=False
-            ),
-            "HARD_FACTS_BATCH_0": json.dumps(batch_0_data.get("hard_facts_do_uzycia", []), ensure_ascii=False),
+            "HARD_FACTS_BATCH_0_JSON": json.dumps(hard_facts_b0, ensure_ascii=False),
         }
 
         system = fill_template(SYSTEM_PROMPT, batch_vars)
