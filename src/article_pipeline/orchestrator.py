@@ -537,7 +537,7 @@ class ArticleOrchestrator:
 
         # Format ngrams with remaining budget from in-memory tracker
         assigned_ngrams = batch_data.get("ngramy", [])
-        ngrams_formatted = self.keyword_tracker.format_phrases_for_prompt(assigned_ngrams)
+        ngrams_formatted = self.keyword_tracker.format_phrases_for_prompt(assigned_ngrams, h2_heading=h2_heading)
 
         batch_vars = {
             **self.variables,
