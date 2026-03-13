@@ -1476,6 +1476,11 @@ async function startWorkflow() {
                         if (d.data.pre_batch_map) {
                             renderPreBatch(d.data.pre_batch_map, d.data.input_variables || {}, d.data.prompt_log || []);
                         }
+                        // Store entity compliance for annotation view
+                        if (d.data.entity_compliance) {
+                            window._entityCompliance = d.data.entity_compliance;
+                            renderAnnotationView();
+                        }
                     }
                     // Mark all remaining steps as done
                     Object.keys(pipelineSteps).forEach(function(k) {

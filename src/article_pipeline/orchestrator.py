@@ -35,6 +35,7 @@ from src.article_pipeline.validators import (
 )
 from src.article_pipeline.ymyl_detector import detect_ymyl, get_disclaimer_text
 from src.article_pipeline.search_variants import generate_search_variants
+from src.article_pipeline.entity_seo_compliance import run_entity_seo_compliance
 
 
 def _safe_json_parse(text: str) -> dict | None:
@@ -749,6 +750,30 @@ class ArticleOrchestrator:
         print(f"[COVERAGE] {result['stats']}")
         return result
 
+    def run_entity_compliance(self) -> dict:
+        """
+        Run Entity SEO Compliance analysis on the assembled article.
+        Zero LLM calls — purely local analysis.
+        Reuses coverage_result for ngram_budget if available.
+        """
+        if not self.full_article:
+            return {"error": "No article to analyze", "overall_score": 0}
+
+        # Try to load spaCy for subject_ratio analysis
+        nlp = None
+        try:
+            from src.common.nlp_singleton import get_nlp
+            nlp = get_nlp()
+        except Exception:
+            print("[COMPLIANCE] spaCy not available — skipping subject_ratio")
+
+        return run_entity_seo_compliance(
+            article_text=self.full_article,
+            s1_data=self._s1_full,
+            ngram_coverage=getattr(self, "coverage_result", None),
+            nlp=nlp,
+        )
+
     def run_post_processing(self) -> dict:
         """
         Step 5: Validate the full article.
@@ -885,6 +910,9 @@ class ArticleOrchestrator:
         # Coverage check — bez LLM, czysto lokalne
         coverage = self.run_coverage_check()
 
+        # Entity SEO Compliance — czysto lokalne
+        entity_compliance = self.run_entity_compliance()
+
         yield {"event": "step_done", "step": total_steps, "data": {"validation": validation}}
 
         yield {"event": "complete", "data": {
@@ -896,6 +924,7 @@ class ArticleOrchestrator:
             "input_variables": self.input_variables,
             "pre_batch_map": self.pre_batch_map or {},
             "coverage": coverage,
+            "entity_compliance": entity_compliance,
             "keyword_budget": self.keyword_tracker.get_summary(),
             "keyword_reports": self.keyword_tracker.batch_reports,
         }}
