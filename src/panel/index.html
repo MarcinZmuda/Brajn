@@ -188,6 +188,72 @@
         .empty-state{text-align:center;padding:48px 24px;color:var(--mg)}
         .empty-state .icon{font-size:40px;margin-bottom:12px;opacity:.3}
         .empty-state p{font-size:14px}
+
+        /* ── Entity SEO Compliance ── */
+        .esc-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:12px}
+        .esc-card{background:var(--s2);border:1px solid var(--b1);border-radius:var(--r);padding:16px;overflow:hidden}
+        .esc-card-title{font-size:13px;font-weight:700;color:var(--white);margin-bottom:12px;display:flex;align-items:center;gap:8px}
+        .esc-card-title .esc-icon{font-size:15px;opacity:.7}
+
+        /* Score ring */
+        .esc-ring-wrap{display:flex;align-items:center;gap:20px;margin-bottom:16px}
+        .esc-ring{position:relative;width:120px;height:120px;flex-shrink:0}
+        .esc-ring svg{transform:rotate(-90deg)}
+        .esc-ring-label{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center}
+        .esc-ring-val{font-size:28px;font-weight:800;line-height:1}
+        .esc-ring-sub{font-size:10px;color:var(--mg);text-transform:uppercase;letter-spacing:.5px;margin-top:2px}
+        .esc-ring-stats{flex:1}
+        .esc-ring-stat{display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid var(--b1);font-size:12px}
+        .esc-ring-stat:last-child{border-bottom:none}
+        .esc-ring-stat .lbl-s{color:var(--lg)}
+        .esc-ring-stat .val-s{font-weight:600}
+
+        /* Ratio bar (subject ratio) */
+        .esc-ratio{margin-bottom:8px}
+        .esc-ratio-header{display:flex;justify-content:space-between;font-size:12px;margin-bottom:4px}
+        .esc-ratio-track{height:20px;background:var(--b1);border-radius:4px;overflow:hidden;position:relative;display:flex}
+        .esc-ratio-seg{height:100%;transition:width .4s}
+        .esc-ratio-marker{position:absolute;top:-2px;bottom:-2px;width:2px;background:var(--white);border-radius:1px}
+        .esc-ratio-legend{display:flex;gap:12px;margin-top:6px;font-size:10px;color:var(--mg)}
+        .esc-ratio-dot{display:inline-block;width:8px;height:8px;border-radius:2px;margin-right:4px;vertical-align:middle}
+
+        /* Status dot list */
+        .esc-status-list{list-style:none;padding:0;margin:0}
+        .esc-status-item{display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--b1);font-size:12px}
+        .esc-status-item:last-child{border-bottom:none}
+        .esc-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+        .esc-dot.pass{background:var(--gn)}.esc-dot.warn{background:var(--yl)}.esc-dot.fail{background:var(--rd)}.esc-dot.info{background:var(--bl)}
+        .esc-status-label{flex:1;color:var(--lg)}
+        .esc-status-val{font-weight:600;font-size:11px}
+
+        /* Mention variety pills */
+        .esc-mention-group{margin-bottom:10px}
+        .esc-mention-type{font-size:10px;font-weight:700;color:var(--mg);text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px}
+        .esc-mention-pills{display:flex;flex-wrap:wrap;gap:4px}
+        .esc-pill{padding:3px 10px;border-radius:99px;font-size:11px;border:1px solid}
+        .esc-pill.named{background:rgba(251,169,44,.08);color:var(--orange);border-color:rgba(251,169,44,.15)}
+        .esc-pill.nominal{background:rgba(96,165,250,.08);color:var(--bl);border-color:rgba(96,165,250,.15)}
+        .esc-pill.pronominal{background:rgba(52,211,153,.08);color:var(--gn);border-color:rgba(52,211,153,.15)}
+
+        /* SPO triple rows */
+        .esc-spo{display:flex;align-items:center;gap:6px;padding:6px 0;border-bottom:1px solid var(--b1);font-size:12px;flex-wrap:wrap}
+        .esc-spo:last-child{border-bottom:none}
+        .esc-spo-s{color:var(--white);font-weight:500}.esc-spo-p{color:var(--orange)}.esc-spo-o{color:var(--lg)}
+        .esc-spo-arrow{color:var(--mg);font-size:10px}
+
+        /* Ngram budget rows */
+        .esc-ngram-row{display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid var(--b1);font-size:12px}
+        .esc-ngram-row:last-child{border-bottom:none}
+        .esc-ngram-phrase{flex:1;color:var(--white);font-weight:400;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+        .esc-ngram-freq{width:60px;text-align:center;font-family:'JetBrains Mono',monospace;font-size:11px}
+        .esc-ngram-status{padding:2px 8px;border-radius:4px;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.3px;flex-shrink:0}
+        .esc-ngram-status.must{background:var(--rdd);color:var(--rd)}
+        .esc-ngram-status.nice{background:var(--yld);color:var(--yl)}
+        .esc-ngram-status.stop{background:var(--gnd);color:var(--gn)}
+        .esc-ngram-status.ok{background:var(--gnd);color:var(--gn)}
+
+        /* Full-width card */
+        .esc-full{grid-column:1/-1}
     </style>
 </head>
 <body>
@@ -253,6 +319,7 @@
                 <div class="tab" data-tab="s1" onclick="switchTab('s1')">Analiza S1</div>
                 <div class="tab" data-tab="prebatch" onclick="switchTab('prebatch')">Dane wsadowe</div>
                 <div class="tab" data-tab="article" onclick="switchTab('article')">Artykul</div>
+                <div class="tab" data-tab="entity" onclick="switchTab('entity')">Entity SEO</div>
                 <div class="tab" data-tab="optional" onclick="switchTab('optional')">Moduly opcjonalne</div>
             </div>
 
@@ -311,6 +378,16 @@
                     <div class="empty-state">
                         <div class="icon">&#128196;</div>
                         <p>Artykul pojawi sie tutaj po wygenerowaniu</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ═══ ENTITY SEO COMPLIANCE TAB ═══ -->
+            <div class="tab-content" id="tab-entity">
+                <div id="entityContent">
+                    <div class="empty-state">
+                        <div class="icon">&#128300;</div>
+                        <p>Dane Entity SEO pojawia sie po analizie S1</p>
                     </div>
                 </div>
             </div>
@@ -914,6 +991,9 @@ function renderS1(data) {
     }
 
     c.innerHTML = html || '<div class="empty-state"><div class="icon">&#128269;</div><p>Brak danych S1</p></div>';
+
+    // Render Entity SEO Compliance tab
+    renderEntityCompliance(data);
 }
 
 function buildSection(id, title, count, contentFn, openByDefault) {
@@ -1468,6 +1548,315 @@ function downloadText(text, filename, mime) {
 
 function copyArticle() {
     navigator.clipboard.writeText(articleText).then(function() { log('Skopiowano do schowka', 'ok'); });
+}
+
+// ── Entity SEO Compliance ──
+function renderEntityCompliance(data) {
+    const c = document.getElementById('entityContent');
+    if (!data) { c.innerHTML = '<div class="empty-state"><div class="icon">&#128300;</div><p>Brak danych Entity SEO</p></div>'; return; }
+
+    const entitySeo = data.entity_seo || {};
+    const salience = entitySeo.entity_salience || [];
+    const cooccurrence = entitySeo.cooccurrence_pairs || [];
+    const relationships = entitySeo.relationships || [];
+    const entities = entitySeo.entities || [];
+    const placement = entitySeo.placement_instructions || {};
+    const mustCover = entitySeo.must_cover_concepts || [];
+    const causal = data.causal_triplets || {};
+    const chains = causal.chains || [];
+    const singles = causal.singles || [];
+    const ngrams = data.ngrams || [];
+    const facto = data.factographic_triplets || {};
+    const factoSpo = facto.spo || [];
+    const factoEav = facto.eav || [];
+    const gaps = data.content_gaps || {};
+    const summary = data.summary || {};
+    const mainKw = data.main_keyword || '';
+
+    // Compute compliance score
+    var scorePoints = 0, scoreMax = 0;
+    // Has entities
+    scoreMax += 20;
+    if (entities.length >= 3) scorePoints += 20;
+    else if (entities.length >= 1) scorePoints += 10;
+    // Has salience
+    scoreMax += 15;
+    if (salience.length >= 3) scorePoints += 15;
+    else if (salience.length >= 1) scorePoints += 8;
+    // Has cooccurrence
+    scoreMax += 15;
+    if (cooccurrence.length >= 2) scorePoints += 15;
+    else if (cooccurrence.length >= 1) scorePoints += 8;
+    // Has relationships (SPO)
+    scoreMax += 15;
+    if (relationships.length >= 3) scorePoints += 15;
+    else if (relationships.length >= 1) scorePoints += 8;
+    // Has causal
+    scoreMax += 10;
+    if (chains.length + singles.length >= 2) scorePoints += 10;
+    else if (chains.length + singles.length >= 1) scorePoints += 5;
+    // Has factographic
+    scoreMax += 10;
+    if (factoSpo.length + factoEav.length >= 3) scorePoints += 10;
+    else if (factoSpo.length + factoEav.length >= 1) scorePoints += 5;
+    // Has placement
+    scoreMax += 10;
+    if (placement && placement.instruction_text) scorePoints += 10;
+    // Has gaps analysis
+    scoreMax += 5;
+    if ((gaps.gaps || []).length > 0 || summary.content_gaps_found > 0) scorePoints += 5;
+
+    var score = scoreMax > 0 ? Math.round((scorePoints / scoreMax) * 100) : 0;
+    var scoreColor = score >= 80 ? 'var(--gn)' : score >= 50 ? 'var(--yl)' : 'var(--rd)';
+
+    // SVG ring gauge
+    var ringR = 48, ringC = 2 * Math.PI * ringR;
+    var ringOffset = ringC - (score / 100) * ringC;
+
+    var html = '';
+
+    // ── Score + summary card (full width) ──
+    html += '<div class="esc-grid">';
+    html += '<div class="esc-card esc-full">';
+    html += '<div class="esc-ring-wrap">';
+    html += '<div class="esc-ring">';
+    html += '<svg width="120" height="120" viewBox="0 0 120 120">';
+    html += '<circle cx="60" cy="60" r="' + ringR + '" fill="none" stroke="var(--b2)" stroke-width="8"/>';
+    html += '<circle cx="60" cy="60" r="' + ringR + '" fill="none" stroke="' + scoreColor + '" stroke-width="8" stroke-linecap="round" stroke-dasharray="' + ringC.toFixed(1) + '" stroke-dashoffset="' + ringOffset.toFixed(1) + '"/>';
+    html += '</svg>';
+    html += '<div class="esc-ring-label"><div class="esc-ring-val" style="color:' + scoreColor + '">' + score + '</div><div class="esc-ring-sub">compliance</div></div>';
+    html += '</div>';
+    html += '<div class="esc-ring-stats">';
+    html += '<div class="esc-ring-stat"><span class="lbl-s">Encje</span><span class="val-s" style="color:var(--orange)">' + entities.length + '</span></div>';
+    html += '<div class="esc-ring-stat"><span class="lbl-s">Salience signals</span><span class="val-s" style="color:var(--bl)">' + salience.length + '</span></div>';
+    html += '<div class="esc-ring-stat"><span class="lbl-s">Co-occurrence</span><span class="val-s" style="color:var(--gn)">' + cooccurrence.length + '</span></div>';
+    html += '<div class="esc-ring-stat"><span class="lbl-s">SPO relacje</span><span class="val-s" style="color:var(--yl)">' + relationships.length + '</span></div>';
+    html += '<div class="esc-ring-stat"><span class="lbl-s">Causal</span><span class="val-s">' + (chains.length + singles.length) + '</span></div>';
+    html += '<div class="esc-ring-stat"><span class="lbl-s">Factographic</span><span class="val-s">' + (factoSpo.length + factoEav.length) + '</span></div>';
+    html += '</div>';
+    html += '</div>';
+    html += '</div>';
+
+    // ── Entity Salience card ──
+    html += '<div class="esc-card">';
+    html += '<div class="esc-card-title"><span class="esc-icon">&#9733;</span> Entity Salience</div>';
+    if (salience.length > 0) {
+        var sortedSal = [...salience].sort(function(a, b) { return (b.salience_score || 0) - (a.salience_score || 0); });
+        var maxSal = sortedSal[0].salience_score || 1;
+        sortedSal.slice(0, 10).forEach(function(s) {
+            var pct = Math.round(((s.salience_score || 0) / maxSal) * 100);
+            var sc = (s.salience_score || 0);
+            var color = sc >= 0.5 ? 'var(--gn)' : sc >= 0.2 ? 'var(--yl)' : 'var(--rd)';
+            html += '<div class="bar-row">';
+            html += '<div class="bar-label">' + esc(s.entity_text || '') + '</div>';
+            html += '<div class="bar-track"><div class="bar-fill" style="width:' + pct + '%;background:' + color + '"></div></div>';
+            html += '<div class="bar-val" style="color:' + color + '">' + sc.toFixed(3) + '</div>';
+            html += '</div>';
+        });
+        // Subject ratio if available
+        var mainEntity = sortedSal.find(function(s) { return (s.entity_text || '').toLowerCase() === mainKw.toLowerCase(); }) || sortedSal[0];
+        if (mainEntity && mainEntity.subject_ratio !== undefined) {
+            var sr = Math.round((mainEntity.subject_ratio || 0) * 100);
+            var orr = 100 - sr;
+            html += '<div style="margin-top:12px">';
+            html += '<div class="esc-ratio-header"><span style="color:var(--lg)">Subject ratio: <strong style="color:var(--white)">' + esc(mainEntity.entity_text || '') + '</strong></span><span style="color:var(--orange);font-weight:600">' + sr + '%</span></div>';
+            html += '<div class="esc-ratio-track">';
+            html += '<div class="esc-ratio-seg" style="width:' + sr + '%;background:var(--orange)"></div>';
+            html += '<div class="esc-ratio-seg" style="width:' + orr + '%;background:var(--b3)"></div>';
+            html += '</div>';
+            html += '<div class="esc-ratio-legend"><span><span class="esc-ratio-dot" style="background:var(--orange)"></span>Subject</span><span><span class="esc-ratio-dot" style="background:var(--b3)"></span>Object/inne</span></div>';
+            html += '</div>';
+        }
+    } else {
+        html += '<div style="color:var(--mg);font-size:12px">Brak danych salience</div>';
+    }
+    html += '</div>';
+
+    // ── Co-occurrence Pairs card ──
+    html += '<div class="esc-card">';
+    html += '<div class="esc-card-title"><span class="esc-icon">&#128279;</span> Co-occurrence Pairs</div>';
+    if (cooccurrence.length > 0) {
+        html += '<ul class="esc-status-list">';
+        var sortedCo = [...cooccurrence].sort(function(a, b) { return (b.strength || 0) - (a.strength || 0); });
+        sortedCo.slice(0, 10).forEach(function(p) {
+            var str = p.strength || 0;
+            var dotCls = str >= 0.7 ? 'pass' : str >= 0.4 ? 'warn' : 'fail';
+            html += '<li class="esc-status-item">';
+            html += '<span class="esc-dot ' + dotCls + '"></span>';
+            html += '<span class="esc-status-label">' + esc(p.entity_a || '') + ' + ' + esc(p.entity_b || '') + '</span>';
+            html += '<span class="esc-status-val" style="color:var(--orange)">' + str.toFixed(2) + '</span>';
+            html += '</li>';
+        });
+        html += '</ul>';
+    } else {
+        html += '<div style="color:var(--mg);font-size:12px">Brak par wspolwystepowania</div>';
+    }
+    html += '</div>';
+
+    // ── SPO Triples card ──
+    html += '<div class="esc-card">';
+    html += '<div class="esc-card-title"><span class="esc-icon">&#128208;</span> SPO Triples</div>';
+    if (relationships.length > 0) {
+        relationships.slice(0, 12).forEach(function(r) {
+            html += '<div class="esc-spo">';
+            html += '<span class="esc-spo-s">' + esc(r.subject || '') + '</span>';
+            html += '<span class="esc-spo-arrow">&#8594;</span>';
+            html += '<span class="esc-spo-p">' + esc(r.verb || r.predicate || '') + '</span>';
+            html += '<span class="esc-spo-arrow">&#8594;</span>';
+            html += '<span class="esc-spo-o">' + esc(r.object || '') + '</span>';
+            html += '</div>';
+        });
+    } else if (factoSpo.length > 0) {
+        factoSpo.slice(0, 12).forEach(function(r) {
+            html += '<div class="esc-spo">';
+            html += '<span class="esc-spo-s">' + esc(r.subject || '') + '</span>';
+            html += '<span class="esc-spo-arrow">&#8594;</span>';
+            html += '<span class="esc-spo-p">' + esc(r.predicate || '') + '</span>';
+            html += '<span class="esc-spo-arrow">&#8594;</span>';
+            html += '<span class="esc-spo-o">' + esc(r.object || '') + '</span>';
+            html += '</div>';
+        });
+    } else {
+        html += '<div style="color:var(--mg);font-size:12px">Brak trojek SPO</div>';
+    }
+    html += '</div>';
+
+    // ── Mention Variety card ──
+    html += '<div class="esc-card">';
+    html += '<div class="esc-card-title"><span class="esc-icon">&#128172;</span> Mention Variety</div>';
+    // Try to get mention_forms from entity_seo or top-level
+    var mentionForms = entitySeo.mention_forms || data._mention_forms || null;
+    if (mentionForms && (mentionForms.named || mentionForms.nominal || mentionForms.pronominal)) {
+        if (mentionForms.named) {
+            html += '<div class="esc-mention-group">';
+            html += '<div class="esc-mention-type">Named (pelna nazwa)</div>';
+            html += '<div class="esc-mention-pills">';
+            var namedArr = Array.isArray(mentionForms.named) ? mentionForms.named : [mentionForms.named];
+            namedArr.forEach(function(n) { html += '<span class="esc-pill named">' + esc(String(n)) + '</span>'; });
+            html += '</div></div>';
+        }
+        if (mentionForms.nominal && mentionForms.nominal.length > 0) {
+            html += '<div class="esc-mention-group">';
+            html += '<div class="esc-mention-type">Nominal (peryfrazy rzeczownikowe)</div>';
+            html += '<div class="esc-mention-pills">';
+            mentionForms.nominal.forEach(function(n) { html += '<span class="esc-pill nominal">' + esc(String(n)) + '</span>'; });
+            html += '</div></div>';
+        }
+        if (mentionForms.pronominal && mentionForms.pronominal.length > 0) {
+            html += '<div class="esc-mention-group">';
+            html += '<div class="esc-mention-type">Pronominal (formy zaimkowe)</div>';
+            html += '<div class="esc-mention-pills">';
+            mentionForms.pronominal.forEach(function(n) { html += '<span class="esc-pill pronominal">' + esc(String(n)) + '</span>'; });
+            html += '</div></div>';
+        }
+    } else {
+        // Fallback: show entities as named mentions
+        if (entities.length > 0) {
+            html += '<div class="esc-mention-group">';
+            html += '<div class="esc-mention-type">Named entities (brak danych mention forms)</div>';
+            html += '<div class="esc-mention-pills">';
+            entities.slice(0, 8).forEach(function(e) { html += '<span class="esc-pill named">' + esc(e.text || '') + '</span>'; });
+            html += '</div></div>';
+        } else {
+            html += '<div style="color:var(--mg);font-size:12px">Brak danych o wariantach wzmianek</div>';
+        }
+    }
+    html += '</div>';
+
+    // ── Causal Chains card ──
+    html += '<div class="esc-card">';
+    html += '<div class="esc-card-title"><span class="esc-icon">&#9889;</span> Causal Chains</div>';
+    var allCausal = [...chains, ...singles];
+    if (allCausal.length > 0) {
+        allCausal.slice(0, 8).forEach(function(c) {
+            html += '<div class="causal-item" style="font-size:12px;padding:5px 0">';
+            html += '<span class="causal-cause">' + esc(c.cause || '') + '</span>';
+            html += '<span class="causal-arrow">&#8594;</span>';
+            html += '<span class="causal-effect">' + esc(c.effect || '') + '</span>';
+            if (c.relation_type) html += '<span class="causal-type">' + esc(c.relation_type) + '</span>';
+            html += '</div>';
+        });
+        if (chains.length > 0) {
+            html += '<div style="margin-top:8px;font-size:11px;color:var(--mg)">Lancuchy: ' + chains.length + ' | Pojedyncze: ' + singles.length + '</div>';
+        }
+    } else {
+        html += '<div style="color:var(--mg);font-size:12px">Brak lancuchow przyczynowych</div>';
+    }
+    html += '</div>';
+
+    // ── N-gram Budget card ──
+    html += '<div class="esc-card">';
+    html += '<div class="esc-card-title"><span class="esc-icon">&#128202;</span> N-gram Budget</div>';
+    if (ngrams.length > 0) {
+        var sortedNg = [...ngrams].sort(function(a, b) { return (b.weight || 0) - (a.weight || 0); });
+        sortedNg.slice(0, 15).forEach(function(n) {
+            var w = n.weight || 0;
+            var status = w >= 0.7 ? 'must' : w >= 0.4 ? 'nice' : 'stop';
+            var statusLabel = w >= 0.7 ? 'MUST' : w >= 0.4 ? 'NICE' : 'OPT';
+            html += '<div class="esc-ngram-row">';
+            html += '<span class="esc-ngram-phrase">' + esc(n.ngram || '') + '</span>';
+            html += '<span class="esc-ngram-freq" style="color:var(--mg)">';
+            if (n.freq_min !== undefined) html += n.freq_min + '-' + n.freq_max;
+            html += '</span>';
+            html += '<span class="esc-ngram-status ' + status + '">' + statusLabel + '</span>';
+            html += '</div>';
+        });
+    } else {
+        html += '<div style="color:var(--mg);font-size:12px">Brak danych n-gramow</div>';
+    }
+    html += '</div>';
+
+    // ── Factographic Triplets card ──
+    if (factoSpo.length + factoEav.length > 0) {
+        html += '<div class="esc-card">';
+        html += '<div class="esc-card-title"><span class="esc-icon">&#128218;</span> Factographic Triplets</div>';
+        if (factoSpo.length > 0) {
+            html += '<div style="font-size:11px;color:var(--mg);font-weight:600;margin-bottom:6px">SPO (' + factoSpo.length + ')</div>';
+            factoSpo.slice(0, 6).forEach(function(r) {
+                html += '<div class="esc-spo">';
+                html += '<span class="esc-spo-s">' + esc(r.subject || '') + '</span>';
+                html += '<span class="esc-spo-arrow">&#8594;</span>';
+                html += '<span class="esc-spo-p">' + esc(r.predicate || '') + '</span>';
+                html += '<span class="esc-spo-arrow">&#8594;</span>';
+                html += '<span class="esc-spo-o">' + esc(r.object || '') + '</span>';
+                html += '</div>';
+            });
+        }
+        if (factoEav.length > 0) {
+            html += '<div style="font-size:11px;color:var(--mg);font-weight:600;margin:10px 0 6px">EAV (' + factoEav.length + ')</div>';
+            factoEav.slice(0, 6).forEach(function(r) {
+                html += '<div class="esc-spo">';
+                html += '<span class="esc-spo-s">' + esc(r.subject || '') + '</span>';
+                html += '<span class="esc-spo-arrow">:</span>';
+                html += '<span class="esc-spo-p">' + esc(r.predicate || '') + '</span>';
+                html += '<span class="esc-spo-arrow">=</span>';
+                html += '<span class="esc-spo-o">' + esc(r.object || '') + '</span>';
+                html += '</div>';
+            });
+        }
+        html += '</div>';
+    }
+
+    // ── Naming Consistency card ──
+    html += '<div class="esc-card">';
+    html += '<div class="esc-card-title"><span class="esc-icon">&#9998;</span> Naming Consistency</div>';
+    html += '<ul class="esc-status-list">';
+    // Check if main entity has consistent naming
+    var hasPlacement = !!(placement && placement.instruction_text);
+    var hasMustCover = mustCover.length > 0;
+    var hasMentions = !!(mentionForms && (mentionForms.named || mentionForms.nominal));
+    html += '<li class="esc-status-item"><span class="esc-dot ' + (hasPlacement ? 'pass' : 'fail') + '"></span><span class="esc-status-label">Placement instructions</span><span class="esc-status-val">' + (hasPlacement ? 'OK' : 'Brak') + '</span></li>';
+    html += '<li class="esc-status-item"><span class="esc-dot ' + (hasMustCover ? 'pass' : 'warn') + '"></span><span class="esc-status-label">Must-cover concepts</span><span class="esc-status-val">' + mustCover.length + '</span></li>';
+    html += '<li class="esc-status-item"><span class="esc-dot ' + (hasMentions ? 'pass' : 'warn') + '"></span><span class="esc-status-label">Mention forms (N/N/P)</span><span class="esc-status-val">' + (hasMentions ? 'OK' : 'Brak') + '</span></li>';
+    html += '<li class="esc-status-item"><span class="esc-dot ' + (salience.length > 0 ? 'pass' : 'fail') + '"></span><span class="esc-status-label">Salience scoring</span><span class="esc-status-val">' + salience.length + ' encji</span></li>';
+    html += '<li class="esc-status-item"><span class="esc-dot ' + (cooccurrence.length > 0 ? 'pass' : 'warn') + '"></span><span class="esc-status-label">Co-occurrence pairs</span><span class="esc-status-val">' + cooccurrence.length + ' par</span></li>';
+    html += '<li class="esc-status-item"><span class="esc-dot ' + ((chains.length + singles.length) > 0 ? 'pass' : 'info') + '"></span><span class="esc-status-label">Causal relations</span><span class="esc-status-val">' + (chains.length + singles.length) + '</span></li>';
+    html += '</ul>';
+    html += '</div>';
+
+    html += '</div>'; // close esc-grid
+
+    c.innerHTML = html;
 }
 
 // ── Init ──
