@@ -139,7 +139,10 @@ async def start_workflow(req: ArticleStartRequest):
             raise HTTPException(status_code=400, detail=s1_data["error"])
 
     model = req.model or "claude-sonnet-4-6"
-    orchestrator = ArticleOrchestrator(s1_data=s1_data, engine=req.engine, model=model, nw_terms=req.nw_terms)
+    orchestrator = ArticleOrchestrator(
+        s1_data=s1_data, engine=req.engine, model=model,
+        nw_terms=req.nw_terms, h2_keywords=req.h2_structure,
+    )
 
     with _jobs_lock:
         _jobs[job_id] = {

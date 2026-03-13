@@ -14,6 +14,7 @@ from typing import Generator
 from src.common.llm import claude_call
 from src.article_pipeline.prompts import (
     SYSTEM_PROMPT,
+    H2_PLAN_SYSTEM,
     H2_PLAN_PROMPT,
     PRE_BATCH_PROMPT,
     BATCH_0_PROMPT,
@@ -66,13 +67,16 @@ def _hard_facts_values(facts: list) -> list:
 class ArticleOrchestrator:
     """Orchestrates the full BRAJEN article generation pipeline."""
 
-    def __init__(self, s1_data: dict, engine: str = "claude", model: str = "claude-sonnet-4-6", nw_terms: list = None):
+    def __init__(self, s1_data: dict, engine: str = "claude", model: str = "claude-sonnet-4-6",
+                 nw_terms: list = None, h2_keywords: list = None):
         # Use LLM-optimized version if available, fallback to full s1_data
         self.s1_data = s1_data.get("_llm_ready") or s1_data
         self._s1_full = s1_data  # full version for panel display
         self.engine = engine
         self.model = model
         self.variables = extract_global_variables(s1_data)
+        # H2 keywords from user (NW/Surfer phrases required in H2 headings)
+        self._h2_keywords = h2_keywords or []
         # NW/Surfer coverage analysis
         from src.article_pipeline.nw_analyzer import analyze_nw_coverage
         self._nw_analysis = analyze_nw_coverage(nw_terms or [], s1_data)
@@ -161,40 +165,35 @@ class ArticleOrchestrator:
 
     def run_h2_plan(self) -> list:
         """
-        Step 2.5: Generate H2 article plan using Claude.
-        Uses scored H2 candidates, entities, ngrams, PAA, causal chains.
-        Updates _h2_plan_list and PLAN_ARTYKULU/PLAN_H2 variables.
+        Step 2.5: Generate H2 article plan using Claude — v2.0.
+        Uses structured XML prompt with explicit JSON schema, selection criteria,
+        hard constraints, and self-check.
+        Updates _h2_plan_list, PLAN_ARTYKULU, PLAN_H2, and FAQ variables.
         """
         import json
 
         s1 = self.s1_data
         keyword = self.variables.get("HASLO_GLOWNE", "")
 
-        # Build input data for prompt
+        # ── Scored H2 candidates ──
         h2_scored = s1.get("h2_scored_candidates") or {}
-        candidates = (h2_scored.get("must_have") or []) + (h2_scored.get("high_priority") or []) + (h2_scored.get("optional") or [])
-        h2_candidates_str = json.dumps(
-            [{"text": c.get("text"), "score": c.get("score"), "reason": c.get("reason")} for c in candidates[:20]],
+        candidates = (
+            (h2_scored.get("must_have") or [])
+            + (h2_scored.get("high_priority") or [])
+            + (h2_scored.get("optional") or [])
+        )
+        scored_h2_json = json.dumps(
+            [{"text": c.get("text"), "score": c.get("score"), "reason": c.get("reason")}
+             for c in candidates[:20]],
             ensure_ascii=False, indent=2
         )
 
-        ngrams = s1.get("ngrams") or []
-        ngrams_top = [n.get("ngram") for n in sorted(ngrams, key=lambda x: x.get("weight", 0), reverse=True)[:10] if isinstance(n, dict)]
-
+        # ── Entities ──
         entity_seo = s1.get("entity_seo") or {}
         must_cover = entity_seo.get("must_cover_concepts") or []
+        if not must_cover:
+            must_cover = self.variables.get("_must_cover", [])
 
-        causal = s1.get("causal_triplets") or {}
-        chains = causal.get("chains") or causal.get("causal_chains") or []
-
-        serp = s1.get("serp_analysis") or {}
-        paa = [q.get("question", q) if isinstance(q, dict) else q for q in (serp.get("paa_questions") or [])[:8]]
-        related = [r.get("query", r.get("text", r)) if isinstance(r, dict) else r for r in (serp.get("related_searches") or [])[:8]]
-
-        gaps = s1.get("content_gaps") or {}
-        gaps_list = (gaps.get("suggested_new_h2s") or []) + (gaps.get("paa_unanswered") or [])
-
-        # ── entity_salience — które encje są "o czym jest temat" ──
         entity_salience_raw = entity_seo.get("entity_salience") or []
         entity_salience = [
             {"entity": e.get("entity_text") or e.get("entity", ""),
@@ -204,91 +203,127 @@ class ArticleOrchestrator:
             if (e.get("salience_score") or e.get("salience", 0)) > 0.1
         ]
 
-        # ── competitor_sections — jak top 5 konkurentów organizuje artykuł ──
-        competitors_raw = (self._s1_full or {}).get("competitors") or s1.get("competitors") or []
-        competitor_sections = [
-            {"url": c.get("url", "")[:60],
-             "h2s": c.get("h2_structure", [])[:8]}
-            for c in competitors_raw[:5]
-            if c.get("h2_structure")
-        ]
+        # ── Hard facts (extract values only for prompt) ──
+        hard_facts = _hard_facts_values(self.variables.get("_hard_facts", []))
 
-        # ── search_intent — heurystyka na podstawie hasła + related searches ──
-        keyword_lower = keyword.lower()
-        transactional_signals = ["kup", "cena", "ile kosztuje", "sklep", "oferta",
-                                  "zamów", "ranking", "polecany", "najlepszy", "porównanie"]
-        intent_score = sum(1 for s in transactional_signals if s in keyword_lower)
-        intent_score += sum(
-            1 for r in related[:8]
-            for s in transactional_signals
-            if isinstance(r, str) and s in r.lower()
-        )
-        search_intent = "transakcyjna" if intent_score >= 2 else "informacyjna"
+        # ── PAA: priority = unanswered, standard = answered ──
+        paa_priority = self.variables.get("_paa_unanswered", [])
+        paa_standard = self.variables.get("_paa_standard", [])
 
+        # ── H2 keywords (from NW/Surfer or user-provided h2_structure) ──
+        h2_keywords = getattr(self, "_h2_keywords", []) or []
+
+        # ── Determine target H2 count ──
+        # Use existing LICZBA_H2 from variables (set by _build_h2_plan), or default
+        target_h2 = int(self.variables.get("LICZBA_H2", "6") or "6")
+        # Clamp to reasonable range
+        target_h2 = max(4, min(10, target_h2))
+
+        # ── FAQ count: prioritize PAA unanswered, total 4-8 ──
+        faq_count = max(4, min(8, len(paa_priority) + min(3, len(paa_standard))))
+
+        # ── Build prompt variables ──
         prompt_vars = {
             "HASLO_GLOWNE": keyword,
-            "H2_SCORED_CANDIDATES": h2_candidates_str,
-            "ENCJE_KRYTYCZNE": json.dumps(must_cover[:15], ensure_ascii=False),
-            "ENTITY_SALIENCE": json.dumps(entity_salience, ensure_ascii=False),
-            "NGRAMY_TOP10": json.dumps(ngrams_top, ensure_ascii=False),
-            "LANCUCHY_KAUZALNE": json.dumps(chains[:6], ensure_ascii=False),
-            "PAA_QUESTIONS": json.dumps(paa, ensure_ascii=False),
-            "RELATED_SEARCHES": json.dumps(related, ensure_ascii=False),
-            "CONTENT_GAPS": json.dumps(gaps_list[:6], ensure_ascii=False),
-            "COMPETITOR_SECTIONS": json.dumps(competitor_sections, ensure_ascii=False),
-            "SEARCH_INTENT": search_intent,
-            "YMYL_KLASYFIKACJA": self.variables.get("YMYL_KLASYFIKACJA", "none"),
-            "DLUGOSC_CEL": self.variables.get("DLUGOSC_CEL", "2000"),
+            "LICZBA_H2": str(target_h2),
+            "LICZBA_FAQ": str(faq_count),
+            "SCORED_H2_JSON": scored_h2_json,
+            "MUST_COVER_ENTITIES_JSON": json.dumps(must_cover[:15], ensure_ascii=False),
+            "ENTITY_SALIENCE_JSON": json.dumps(entity_salience, ensure_ascii=False),
+            "HARD_FACTS_JSON": json.dumps(hard_facts[:15], ensure_ascii=False),
+            "PAA_PRIORITY_JSON": json.dumps(paa_priority[:8], ensure_ascii=False),
+            "PAA_STANDARD_JSON": json.dumps(paa_standard[:10], ensure_ascii=False),
+            "H2_KEYWORDS_JSON": json.dumps(h2_keywords, ensure_ascii=False),
         }
 
         user = fill_template(H2_PLAN_PROMPT, prompt_vars)
         response = self._llm_call(
-            system_prompt="Jesteś strategiem treści SEO. Zwróć wyłącznie poprawny JSON, bez komentarzy.",
+            system_prompt=H2_PLAN_SYSTEM,
             user_prompt=user,
-            max_tokens=2000,
+            max_tokens=3000,
             label="h2_plan"
         )
 
-        # Parse response
+        # ── Parse v2.0 response ──
         h2_plan = []
-        paa_to_faq = []
+        faq_items = []
+        coverage_check = {}
         try:
             text = response.strip()
             if "```" in text:
                 text = text.split("```")[1]
                 if text.startswith("json"):
                     text = text[4:]
+            # Find JSON boundaries
+            first_brace = text.find("{")
+            last_brace = text.rfind("}")
+            if first_brace != -1 and last_brace != -1:
+                text = text[first_brace:last_brace + 1]
             parsed = json.loads(text.strip())
-            h2_plan = [h["heading"] for h in parsed.get("h2_plan", []) if h.get("heading")]
-            paa_to_faq = parsed.get("paa_do_faq", [])
-            self._h2_plan_full = parsed.get("h2_plan", [])  # full objects for panel
-            self._paa_to_faq = paa_to_faq
-            print(f"[H2_PLAN] ✅ Claude generated {len(h2_plan)} sections")
+
+            # Extract sections → h2_plan
+            sections = parsed.get("sections", [])
+            if sections:
+                h2_plan = [s["h2"] for s in sections if s.get("h2")]
+                self._h2_plan_full = sections  # full section objects for panel
+            else:
+                # Fallback: try old format
+                h2_plan = [h["heading"] for h in parsed.get("h2_plan", []) if h.get("heading")]
+                self._h2_plan_full = parsed.get("h2_plan", [])
+
+            # Extract FAQ
+            faq_items = parsed.get("faq", [])
+            self._faq_plan = faq_items
+
+            # Coverage check
+            coverage_check = parsed.get("coverage_check", {})
+            if coverage_check:
+                uncovered = coverage_check.get("uncovered_entities", [])
+                if uncovered:
+                    print(f"[H2_PLAN] ⚠️ Uncovered entities: {uncovered}")
+                unused_kw = coverage_check.get("unused_h2_keywords", [])
+                if unused_kw:
+                    print(f"[H2_PLAN] ⚠️ Unused h2_keywords: {unused_kw}")
+
+            print(f"[H2_PLAN] ✅ v2.0 generated {len(h2_plan)} sections + {len(faq_items)} FAQ")
         except Exception as e:
             print(f"[H2_PLAN] ⚠️ Parse error: {e} — falling back to scored candidates")
-            h2_plan = [c.get("text") for c in candidates[:8] if c.get("text")]
+            h2_plan = [c.get("text") for c in candidates[:target_h2] if c.get("text")]
 
         if not h2_plan:
             kw = keyword or "Temat"
             h2_plan = [f"Czym jest {kw}", f"Jak działa {kw}", f"Konsekwencje: {kw}", f"FAQ: {kw}"]
 
-        # Update variables
-        self.variables["_h2_plan_list"] = h2_plan[:8]
-        self.variables["PLAN_ARTYKULU"] = "\n".join(f"{i+1}. {h}" for i, h in enumerate(h2_plan[:8]))
-        self.variables["PLAN_H2"] = json.dumps(h2_plan[:8], ensure_ascii=False)
-        self.variables["LICZBA_H2"] = str(len(h2_plan[:8]))
+        # ── Update variables ──
+        h2_plan = h2_plan[:target_h2]
+        self.variables["_h2_plan_list"] = h2_plan
+        self.variables["PLAN_ARTYKULU"] = "\n".join(f"{i+1}. {h}" for i, h in enumerate(h2_plan))
+        self.variables["PLAN_H2"] = json.dumps(h2_plan, ensure_ascii=False)
+        self.variables["LICZBA_H2"] = str(len(h2_plan))
 
-        # PAA to FAQ
-        if paa_to_faq:
-            existing = self.variables.get("PAA_BEZ_ODPOWIEDZI", "[]")
-            try:
-                existing_list = json.loads(existing)
-            except Exception:
-                existing_list = []
-            merged = list({q: None for q in paa_to_faq + existing_list}.keys())
-            self.variables["PAA_BEZ_ODPOWIEDZI"] = json.dumps(merged, ensure_ascii=False)
+        # ── FAQ questions from plan → merge into PAA ──
+        if faq_items:
+            faq_questions = [f.get("question", "") for f in faq_items if f.get("question")]
+            # Split into priority and standard based on source
+            paa_from_plan = [f.get("question") for f in faq_items
+                             if f.get("source") == "paa_priority" and f.get("question")]
+            other_faq = [f.get("question") for f in faq_items
+                         if f.get("source") != "paa_priority" and f.get("question")]
 
-        return h2_plan[:8]
+            existing_paa = self.variables.get("_paa_unanswered", [])
+            merged_priority = list(dict.fromkeys(paa_from_plan + existing_paa))
+            self.variables["PAA_BEZ_ODPOWIEDZI"] = json.dumps(merged_priority, ensure_ascii=False)
+            self.variables["_paa_unanswered"] = merged_priority
+
+            existing_std = self.variables.get("_paa_standard", [])
+            merged_std = list(dict.fromkeys(other_faq + existing_std))
+            self.variables["PAA_STANDARDOWE"] = json.dumps(merged_std, ensure_ascii=False)
+            self.variables["_paa_standard"] = merged_std
+
+        # Store coverage for panel display
+        self._h2_coverage_check = coverage_check
+
+        return h2_plan
 
     def run_pre_batch(self) -> dict:
         """
@@ -584,7 +619,8 @@ class ArticleOrchestrator:
         total_steps = 6 + h2_count  # recalculate with actual H2 count
         yield {"event": "step_done", "step": 3, "data": {
             "h2_plan": getattr(self, "_h2_plan_full", h2_plan),
-            "paa_do_faq": getattr(self, "_paa_to_faq", []),
+            "faq_plan": getattr(self, "_faq_plan", []),
+            "coverage_check": getattr(self, "_h2_coverage_check", {}),
             "h2_count": h2_count,
         }}
 
