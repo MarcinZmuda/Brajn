@@ -280,6 +280,7 @@ def _build_h2_plan(s1_data):
 
 
 def _calc_target_length(serp, default=2000):
+    """Return competitor-based target length (no minimum floor)."""
     word_counts = sorted([
         c.get("word_count") or c.get("words") or 0
         for c in (serp.get("competitors") or []) if isinstance(c, dict)
@@ -290,7 +291,7 @@ def _calc_target_length(serp, default=2000):
     mid = len(word_counts) // 2
     median = (word_counts[mid] if len(word_counts) % 2 == 1
               else (word_counts[mid-1] + word_counts[mid]) // 2)
-    return max(default, int(median * 1.1))
+    return median
 
 
 def _extract_paa(s1_data, serp):

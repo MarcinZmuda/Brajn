@@ -25,10 +25,9 @@ Nie dodawaj sekcji spoza planu.
 <style>
 1. JĘZYK: naturalny, publicystyczny polski. Mów do czytelnika bezpośrednio: „możesz", „warto", „pamiętaj", „jeśli szukasz".
 2. ZDANIA: średnia 11–15 słów. Rytm: krótkie (5–8 słów) przeplataj z dłuższymi (18–22 słów).
-3. AKAPITY: minimum 2, maksimum 6 zdań. Żadne dwa akapity w artykule nie mają identycznej liczby zdań. Długość akapitu wynika z funkcji, nie z nawyku.
+3. AKAPITY: długość akapitu wynika z funkcji, nie z nawyku. Unikaj monotonii — różnicuj liczbę zdań w akapitach.
 4. STRONA CZASOWNIKA: aktywna wszędzie, gdzie możliwe.
 5. PERYFRAZY: nie powtarzaj tych samych fraz. Rotuj synonimy z <periphrases> i <colloquial_variants>. Używaj ich naturalnie w tekście — nie upychaj na siłę.
-6. ZDANIE POMOSTOWE: każda sekcja H2 kończy się zdaniem łączącym z kolejną sekcją. Każde zdanie pomostowe ma inny schemat składniowy.
 </style>
 
 <banned_phrases>
@@ -40,7 +39,7 @@ Nigdy nie używaj tych fraz (ani ich wariantów):
 </banned_phrases>
 
 <entity_rules>
-1. ENCJA GŁÓWNA („{{ENCJA_GLOWNA}}"): musi pojawić się w H1, w pierwszym akapicie intro, i minimum 1x w każdej sekcji H2 (odmieniana przez przypadki).
+1. ENCJA GŁÓWNA („{{ENCJA_GLOWNA}}"): musi pojawić się w H1, w pierwszym akapicie intro, i w co najmniej 2 sekcjach H2 (odmieniana przez przypadki). Nie wciskaj na siłę w każdą sekcję.
 2. ENCJE KRYTYCZNE (lista w <critical_entities>): każda minimum 1x w całym artykule. Odmieniaj przez przypadki — nie wstawiaj w mianowniku na siłę.
 3. Nie klastruj encji — rozłóż je równomiernie po artykule.
 </entity_rules>
@@ -80,10 +79,7 @@ Liczby, kwoty, progi i fakty z <hard_facts> mają ABSOLUTNY PRIORYTET nad Twoją
 </formatting_rules>
 
 <length_rules>
-1. CEL: {{DLUGOSC_CEL}} słów (±10%).
-2. INTRO (tekst przed pierwszym H2): {{DLUGOSC_INTRO}} słów (±15%).
-3. SEKCJE H2: rozłóż pozostałe słowa równomiernie między {{LICZBA_H2}} sekcji. Żadna sekcja nie może być krótsza niż 50% ani dłuższa niż 150% średniej.
-4. FAQ: odpowiedzi 40–80 słów każda.
+Pisz tyle, ile wymaga temat — ani więcej, ani mniej. Nie lej wody. Jeśli sekcja wyczerpuje temat w 80 słowach, to 80 słów wystarczy. Orientacyjny cel: {{DLUGOSC_CEL}} słów, ale jakość i zwięzłość są ważniejsze niż liczba słów.
 </length_rules>
 
 <ymyl>
@@ -93,7 +89,7 @@ Liczby, kwoty, progi i fakty z <hard_facts> mają ABSOLUTNY PRIORYTET nad Twoją
 <plan>
 H1: {{H1}}
 
-Intro: tekst przed pierwszym H2 ({{DLUGOSC_INTRO}} słów).
+Intro: tekst przed pierwszym H2.
 
 Sekcje H2 (w tej kolejności, nie zmieniaj):
 {{PLAN_ARTYKULU}}
@@ -141,13 +137,13 @@ Zwróć artykuł jako czysty tekst z nagłówkami w markdown:
 
 <self_check>
 Przed zwróceniem artykułu zweryfikuj:
-1. Czy encja główna jest w H1, intro i każdej sekcji H2?
+1. Czy encja główna jest w H1, intro i co najmniej 2 sekcjach H2?
 2. Czy każda encja z <critical_entities> pojawia się min. 1x?
 3. Czy każdy n-gram z <ngrams> mieści się w limicie [min, max]?
 4. Czy żadna fraza z <banned_phrases> nie występuje w tekście?
 5. Czy artykuł ma {{LICZBA_H2}} sekcji H2 + FAQ?
-6. Czy długość intro ≈ {{DLUGOSC_INTRO}} słów, a całość ≈ {{DLUGOSC_CEL}} słów?
-7. Czy każda sekcja kończy się zdaniem pomostowym?
+6. Czy tekst jest zwięzły i nie leje wody?
+7. Czy sekcje płynnie przechodzą jedna w drugą?
 8. Czy disclaimer jest na końcu (jeśli <ymyl> niepuste)?
 Jeśli cokolwiek nie przechodzi — popraw ZANIM zwrócisz tekst.
 </self_check>"""
@@ -367,7 +363,7 @@ ZASADA FALLBACK — użyj PIERWSZEGO dostępnego źródła:
 </h1_rules>
 
 <intro_rules>
-1. DŁUGOŚĆ: {{DLUGOSC_INTRO}} słów (±15%).
+1. DŁUGOŚĆ: zwięzłe intro — tyle słów, ile potrzeba, orientacyjnie ~{{DLUGOSC_INTRO}}.
 
 2. PIERWSZE ZDANIE:
    - Zawiera encję główną, ale NIE jako podmiot w mianowniku.
@@ -397,7 +393,7 @@ ZASADA FALLBACK — użyj PIERWSZEGO dostępnego źródła:
 <style>
 1. Naturalny, publicystyczny polski. Mów do czytelnika: „możesz", „pamiętaj", „jeśli".
 2. Średnia długość zdania: 11–15 słów. Rytm: krótkie (5–8) przeplataj z dłuższymi (18–22).
-3. Akapity: 2–6 zdań. Żadne dwa akapity nie mają identycznej liczby zdań.
+3. Akapity: długość wynika z funkcji. Unikaj monotonii — różnicuj liczbę zdań.
 4. Aktywna strona czasownika.
 </style>
 
@@ -447,7 +443,7 @@ Bez komentarzy, metadanych, ani tekstu przed/po. Markdown: # dla H1, potem akapi
 Przed zwróceniem zweryfikuj:
 1. H1 ≤ 70 znaków ze spacjami?
 2. H1 zawiera encję główną i NIE zaczyna się od niej w mianowniku?
-3. Intro ma ≈ {{DLUGOSC_INTRO}} słów (±15%)?
+3. Intro jest zwięzłe i na temat?
 4. Pierwsze zdanie zawiera encję główną, ale nie jako podmiot w mianowniku?
 5. Pierwsze 100 słów pokrywa kluczowe informacje ze źródła referencyjnego (AI Overview / Featured Snippet)?
 6. Minimum 2 hard facts z <hard_facts> są wplecione?
@@ -472,22 +468,20 @@ Nie pisz intro, nie pisz FAQ, nie pisz innych sekcji.
 
 <continuity>
 Poprzednia sekcja zakończyła się zdaniem: „{{OSTATNIE_ZDANIE_POPRZEDNIEGO_BATCHA}}"
-Zacznij od naturalnego rozwinięcia tego pomosta. Nie powtarzaj treści poprzedniej sekcji.
-Poprzednie schematy zdań pomostowych (NIE powtarzaj żadnego z nich): {{POPRZEDNIE_ZDANIA_POMOSTOWE}}
+Zacznij od naturalnego rozwinięcia. Nie powtarzaj treści poprzedniej sekcji.
 </continuity>
 
 <section_spec>
 Nagłówek H2: {{NAGLOWEK_H2}}
 Następna sekcja: {{NASTEPNY_H2}}
-Długość sekcji: {{DLUGOSC_SEKCJI}} słów (±15%).
+Orientacyjna długość sekcji: ~{{DLUGOSC_SEKCJI}} słów, ale pisz tyle ile wymaga temat.
 </section_spec>
 
 <style>
 1. Naturalny, publicystyczny polski. Mów do czytelnika: „możesz", „pamiętaj", „jeśli".
 2. Średnia długość zdania: 11–15 słów. Rytm: krótkie (5–8) przeplataj z dłuższymi (18–22).
-3. Akapity: 2–6 zdań. Żadne dwa akapity w sekcji nie mają identycznej liczby zdań.
+3. Akapity: długość wynika z funkcji. Unikaj monotonii — różnicuj liczbę zdań.
 4. Aktywna strona czasownika.
-5. Liczba akapitów zależy od długości sekcji: ≤150 słów → 2–3 akapity, 150–300 → 3–4, >300 → 4–5.
 </style>
 
 <banned_phrases>
@@ -499,7 +493,7 @@ Nigdy nie używaj (ani wariantów):
 </banned_phrases>
 
 <entity_rules>
-Encja główna „{{ENCJA_GLOWNA}}" — OBOWIĄZKOWA, minimum 1x w sekcji (odmieniona naturalnie).
+Encja główna „{{ENCJA_GLOWNA}}" — wpleć jeśli naturalnie pasuje do sekcji. Nie każda sekcja musi ją zawierać.
 Encje sekcji (z <section_entities>): wpleć każdą minimum 1x. Odmieniaj przez przypadki.
 Jeśli któraś encja nie pasuje naturalnie do tematu tej sekcji — pomiń ją. Lepiej 0 niż wciśnięta na siłę.
 </entity_rules>
@@ -508,7 +502,7 @@ Jeśli któraś encja nie pasuje naturalnie do tematu tej sekcji — pomiń ją.
 N-gramy z <section_ngrams> mają budżet wystąpień dla tej sekcji.
 
 OZNACZENIA:
-- MUST = fraza obowiązkowa. Użyj w podanej formie lub naturalnej odmianie.
+- MUST = fraza oczekiwana. Staraj się użyć w podanej formie lub naturalnej odmianie, ale nie na siłę.
 - NICE-TO-HAVE = fraza opcjonalna. Użyj tylko jeśli naturalnie pasuje.
 - Liczba po „·" = ile razy MOŻESZ użyć frazy w tej sekcji. Wartość po „max" to ABSOLUTNE MAXIMUM.
 - 🛑 STOP = budżet wyczerpany. BEZWZGLĘDNY ZAKAZ użycia tej frazy i jej odmian. Użyj podanych zamienników.
@@ -541,14 +535,6 @@ Wplataj naturalnie w tekst, nie wypisuj jako luźne liczby.
 2. Pogrubienia w tekście ciągłym: zakazane.
 </formatting_rules>
 
-<bridge_rules>
-Zakończ sekcję zdaniem pomostowym prowadzącym do: „{{NASTEPNY_H2}}".
-Nawiąż do tematu następnej sekcji — nie powtarzaj jej tytułu dosłownie.
-Schemat składniowy musi być inny niż którykolwiek z {{POPRZEDNIE_ZDANIA_POMOSTOWE}}.
-
-WYJĄTEK: jeśli {{NASTEPNY_H2}} = "FAQ" — zakończ zdaniem zamykającym temat sekcji i otwierającym na pytania (np. zapowiedź FAQ).
-WYJĄTEK: jeśli {{NASTEPNY_H2}} = "" (ostatnia sekcja, brak FAQ) — zakończ zdaniem zamykającym cały artykuł.
-</bridge_rules>
 
 <data>
 
@@ -570,7 +556,7 @@ WYJĄTEK: jeśli {{NASTEPNY_H2}} = "" (ostatnia sekcja, brak FAQ) — zakończ z
 
 <section_periphrases>
 {{PERYFRAZY_BATCH_N_JSON}}
-Wpleć naturalnie minimum {{MIN_PERYFRAZ}} z powyższych. Jeśli lista pusta — ignoruj.
+Staraj się wpleść naturalnie kilka z powyższych, jeśli pasują do kontekstu. Jeśli lista pusta — ignoruj.
 </section_periphrases>
 
 </data>
@@ -587,15 +573,13 @@ Bez komentarzy, metadanych, ani tekstu przed/po.
 
 <self_check>
 Przed zwróceniem zweryfikuj:
-1. Sekcja ma ≈ {{DLUGOSC_SEKCJI}} słów (±15%)?
-2. Encja główna pojawia się min. 1x?
+1. Sekcja jest zwięzła i wyczerpuje temat bez lania wody?
+2. Encja główna pojawia się jeśli naturalnie pasuje do kontekstu?
 3. Żaden n-gram nie przekracza swojego max budżetu?
-4. Każdy MUST n-gram jest użyty min. 1x?
+4. Czy MUST n-gramy są w miarę możliwości użyte (bez sztucznego wciskania)?
 5. Żaden n-gram ze statusem 🛑 STOP lub ⛔ HARD STOP nie został użyty?
 6. Żadna fraza z <banned_phrases> nie występuje?
-7. Sekcja zaczyna się od nawiązania do pomostowego zdania poprzedniej sekcji?
-8. Sekcja kończy się zdaniem pomostowym o innym schemacie niż poprzednie?
-9. Hard facts użyte dokładnie (nie zaokrąglone)?
+7. Hard facts użyte dokładnie (nie zaokrąglone)?
 Jeśli nie przechodzi — popraw ZANIM zwrócisz tekst.
 </self_check>"""
 
@@ -626,7 +610,7 @@ Odpowiedź 1–2 zdania jeśli nie pokryte wyżej.
 - Każde pytanie jako ## (nagłówek H2)
 - Odpowiedź jako akapit — bez list punktowych
 - Pierwsze zdanie = bezpośrednia odpowiedź na pytanie, bez wstępów
-- Odpowiedzi 40–80 słów każda
+- Odpowiedzi do 80 słów każda
 </faq_format>
 
 <faq_banned>
@@ -650,10 +634,10 @@ Na samym końcu (po ostatnim FAQ) dodaj disclaimer jeśli niepusty.
 <output_format>
 Zwróć:
 ## [Pytanie FAQ 1]
-[Odpowiedź 40–80 słów]
+[Odpowiedź do 80 słów]
 
 ## [Pytanie FAQ 2]
-[Odpowiedź 40–80 słów]
+[Odpowiedź do 80 słów]
 
 ...
 
@@ -685,7 +669,7 @@ ARTYKUŁ:
 
 7. BOLD_IN_PROSE — jeśli pogrubiony tekst pojawia się w środku akapitu narracyjnego — oznacz
 
-8. PERYFRAZY — sprawdź czy minimum 3 peryfrazy z listy {{PERYFRAZY_ALL}} zostały użyte
+8. PERYFRAZY — sprawdź czy peryfrazy z listy {{PERYFRAZY_ALL}} zostały użyte (oczekiwane kilka, ale bez sztucznego wciskania)
 
 9. PAA_ZERO_ANSWER — sprawdź czy pytania z listy {{PAA_BEZ_ODPOWIEDZI}} mają odpowiedź w FAQ
 

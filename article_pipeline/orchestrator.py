@@ -99,7 +99,7 @@ class ArticleOrchestrator:
         h2_count = len(self.variables.get("_h2_plan_list", []))
         _target_length = int(self.variables.get("_target_length", 0) or 0)
         _intro_words = int(self.variables.get("DLUGOSC_INTRO", "180") or 180)
-        _section_length = max(200, (_target_length - _intro_words) // max(1, h2_count)) if _target_length and h2_count else 0
+        _section_length = ((_target_length - _intro_words) // max(1, h2_count)) if _target_length and h2_count else 0
         self.keyword_tracker = KeywordTracker(
             main_keyword=self.variables.get("HASLO_GLOWNE", ""),
             ngrams=self.variables.get("_ngrams", []),
@@ -289,15 +289,15 @@ class ArticleOrchestrator:
         intro_words = int(self.variables.get("DLUGOSC_INTRO", "180") or "180")
         faq_est_words = 400  # ~80 words x 5 questions
         h2_words_available = target_length - intro_words - faq_est_words
-        target_h2_by_length = max(4, h2_words_available // 250)
+        target_h2_by_length = max(3, h2_words_available // 250)
 
         # Also consider candidate count (don't ask for more than available + some gen)
         candidate_count = len([c for c in candidates if (c.get("score") or 0) >= 0.20])
-        target_h2_by_candidates = max(candidate_count, 5)  # at least 5, or candidates
+        target_h2_by_candidates = max(candidate_count, 3)  # at least 3, or candidates
 
         # Take the minimum of both, clamped 5-10
         target_h2 = min(target_h2_by_length, target_h2_by_candidates)
-        target_h2 = max(5, min(10, target_h2))
+        target_h2 = max(3, min(10, target_h2))
         print(f"[H2_PLAN] Target H2: {target_h2} (by_length={target_h2_by_length}, by_candidates={target_h2_by_candidates})")
 
         # ── FAQ count: base 4, scale up if many uncovered phrases/entities ──
@@ -523,7 +523,7 @@ class ArticleOrchestrator:
         h2_count = len(h2_plan)
         # Distribute words: subtract intro, divide rest among H2s
         intro_words = int(self.variables.get("DLUGOSC_INTRO", "180") or "180")
-        section_length = max(200, (target_length - intro_words) // max(1, h2_count))
+        section_length = (target_length - intro_words) // max(1, h2_count)
 
         # Determine next section title for bridge sentence
         if n < h2_count:
@@ -592,21 +592,8 @@ class ArticleOrchestrator:
             retry_prompt = user + f"\n\nUWAGA: Przepisz bez zakazanych fraz: {', '.join(issues)}"
             text = self._llm_call(system, retry_prompt, max_tokens=3000)
 
-        # Validate section word count (±20% tolerance, retry once if too long)
         word_count = len(text.split())
-        max_words = int(section_length * 1.20)
-        if word_count > max_words:
-            print(f"[ORCHESTRATOR] Batch {n}: {word_count} words > {max_words} max "
-                  f"(target {section_length}), retrying with stricter limit...")
-            retry_prompt = (
-                user + f"\n\nUWAGA: Poprzednia wersja miała {word_count} słów. "
-                f"BEZWZGLĘDNY LIMIT tej sekcji to {section_length} słów. "
-                f"Skróć tekst — usuń zbędne zdania, nie dodawaj nowych treści."
-            )
-            text = self._llm_call(system, retry_prompt, max_tokens=3000)
-            new_count = len(text.split())
-            print(f"[ORCHESTRATOR] Batch {n}: retry produced {new_count} words "
-                  f"(target {section_length})")
+        print(f"[ORCHESTRATOR] Batch {n}: {word_count} words")
 
         self.batch_texts.append(text)
         self.bridge_sentences.append(_get_last_sentence(text))

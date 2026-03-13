@@ -181,14 +181,9 @@ def validate_batch(text: str, batch_num: int, batch_data: dict, variables: dict)
             "detail": f"'{main_entity}' nie znaleziony w batchu {batch_num}",
         })
 
-    # Length check
+    # Length info (no enforcement)
     word_count = len(text.split())
-    target = int(batch_data.get("target_length", 0)) if batch_data.get("target_length") else 0
-    if target and abs(word_count - target) > target * 0.15:
-        warnings.append({
-            "type": "LENGTH_MISMATCH",
-            "detail": f"{word_count} słów vs cel {target} (±15%)",
-        })
+    print(f"[VALIDATOR] Batch {batch_num}: {word_count} words")
 
     return {"errors": errors, "warnings": warnings, "passed": passed}
 
@@ -258,21 +253,11 @@ def validate_global(full_text: str, variables: dict) -> dict:
     else:
         passed.append("BOLD_IN_PROSE")
 
-    # 7. Total length
+    # 7. Total length (info only, no penalty)
     word_count = len(full_text.split())
     target = variables.get("_target_length", 0)
-    if target:
-        deviation = abs(word_count - target) / target
-        if deviation > 0.1:
-            warnings.append({
-                "type": "LENGTH_DEVIATION",
-                "actual": word_count,
-                "target": target,
-                "deviation": f"{deviation:.0%}",
-            })
-            score -= int(deviation * 20)
-        else:
-            passed.append("LENGTH_TARGET")
+    print(f"[VALIDATOR] Global: {word_count} words (reference target: {target})")
+    passed.append("LENGTH_TARGET")
 
     # 8. Main entity in all sections
     main_entity = variables.get("ENCJA_GLOWNA", "")
