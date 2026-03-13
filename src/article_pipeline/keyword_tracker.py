@@ -82,8 +82,47 @@ class KeywordTracker:
         # Save initial budget snapshot to Firestore
         self._save_to_firestore("init")
 
+    def _is_topic_phrase(self, phrase_lower: str) -> bool:
+        """Check if phrase shares word stems with main keyword → topic-central.
+
+        Uses common-prefix matching (min 4 chars) as poor-man's Polish stemmer:
+        'mebli' vs 'mebel' → common prefix 'meb' (3) — borderline, try longest common prefix
+        'transportu' vs 'transport' → common prefix 'transport' (9) → match
+        """
+        main_words = self._main_kw_lower.split()
+        phrase_words = phrase_lower.split()
+        for mw in main_words:
+            if len(mw) < 3:
+                continue
+            for pw in phrase_words:
+                if len(pw) < 3:
+                    continue
+                # Exact match
+                if mw == pw:
+                    return True
+                # Common prefix >= 4 chars (covers mebli/meble/mebel/meblom)
+                prefix_len = 0
+                for a, b in zip(mw, pw):
+                    if a == b:
+                        prefix_len += 1
+                    else:
+                        break
+                if prefix_len >= 4:
+                    return True
+        return False
+
     def _init_phrase_budget(self, ngrams: list, ngram_type: str):
-        """Initialize phrase budgets from S1 ngram data."""
+        """Initialize phrase budgets from S1 ngram data.
+
+        Budget scaling rationale:
+        - S1 freq_max = per-competitor-page count (typically 500-1200 words)
+        - Our articles are 1500-3000 words across total_batches sections
+        - With \\b word boundaries, inflected forms don't burn budget
+        - Topic phrases (sharing words with main kw) get 2x boost
+
+        BASIC:  max(total_batches * 2, freq_max * 2), topic phrases * 2
+        EXTENDED: max(2, freq_max), topic phrases * 1.5
+        """
         for ng in ngrams:
             text = (ng.get("ngram") or ng.get("text") or "").strip()
             if not text:
@@ -96,14 +135,20 @@ class KeywordTracker:
                 weight = ng.get("weight", 0)
                 target_max = max(1, int(weight * 10))
 
+            is_topic = self._is_topic_phrase(text.lower())
+
             if ngram_type == "BASIC":
-                global_max = min(max(3, target_max), self.total_batches * 2)
+                # Scale up: at least 2 per batch, or 2x competitor freq
+                global_max = max(self.total_batches * 2, target_max * 2)
+                if is_topic:
+                    global_max *= 2  # topic words appear naturally very often
             else:  # EXTENDED
-                global_max = min(max(1, target_max), self.total_batches)
+                global_max = max(2, target_max)
+                if is_topic:
+                    global_max = int(global_max * 1.5)
 
             key = text.lower()
             if key not in self._global_phrase_budget:
-                # Fix 2: Pre-compile \b pattern for each phrase
                 self._global_phrase_budget[key] = {
                     "phrase": text,
                     "global_max": global_max,
