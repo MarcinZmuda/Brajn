@@ -738,6 +738,13 @@ class ArticleOrchestrator:
         user = fill_template(BATCH_FAQ_PROMPT, batch_vars)
 
         text = self._llm_call(system, user, max_tokens=2000, label="batch_faq")
+
+        # Prepend FAQ header if not already present
+        kw = self.variables.get("HASLO_GLOWNE", "")
+        faq_header = f"## Najczęściej zadawane pytania o {kw}" if kw else "## Najczęściej zadawane pytania"
+        if not text.strip().startswith("## Najczęściej zadawane pytania"):
+            text = faq_header + "\n\n" + text
+
         self.batch_texts.append(text)
         return text
 

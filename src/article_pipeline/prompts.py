@@ -111,6 +111,7 @@ Trójki faktograficzne z <factographic_triplets> to fakty wyekstrahowane z tekst
 2. POGRUBIENIA: zakazane w tekście ciągłym.
 3. NAGŁÓWKI: używaj dokładnie nagłówków z <plan>. Nie przeformułowuj, nie dodawaj nowych.
 4. FAQ: każde pytanie jako H2, odpowiedź 2–4 zdania. Pierwsze zdanie odpowiada wprost na pytanie (snippet-friendly).
+5. NAZWY WŁASNE: NIE używaj nazw firm, marek, szkół ani nazwisk osób — chyba że użytkownik wyraźnie o to poprosił w poleceniu lub strukturze H2. Zamiast nazwy firmy pisz ogólnie: „szkoła barberska", „producent", „specjaliści", „eksperci".
 </formatting_rules>
 
 <length_rules>
@@ -544,6 +545,8 @@ Zdania: średnia 11–15 słów. Rytm: krótkie (5–8) przeplataj z dłuższymi
 Aktywna strona czasownika. Bez pogrubień w tekście ciągłym. Listy punktowe tylko dla procedur/instrukcji.
 
 ZAKAZANE FRAZY: Warto zaznaczyć/podkreślić, Należy zaznaczyć/podkreślić, Jest to ważne, W dzisiejszym artykule, Kluczowym aspektem, Podsumowując powyższe, Jak wspomniano wcześniej, Co więcej, Ponadto, Niemniej jednak, W związku z powyższym, Mając na uwadze, Nie sposób nie wspomnieć, Wiele osób błędnie.
+
+ZAKAZANE NAZWY: NIE używaj nazw firm, marek, szkół ani nazwisk osób w tekście artykułu — chyba że użytkownik wyraźnie o to poprosił w poleceniu lub strukturze H2. Zamiast nazwy firmy pisz ogólnie: „szkoła barberska", „producent", „specjaliści", „eksperci".
 
 Zwracasz wyłącznie tekst w formacie określonym w <output_format>."""
 
