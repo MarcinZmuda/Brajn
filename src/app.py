@@ -65,6 +65,11 @@ class ArticleStartRequest(BaseModel):
     nw_terms: Optional[list[str]] = Field(default=None, description="NW/Surfer terms for coverage analysis")
 
 
+class TextAuditRequest(BaseModel):
+    main_keyword: str = Field(..., min_length=1)
+    text: str = Field(..., min_length=50, description="Article text to audit")
+
+
 class ArticleEditRequest(BaseModel):
     text: str = Field(..., min_length=1)
     instruction: str = Field(..., min_length=1)
@@ -174,6 +179,38 @@ async def start_workflow(req: ArticleStartRequest):
             with _jobs_lock:
                 _jobs[job_id]["status"] = "error"
                 _jobs[job_id]["error"] = str(e)
+                _jobs[job_id]["events"].append({"event": "error", "data": {"message": str(e)}})
+
+    thread = threading.Thread(target=_run, daemon=True)
+    thread.start()
+
+    return {"job_id": job_id, "status": "started", "main_keyword": req.main_keyword}
+
+
+@app.post("/api/audit", dependencies=[Depends(require_api_key)])
+async def audit_text(req: TextAuditRequest):
+    """Audit existing text against S1 SERP analysis. Returns job_id for SSE streaming."""
+    job_id = str(uuid.uuid4())[:8]
+
+    with _jobs_lock:
+        _jobs[job_id] = {
+            "status": "running",
+            "events": [],
+            "main_keyword": req.main_keyword,
+        }
+
+    def _run():
+        try:
+            from src.article_pipeline.text_auditor import run_text_audit
+            for event in run_text_audit(req.main_keyword, req.text):
+                with _jobs_lock:
+                    _jobs[job_id]["events"].append(event)
+                    if event.get("event") == "audit_complete":
+                        _jobs[job_id]["status"] = "complete"
+                        _jobs[job_id]["result"] = event.get("data", {})
+        except Exception as e:
+            with _jobs_lock:
+                _jobs[job_id]["status"] = "error"
                 _jobs[job_id]["events"].append({"event": "error", "data": {"message": str(e)}})
 
     thread = threading.Thread(target=_run, daemon=True)

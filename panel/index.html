@@ -209,9 +209,10 @@
                 <input type="text" id="keyword" placeholder="np. sucha skora glowy">
 
                 <label class="lbl">Tryb</label>
-                <div class="modes">
+                <div class="modes" style="grid-template-columns:repeat(3,1fr)">
                     <div class="mbtn on" data-mode="auto" onclick="selMode('auto')"><strong>Auto</strong><small>S1 + artykul</small></div>
                     <div class="mbtn" data-mode="s1_only" onclick="selMode('s1_only')"><strong>Tylko S1</strong><small>Analiza SERP</small></div>
+                    <div class="mbtn" data-mode="audit" onclick="selMode('audit')"><strong>Sprawdz tekst</strong><small>Audyt SEO</small></div>
                 </div>
 
                 <label class="lbl">Silnik</label>
@@ -220,11 +221,19 @@
                     <div class="mbtn" data-engine="openai" onclick="selEngine('openai')"><strong>OpenAI</strong><small>GPT-4o</small></div>
                 </div>
 
+                <div id="auditFields" style="display:none">
+                    <label class="lbl">Tekst do sprawdzenia</label>
+                    <textarea id="auditText" rows="12" placeholder="Wklej tekst artykulu do audytu..." style="min-height:200px;font-size:12px;line-height:1.5"></textarea>
+                    <div style="font-size:10px;color:var(--mg);margin-top:4px"><span id="auditWordCount">0</span> slow</div>
+                </div>
+
+                <div id="h2Fields">
                 <label class="lbl">Struktura H2 (opcjonalnie)</label>
                 <textarea id="h2Input" rows="4" placeholder="Jedna sekcja H2 na linie..."></textarea>
 
                 <label class="lbl">Slowa kluczowe (opcjonalnie)</label>
                 <textarea id="kwInput" rows="3" placeholder="Dodatkowe frazy kluczowe..."></textarea>
+                </div>
 
                 <button class="btn-primary" id="btnStart" onclick="startWorkflow()">Uruchom workflow</button>
                 <button class="btn-stop" id="btnStop" onclick="stopWorkflow()">Zatrzymaj</button>
@@ -253,6 +262,7 @@
                 <div class="tab" data-tab="s1" onclick="switchTab('s1')">Brief</div>
                 <div class="tab" data-tab="prebatch" onclick="switchTab('prebatch')">Dane wsadowe</div>
                 <div class="tab" data-tab="article" onclick="switchTab('article')">Artykul</div>
+                <div class="tab" data-tab="audit" onclick="switchTab('audit')">Audyt</div>
                 <div class="tab" data-tab="optional" onclick="switchTab('optional')">Moduly opcjonalne</div>
             </div>
 
@@ -315,6 +325,16 @@
                 </div>
             </div>
 
+            <!-- ═══ AUDIT TAB ═══ -->
+            <div class="tab-content" id="tab-audit">
+                <div id="auditContent">
+                    <div class="empty-state">
+                        <div class="icon">&#128270;</div>
+                        <p>Wybierz tryb "Sprawdz tekst", wklej artykul i kliknij "Sprawdz tekst"</p>
+                    </div>
+                </div>
+            </div>
+
             <!-- ═══ OPTIONAL MODULES TAB ═══ -->
             <div class="tab-content" id="tab-optional">
                 <div class="card">
@@ -364,6 +384,18 @@ function esc(s) {
 function selMode(m) {
     mode = m;
     document.querySelectorAll('.mbtn[data-mode]').forEach(b => b.classList.toggle('on', b.dataset.mode === m));
+    var auditFields = document.getElementById('auditFields');
+    var h2Fields = document.getElementById('h2Fields');
+    var btnStart = document.getElementById('btnStart');
+    if (m === 'audit') {
+        auditFields.style.display = 'block';
+        h2Fields.style.display = 'none';
+        btnStart.textContent = 'Sprawdz tekst';
+    } else {
+        auditFields.style.display = 'none';
+        h2Fields.style.display = 'block';
+        btnStart.textContent = 'Uruchom workflow';
+    }
 }
 
 function selEngine(e) {
@@ -1236,8 +1268,53 @@ function showValidation(v) {
     det.innerHTML = html;
 }
 
+// ── Audit ──
+document.addEventListener('DOMContentLoaded', function() {
+    var at = document.getElementById('auditText');
+    if (at) at.addEventListener('input', function() {
+        var words = this.value.trim().split(/\s+/).filter(function(w) { return w; }).length;
+        document.getElementById('auditWordCount').textContent = words;
+    });
+});
+
+async function startAudit() {
+    var keyword = document.getElementById('keyword').value.trim();
+    var text = document.getElementById('auditText').value.trim();
+    if (!keyword) { log('Podaj haslo glowne', 'err'); return; }
+    if (!text || text.split(/\s+/).length < 30) { log('Wklej tekst artykulu (min. 30 slow)', 'err'); return; }
+    var apiKey = getApiKey();
+    if (!apiKey) { log('Podaj API key', 'err'); return; }
+    switchTab('audit');
+    document.getElementById('auditContent').innerHTML = '<div class="empty-state"><div class="icon" style="animation:spin 1s linear infinite">&#9881;</div><p>Analizuje tekst...</p></div>';
+    log('Rozpoczynam audyt: ' + keyword, 'ok');
+    try {
+        var resp = await fetch('/api/audit', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + apiKey },
+            body: JSON.stringify({ main_keyword: keyword, text: text }),
+        });
+        var data = await resp.json();
+        if (!data.job_id) { log('Blad startu audytu', 'err'); return; }
+        var aes = new EventSource('/api/stream/' + data.job_id);
+        aes.onmessage = function(e) {
+            var d = JSON.parse(e.data);
+            if (d.event === 'audit_step') { log('Krok ' + d.data.step + '/' + d.data.total + ': ' + d.data.label); }
+            else if (d.event === 'audit_step_done') { log('Krok ' + d.data.step + ' gotowy', 'ok'); }
+            else if (d.event === 'audit_complete') {
+                document.getElementById('auditContent').innerHTML = '<div class="card"><div class="card-title">Audyt zakonczony</div><div class="card-body">Score: ' + d.data.overall_score + '/100. Luki: ' + (d.data.gaps || {}).total_gaps + '. Rekomendacje: ' + (d.data.recommendations || []).length + '</div></div>';
+                log('Audyt zakonczony. Score: ' + d.data.overall_score, 'ok');
+                aes.close();
+            }
+            else if (d.event === 'error') { log('Blad: ' + (d.data ? d.data.message : ''), 'err'); aes.close(); }
+            else if (d.event === 'stream_end') { aes.close(); }
+        };
+        aes.onerror = function() { log('Blad SSE', 'err'); aes.close(); };
+    } catch (err) { log('Blad: ' + err.message, 'err'); }
+}
+
 // ── Workflow ──
 async function startWorkflow() {
+    if (mode === 'audit') { startAudit(); return; }
     const kw = document.getElementById('keyword').value.trim();
     if (!kw) { alert('Wpisz haslo glowne'); return; }
 
