@@ -541,6 +541,25 @@ class KeywordTracker:
         basic = filter_garbage_ngrams(basic)
         extended = filter_garbage_ngrams(extended)
 
+        # Step 0a: Apply ngram_quality_gate rules (repeated words, product specs, etc.)
+        try:
+            from src.s1.ngram_quality_gate import is_garbage_ngram
+            for lst_name, lst in [("basic", basic), ("extended", extended)]:
+                clean = []
+                for ng in lst:
+                    text = (ng.get("ngram") or ng.get("text") or "").strip()
+                    is_bad, reason = is_garbage_ngram(text)
+                    if not is_bad:
+                        clean.append(ng)
+                    else:
+                        print(f"[BUDGET] Quality gate removed: '{text}' ({reason})")
+                if lst_name == "basic":
+                    basic = clean
+                else:
+                    extended = clean
+        except ImportError:
+            pass
+
         # Step 0b: Clamp rigid freq_min/freq_max limits from S1
         # Use real target_length from orchestrator, fallback to estimate
         article_length = self.target_length if self.target_length > 0 else self.total_batches * 250

@@ -13,7 +13,7 @@ import json
 import re
 from typing import Optional
 
-from src.common.llm import claude_call, gemini_call
+from src.common.llm import claude_call
 
 
 # ══════════════════════════════════════════════════════════════
@@ -448,12 +448,13 @@ def _run_audit(
     user_prompt = _build_audit_user_prompt(article_text, s1_data, variables)
 
     try:
-        response, usage = gemini_call(
+        response, usage = claude_call(
             system_prompt=_AUDIT_SYSTEM_PROMPT,
             user_prompt=user_prompt,
-            model="gemini-2.5-flash",
+            model="claude-sonnet-4-6",
             max_tokens=4000,
             temperature=0.2,
+            timeout=180,
         )
 
         print(f"[PROOFREADER] Audit call: {usage.get('input_tokens', 0)} in, "
