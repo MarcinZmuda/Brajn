@@ -330,7 +330,20 @@ async def proofread_article_endpoint(req: ProofreadRequest):
         )
         return result
     except Exception as e:
-        return {"error": str(e), "status": "error"}
+        import traceback
+        print(f"[PROOFREAD API] Error: {traceback.format_exc()}")
+        return {
+            "error": str(e),
+            "corrected_text": req.text,
+            "applied": [],
+            "flagged": [],
+            "stats": {
+                "auto_fixed": 0,
+                "flagged_for_review": 0,
+                "hallucinations_found": 0,
+                "overall_quality": "error",
+            },
+        }
 
 
 @app.post("/api/edit", dependencies=[Depends(require_api_key)])

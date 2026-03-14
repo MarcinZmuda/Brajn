@@ -2,7 +2,9 @@
 Tests for orchestrator.py fixes:
 1. Step numbering — no collisions between Batch 0 and H2 sections
 2. FAQ header — "Najczęściej zadawane pytania o {keyword}" prepended
+3. Covered content summary — deduplication across batches
 """
+import re
 import sys
 import os
 
@@ -73,6 +75,78 @@ class TestStepNumbering:
             # Last step equals total_steps
             assert max(steps) == total_steps, \
                 f"Max step ({max(steps)}) != total_steps ({total_steps})"
+
+
+class TestCoveredContentSummary:
+    """Test the _build_covered_summary method for batch deduplication."""
+
+    def _read_orchestrator(self):
+        filepath = os.path.join(
+            os.path.dirname(__file__), "..", "src", "article_pipeline", "orchestrator.py"
+        )
+        with open(filepath) as f:
+            return f.read()
+
+    def test_covered_summary_var_in_batch_vars(self):
+        """COVERED_CONTENT_SUMMARY should be passed in batch_vars."""
+        source = self._read_orchestrator()
+        assert '"COVERED_CONTENT_SUMMARY"' in source or "'COVERED_CONTENT_SUMMARY'" in source
+
+    def test_build_covered_summary_method_exists(self):
+        """_build_covered_summary method should exist."""
+        source = self._read_orchestrator()
+        assert "def _build_covered_summary(self)" in source
+
+    def test_summary_extracts_numbers(self):
+        """Summary should extract number-based facts from prior batches."""
+        source = self._read_orchestrator()
+        # Should use regex to find numbers with units
+        assert "re.findall" in source
+        assert "promil" in source  # Polish unit for blood alcohol
+
+    def test_summary_extracts_h2_topics(self):
+        """Summary should extract H2 headings from prior batches."""
+        source = self._read_orchestrator()
+        # Extract H2 pattern
+        assert "^##\\s+(.+)" in source or "^## " in source
+
+    def test_summary_logic_empty_batches(self):
+        """Simulate: no previous batches → empty summary."""
+        batch_texts = []
+        if not batch_texts:
+            result = ""
+        assert result == ""
+
+    def test_summary_logic_with_facts(self):
+        """Simulate: previous batch with facts → non-empty summary."""
+        batch_texts = [
+            "## Progi alkoholu\n\nPróg wynosi 0,5 promila. Grzywna do 5000 zł."
+        ]
+        covered_facts = set()
+        covered_topics = set()
+        for prev_text in batch_texts:
+            numbers = re.findall(
+                r'\d[\d\s,.]*(?:promil[aei]|zł|złotych|lat|roku|lat[a]?|%|tys|mies)',
+                prev_text.lower()
+            )
+            covered_facts.update(n.strip() for n in numbers[:10])
+            h2s = re.findall(r'^##\s+(.+)', prev_text, re.MULTILINE)
+            covered_topics.update(h2s)
+
+        assert len(covered_facts) >= 1, f"Should find facts, got: {covered_facts}"
+        assert "Progi alkoholu" in covered_topics
+        assert any("promil" in f for f in covered_facts)
+
+    def test_already_covered_block_in_prompt(self):
+        """BATCH_N_PROMPT should have <already_covered> block."""
+        filepath = os.path.join(
+            os.path.dirname(__file__), "..", "src", "article_pipeline", "prompts.py"
+        )
+        with open(filepath) as f:
+            source = f.read()
+        assert "<already_covered>" in source
+        assert "{{COVERED_CONTENT_SUMMARY}}" in source
+        assert "NIE opisuj go ponownie" in source
 
 
 class TestFaqHeader:

@@ -77,6 +77,18 @@ Liczby, kwoty, progi i fakty z <hard_facts> mają ABSOLUTNY PRIORYTET nad Twoją
 - Wplataj je naturalnie w tekst, nie wypisuj jako luźne liczby.
 </hard_facts_rules>
 
+<hallucination_prevention>
+BEZWZGLĘDNY ZAKAZ: NIE podawaj ŻADNYCH konkretnych kwot, dat, promili, paragrafów,
+nazw ustaw ani statystyk których NIE MA w <hard_facts> i <section_hard_facts>.
+
+Jeśli znasz fakt z wiedzy ogólnej ale NIE MA go w danych — POMIŃ go.
+Napisz ogólnie: „kara grzywny", „zakaz prowadzenia", „świadczenie pieniężne"
+zamiast wymyślać konkretne liczby.
+
+Lepszy artykuł BEZ kwoty niż artykuł z BŁĘDNĄ kwotą.
+Czytelnik prawnego/medycznego tekstu może podjąć decyzje na podstawie Twoich liczb — błąd = szkoda.
+</hallucination_prevention>
+
 <voice_guidance>
 Encja główna „{{ENCJA_GLOWNA}}": u konkurencji jest podmiotem w {{SUBJECT_RATIO_PCT}}% zdań.
 Twój tekst powinien utrzymywać podobny stosunek — encja główna jako PODMIOT gramatyczny, nie dopełnienie.
@@ -559,6 +571,13 @@ Nie pisz intro, nie pisz FAQ, nie pisz innych sekcji.
 Poprzednia sekcja: „{{OSTATNIE_ZDANIE_POPRZEDNIEGO_BATCHA}}"
 Zacznij od naturalnego rozwinięcia. Nie powtarzaj treści poprzedniej sekcji.
 </continuity>
+
+<already_covered>
+{{COVERED_CONTENT_SUMMARY}}
+Jeśli fakt, kwota, definicja lub argument z powyższej listy pojawił się w poprzednich sekcjach —
+NIE opisuj go ponownie. Odwołaj się jednym zdaniem („jak opisano wyżej") lub pomiń.
+Każda sekcja H2 MUSI wnosić NOWĄ informację, której wcześniejsze sekcje nie pokrywały.
+</already_covered>
 
 <section_spec>
 H2: {{NAGLOWEK_H2}}

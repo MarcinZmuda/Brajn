@@ -619,6 +619,7 @@ class ArticleOrchestrator:
             "NAGLOWEK_H2": h2_heading,
             "NASTEPNY_H2": next_h2,
             "OSTATNIE_ZDANIE_POPRZEDNIEGO_BATCHA": self.bridge_sentences[-1] if self.bridge_sentences else "",
+            "COVERED_CONTENT_SUMMARY": self._build_covered_summary(),
             "ENCJE_BATCH_N_JSON": json.dumps(merged_entities, ensure_ascii=False),
             "NGRAMY_BATCH_N": ngrams_formatted,
             "TRIPLETS_BATCH_N_JSON": json.dumps(batch_data.get("lancuchy", []), ensure_ascii=False),
@@ -653,6 +654,32 @@ class ArticleOrchestrator:
         self.keyword_tracker.update_after_batch(text, batch_label=f"batch_{n}")
 
         return text
+
+    def _build_covered_summary(self) -> str:
+        """Build summary of already covered content for deduplication."""
+        if not self.batch_texts:
+            return ""
+
+        covered_facts = set()
+        covered_topics = set()
+        for prev_text in self.batch_texts:
+            numbers = re.findall(
+                r'\d[\d\s,.]*(?:promil[aei]|zł|złotych|lat|roku|lat[a]?|%|tys|mies)',
+                prev_text.lower()
+            )
+            covered_facts.update(n.strip() for n in numbers[:10])
+            h2s = re.findall(r'^##\s+(.+)', prev_text, re.MULTILINE)
+            covered_topics.update(h2s)
+
+        if not covered_facts and not covered_topics:
+            return ""
+
+        parts = ["TEMATY JUŻ OPISANE (NIE POWTARZAJ):"]
+        if covered_topics:
+            parts.append("Sekcje: " + ", ".join(covered_topics))
+        if covered_facts:
+            parts.append("Fakty użyte: " + ", ".join(list(covered_facts)[:15]))
+        return "\n".join(parts)
 
     def _filter_faq_questions(self, questions: list, max_faq: int = 4) -> list:
         """

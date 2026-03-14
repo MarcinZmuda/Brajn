@@ -76,6 +76,10 @@ def proofread_article(
     """
     variables = variables or {}
 
+    print(f"[PROOFREADER] Called: text={len(article_text)} chars, "
+          f"auto_fix={auto_fix}, "
+          f"s1={bool(s1_data)}, vars={bool(variables)}")
+
     # ── Pass 1: Audyt (Sonnet) ──
     audit = _run_audit(article_text, s1_data, variables)
 
@@ -483,6 +487,10 @@ def _run_audit(
 ) -> Optional[dict]:
     """Run Pass 1: Sonnet audit."""
 
+    print(f"[PROOFREADER] Starting audit: article={len(article_text)} chars, "
+          f"s1_keys={list(s1_data.keys())[:5]}, "
+          f"var_keys={list(variables.keys())[:5]}")
+
     user_prompt = _build_audit_user_prompt(article_text, s1_data, variables)
 
     try:
@@ -501,7 +509,9 @@ def _run_audit(
         return _parse_json_response(response)
 
     except Exception as e:
+        import traceback
         print(f"[PROOFREADER] Audit error: {e}")
+        print(f"[PROOFREADER] Traceback: {traceback.format_exc()}")
         return None
 
 
