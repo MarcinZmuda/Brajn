@@ -209,9 +209,10 @@
                 <input type="text" id="keyword" placeholder="np. sucha skora glowy">
 
                 <label class="lbl">Tryb</label>
-                <div class="modes">
+                <div class="modes" style="grid-template-columns:repeat(3,1fr)">
                     <div class="mbtn on" data-mode="auto" onclick="selMode('auto')"><strong>Auto</strong><small>S1 + artykul</small></div>
-                    <div class="mbtn" data-mode="s1_only" onclick="selMode('s1_only')"><strong>Tylko S1</strong><small>Analiza SERP</small></div>
+                    <div class="mbtn" data-mode="brief" onclick="selMode('brief')"><strong>Brief</strong><small>S1 + brief</small></div>
+                    <div class="mbtn" data-mode="audit" onclick="selMode('audit')"><strong>Sprawdz tekst</strong><small>Audyt SEO</small></div>
                 </div>
 
                 <label class="lbl">Silnik</label>
@@ -220,11 +221,19 @@
                     <div class="mbtn" data-engine="openai" onclick="selEngine('openai')"><strong>OpenAI</strong><small>GPT-4o</small></div>
                 </div>
 
+                <div id="auditFields" style="display:none">
+                    <label class="lbl">Tekst do sprawdzenia</label>
+                    <textarea id="auditText" rows="12" placeholder="Wklej tekst artykulu do audytu..." style="min-height:200px;font-size:12px;line-height:1.5"></textarea>
+                    <div style="font-size:10px;color:var(--mg);margin-top:4px"><span id="auditWordCount">0</span> slow</div>
+                </div>
+
+                <div id="h2Fields">
                 <label class="lbl">Struktura H2 (opcjonalnie)</label>
                 <textarea id="h2Input" rows="4" placeholder="Jedna sekcja H2 na linie..."></textarea>
 
                 <label class="lbl">Slowa kluczowe (opcjonalnie)</label>
                 <textarea id="kwInput" rows="3" placeholder="Dodatkowe frazy kluczowe..."></textarea>
+                </div>
 
                 <button class="btn-primary" id="btnStart" onclick="startWorkflow()">Uruchom workflow</button>
                 <button class="btn-stop" id="btnStop" onclick="stopWorkflow()">Zatrzymaj</button>
@@ -250,9 +259,11 @@
         <div class="main">
             <div class="tabs">
                 <div class="tab on" data-tab="workflow" onclick="switchTab('workflow')">Workflow</div>
-                <div class="tab" data-tab="s1" onclick="switchTab('s1')">Brief</div>
+                <div class="tab" data-tab="s1" onclick="switchTab('s1')">Analiza S1</div>
+                <div class="tab" data-tab="brief" onclick="switchTab('brief')">Brief</div>
                 <div class="tab" data-tab="prebatch" onclick="switchTab('prebatch')">Dane wsadowe</div>
                 <div class="tab" data-tab="article" onclick="switchTab('article')">Artykul</div>
+                <div class="tab" data-tab="audit" onclick="switchTab('audit')">Audyt</div>
                 <div class="tab" data-tab="optional" onclick="switchTab('optional')">Moduly opcjonalne</div>
             </div>
 
@@ -289,6 +300,16 @@
                 </div>
             </div>
 
+            <!-- ═══ BRIEF TAB ═══ -->
+            <div class="tab-content" id="tab-brief">
+                <div id="briefContent">
+                    <div class="empty-state">
+                        <div class="icon">&#128221;</div>
+                        <p>Brief pojawi sie po kroku Pre-Batch</p>
+                    </div>
+                </div>
+            </div>
+
             <!-- ═══ PRE-BATCH / DANE WSADOWE TAB ═══ -->
             <div class="tab-content" id="tab-prebatch">
                 <div id="prebatchContent">
@@ -311,6 +332,16 @@
                     <div class="empty-state">
                         <div class="icon">&#128196;</div>
                         <p>Artykul pojawi sie tutaj po wygenerowaniu</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ═══ AUDIT TAB ═══ -->
+            <div class="tab-content" id="tab-audit">
+                <div id="auditContent">
+                    <div class="empty-state">
+                        <div class="icon">&#128270;</div>
+                        <p>Wybierz tryb "Sprawdz tekst", wklej artykul i kliknij "Sprawdz tekst"</p>
                     </div>
                 </div>
             </div>
@@ -364,6 +395,22 @@ function esc(s) {
 function selMode(m) {
     mode = m;
     document.querySelectorAll('.mbtn[data-mode]').forEach(b => b.classList.toggle('on', b.dataset.mode === m));
+    var auditFields = document.getElementById('auditFields');
+    var h2Fields = document.getElementById('h2Fields');
+    var btnStart = document.getElementById('btnStart');
+    if (m === 'audit') {
+        auditFields.style.display = 'block';
+        h2Fields.style.display = 'none';
+        btnStart.textContent = 'Sprawdz tekst';
+    } else if (m === 'brief') {
+        auditFields.style.display = 'none';
+        h2Fields.style.display = 'none';
+        btnStart.textContent = 'Generuj Brief';
+    } else {
+        auditFields.style.display = 'none';
+        h2Fields.style.display = 'block';
+        btnStart.textContent = 'Uruchom workflow';
+    }
 }
 
 function selEngine(e) {
@@ -505,6 +552,212 @@ function setStepError(step, message) {
         pipelineSteps[step].detail = message || 'Blad';
     }
     renderSteps();
+}
+
+// ── Brief Render ──
+function renderBrief(data) {
+    if (!data) return;
+    const c = document.getElementById('briefContent');
+    let h = '';
+
+    // Header
+    const hdr = data.header || {};
+    h += '<div class="card"><div class="card-title">BRIEF CONTENTOWY</div>';
+    h += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:13px">';
+    h += '<div><b>Haslo:</b> ' + esc(hdr.main_keyword || '') + '</div>';
+    h += '<div><b>Data:</b> ' + esc(hdr.date || '') + '</div>';
+    h += '<div><b>Dlugosc:</b> ' + esc(hdr.target_length || '?') + ' slow</div>';
+    h += '<div><b>YMYL:</b> ' + esc(hdr.ymyl_category || 'brak') + '</div>';
+    h += '</div></div>';
+
+    // Search intent
+    const si = data.search_intent || {};
+    h += '<div class="card"><div class="card-title">Intencja wyszukiwania</div>';
+    if (si.ai_overview) h += '<p style="font-size:13px"><b>AI Overview:</b> ' + esc(si.ai_overview) + '</p>';
+    if (si.featured_snippet) h += '<p style="font-size:13px"><b>Featured Snippet:</b> ' + esc(si.featured_snippet) + '</p>';
+    if (si.competitors && si.competitors.length) {
+        h += '<table class="s1-table"><thead><tr><th>#</th><th>Domena</th><th>Slowa</th><th>H2</th></tr></thead><tbody>';
+        si.competitors.forEach(function(c) {
+            h += '<tr><td>' + c.rank + '</td><td>' + esc(c.domain) + '</td><td>' + c.words + '</td><td>' + c.h2_count + '</td></tr>';
+        });
+        h += '</tbody></table>';
+        h += '<p style="font-size:12px;color:#888">Srednia: ' + (si.avg_competitor_words || '?') + ' slow</p>';
+    }
+    h += '</div>';
+
+    // Main topic
+    const mt = data.main_topic || {};
+    h += '<div class="card"><div class="card-title">Temat glowny</div>';
+    h += '<p style="font-size:14px"><b>Encja centralna:</b> <span style="color:#4fc3f7;font-size:16px">' + esc(mt.entity || '') + '</span></p>';
+    if (mt.placement_instruction) h += '<p style="font-size:13px"><b>Instrukcja:</b> ' + esc(mt.placement_instruction) + '</p>';
+    if (mt.first_paragraph_entities && mt.first_paragraph_entities.length) {
+        h += '<p style="font-size:13px"><b>Pierwszy akapit:</b> ' + mt.first_paragraph_entities.map(esc).join(', ') + '</p>';
+    }
+    h += '</div>';
+
+    // Topics (with per-entity context)
+    const tp = data.topics || {};
+    h += '<div class="card"><div class="card-title">Tematy do pokrycia</div>';
+    function renderEntityGroup(items, label, color) {
+        if (!items || !items.length) return '';
+        var out = '<div style="margin-bottom:8px"><b style="color:' + color + '">' + label + ':</b><div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:4px">';
+        items.forEach(function(t) {
+            var text = (typeof t === 'object') ? (t.text || '') : t;
+            var cov = (typeof t === 'object' && t.coverage) ? ' <span style="font-size:11px;color:#888">(' + esc(t.coverage) + ')</span>' : '';
+            out += '<span class="chip">' + esc(text) + cov + '</span>';
+        });
+        return out + '</div></div>';
+    }
+    h += renderEntityGroup(tp.must_cover, 'OBOWIAZKOWE', '#4caf50');
+    h += renderEntityGroup(tp.should_cover, 'WAZNE', '#ff9800');
+    h += renderEntityGroup(tp.differentiators, 'WYROZNIKI', '#9c27b0');
+    h += '</div>';
+
+    // Plan
+    const plan = data.plan || {};
+    h += '<div class="card"><div class="card-title">Plan artykulu</div>';
+    if (plan.h1_suggestion) h += '<p style="font-size:14px"><b>H1:</b> ' + esc(plan.h1_suggestion) + '</p>';
+    if (plan.sections && plan.sections.length) {
+        plan.sections.forEach(function(s, i) {
+            h += '<div style="border-left:3px solid #4fc3f7;padding:4px 8px;margin:6px 0">';
+            h += '<b>H2:</b> ' + esc(s.h2) + '';
+            if (s.entities && s.entities.length) h += '<br><span style="font-size:12px;color:#aaa">Tematy: ' + s.entities.slice(0, 5).map(esc).join(', ') + '</span>';
+            h += '</div>';
+        });
+    }
+    if (plan.faq && plan.faq.length) {
+        h += '<div style="margin-top:8px"><b>FAQ:</b><ul style="margin:4px 0;padding-left:20px">';
+        plan.faq.forEach(function(q) {
+            var qtxt = (typeof q === 'object') ? (q.question || '') : q;
+            var prio = (typeof q === 'object') ? (q.priority || 'standard') : 'standard';
+            var marker = prio === 'unanswered' ? ' <span style="color:var(--rd);font-size:11px">&larr; nikt nie odpowiada w SERP</span>' : '';
+            h += '<li style="font-size:13px">' + esc(qtxt) + marker + '</li>';
+        });
+        h += '</ul></div>';
+    }
+    h += '</div>';
+
+    // Language variants
+    const lv = data.language_variants || {};
+    if (lv.named || lv.nominal || lv.pronominal || lv.periphrases || lv.colloquial || lv.formal) {
+        h += '<div class="card"><div class="card-title">Warianty jezykowe</div>';
+        if (lv.named) h += '<p style="font-size:13px"><b>Pelna nazwa:</b> ' + esc(lv.named) + '</p>';
+        if (lv.nominal) h += '<p style="font-size:13px"><b>Opisy zastepcze:</b> ' + esc(lv.nominal) + '</p>';
+        if (lv.pronominal) h += '<p style="font-size:13px"><b>Zaimki:</b> ' + esc(lv.pronominal) + '</p>';
+        if (lv.periphrases) h += '<p style="font-size:13px"><b>Peryfrazy:</b> ' + esc(lv.periphrases) + '</p>';
+        if (lv.colloquial) h += '<p style="font-size:13px"><b>Warianty potoczne:</b> ' + esc(lv.colloquial) + '</p>';
+        if (lv.formal) h += '<p style="font-size:13px"><b>Warianty formalne:</b> ' + esc(lv.formal) + '</p>';
+        if (lv.rotation_pattern) h += '<p style="font-size:12px;color:var(--yl);margin-top:6px;border-left:3px solid var(--yl);padding-left:8px">' + esc(lv.rotation_pattern) + '</p>';
+        h += '</div>';
+    }
+
+    // Keyphrases
+    const kp = data.keyphrases || [];
+    if (kp.length) {
+        h += '<div class="card"><div class="card-title">Frazy kluczowe (' + kp.length + ')</div>';
+        h += '<table class="s1-table"><thead><tr><th>Fraza</th><th>Zakres</th><th>Priorytet</th></tr></thead><tbody>';
+        kp.forEach(function(p) {
+            var cls = p.priority === 'OBOWIAZKOWA' ? 'color:#4caf50' : (p.priority === 'WAZNA' ? 'color:#ff9800' : 'color:#888');
+            h += '<tr><td>' + esc(p.phrase) + '</td><td>' + esc(p.freq_range) + 'x</td><td style="' + cls + '">' + esc(p.priority) + '</td></tr>';
+        });
+        h += '</tbody></table></div>';
+    }
+
+    // Hard facts
+    const hf = data.hard_facts || [];
+    if (hf.length) {
+        h += '<div class="card"><div class="card-title">Fakty i dane (' + hf.length + ')</div><ul style="padding-left:20px">';
+        hf.forEach(function(f) {
+            var cat = f.category ? ' <span style="color:#888">(' + esc(f.category) + ')</span>' : '';
+            h += '<li style="font-size:13px">' + esc(f.value) + cat + '</li>';
+        });
+        h += '</ul></div>';
+    }
+
+    // Relations
+    const rel = data.relations || {};
+    if ((rel.causal_chains && rel.causal_chains.length) || (rel.spo_triples && rel.spo_triples.length)) {
+        h += '<div class="card"><div class="card-title">Relacje i mechanizmy</div>';
+        if (rel.causal_chains && rel.causal_chains.length) {
+            h += '<div style="margin-bottom:8px"><b>Lancuchy przyczynowo-skutkowe:</b><ul style="padding-left:20px">';
+            rel.causal_chains.forEach(function(c) {
+                h += '<li style="font-size:13px">' + esc(c.cause) + ' &rarr; ' + esc(c.effect) + '</li>';
+            });
+            h += '</ul></div>';
+        }
+        if (rel.spo_triples && rel.spo_triples.length) {
+            h += '<div><b>Fakty SPO:</b><ul style="padding-left:20px">';
+            rel.spo_triples.forEach(function(t) {
+                h += '<li style="font-size:13px">' + esc(t.subject) + ' &rarr; ' + esc(t.predicate) + ' &rarr; ' + esc(t.object) + '</li>';
+            });
+            h += '</ul></div>';
+        }
+        h += '</div>';
+    }
+
+    // Style & rules
+    const st = data.style || {};
+    if (st.banned_phrases || st.cooccurrence_pairs || st.ymyl_context) {
+        h += '<div class="card"><div class="card-title">Styl i reguly</div>';
+        h += '<ul style="padding-left:20px;font-size:13px">';
+        h += '<li>Naturalny, publicystyczny polski</li>';
+        h += '<li>Mow do czytelnika: "mozesz", "pamietaj", "jesli"</li>';
+        h += '<li>Srednia dlugosc zdania: 11-15 slow</li>';
+        h += '<li>Aktywna strona czasownika</li>';
+        if (st.banned_phrases) h += '<li><b style="color:var(--rd)">Zakazane frazy:</b> ' + esc(st.banned_phrases) + '</li>';
+        if (st.cooccurrence_pairs) h += '<li><b>Pary tematyczne:</b> ' + esc(st.cooccurrence_pairs) + '</li>';
+        if (st.ymyl_context) h += '<li><b style="color:var(--yl)">YMYL:</b> ' + esc(String(st.ymyl_context).substring(0, 200)) + '</li>';
+        h += '</ul></div>';
+    }
+
+    // Export button
+    h += '<div style="text-align:center;margin:16px 0">';
+    h += '<button class="btn-secondary" onclick="copyBriefMarkdown()">Kopiuj brief (Markdown)</button>';
+    h += '</div>';
+
+    c.innerHTML = h;
+}
+
+function copyBriefMarkdown() {
+    var d = window._briefData;
+    if (!d) { alert('Brak danych briefu'); return; }
+    var md = '# BRIEF CONTENTOWY\n\n';
+    var hdr = d.header || {};
+    md += '**Haslo:** ' + (hdr.main_keyword || '') + '\n';
+    md += '**Data:** ' + (hdr.date || '') + '\n';
+    md += '**Dlugosc:** ' + (hdr.target_length || '?') + ' slow\n';
+    md += '**YMYL:** ' + (hdr.ymyl_category || 'brak') + '\n\n';
+    var si = d.search_intent || {};
+    md += '## Intencja wyszukiwania\n';
+    if (si.ai_overview) md += '**AI Overview:** ' + si.ai_overview + '\n';
+    if (si.featured_snippet) md += '**Featured Snippet:** ' + si.featured_snippet + '\n\n';
+    var mt = d.main_topic || {};
+    md += '## Temat glowny\n';
+    md += '**Encja centralna:** ' + (mt.entity || '') + '\n';
+    if (mt.placement_instruction) md += '**Instrukcja:** ' + mt.placement_instruction + '\n\n';
+    var tp = d.topics || {};
+    md += '## Tematy do pokrycia\n';
+    if (tp.must_cover) { md += '**OBOWIAZKOWE:** ' + tp.must_cover.map(function(t) { return typeof t === 'object' ? t.text : t; }).join(', ') + '\n'; }
+    if (tp.should_cover) { md += '**WAZNE:** ' + tp.should_cover.map(function(t) { return typeof t === 'object' ? t.text : t; }).join(', ') + '\n'; }
+    if (tp.differentiators) { md += '**WYROZNIKI:** ' + tp.differentiators.map(function(t) { return typeof t === 'object' ? t.text : t; }).join(', ') + '\n\n'; }
+    var plan = d.plan || {};
+    md += '## Plan artykulu\n';
+    if (plan.h1_suggestion) md += '**H1:** ' + plan.h1_suggestion + '\n';
+    if (plan.sections) { plan.sections.forEach(function(s) { md += '- **H2:** ' + s.h2 + '\n'; }); }
+    if (plan.faq) { md += '\n**FAQ:**\n'; plan.faq.forEach(function(q) { var qtxt = typeof q === 'object' ? q.question : q; md += '- ' + qtxt + '\n'; }); }
+    md += '\n';
+    var lv = d.language_variants || {};
+    md += '## Warianty jezykowe\n';
+    if (lv.named) md += '**Pelna nazwa:** ' + lv.named + '\n';
+    if (lv.nominal) md += '**Opisy zastepcze:** ' + lv.nominal + '\n';
+    if (lv.pronominal) md += '**Zaimki:** ' + lv.pronominal + '\n';
+    if (lv.rotation_pattern) md += '**Rotacja:** ' + lv.rotation_pattern + '\n';
+    md += '\n';
+    var kp = d.keyphrases || [];
+    if (kp.length) { md += '## Frazy kluczowe\n'; kp.forEach(function(p) { md += '- ' + p.phrase + ' (' + p.freq_range + 'x, ' + p.priority + ')\n'; }); md += '\n'; }
+    var hf = d.hard_facts || [];
+    if (hf.length) { md += '## Fakty i dane\n'; hf.forEach(function(f) { md += '- ' + f.value + '\n'; }); md += '\n'; }
+    navigator.clipboard.writeText(md).then(function() { alert('Brief skopiowany do schowka'); });
 }
 
 // ── S1 Render ──
@@ -1236,8 +1489,53 @@ function showValidation(v) {
     det.innerHTML = html;
 }
 
+// ── Audit ──
+document.addEventListener('DOMContentLoaded', function() {
+    var at = document.getElementById('auditText');
+    if (at) at.addEventListener('input', function() {
+        var words = this.value.trim().split(/\s+/).filter(function(w) { return w; }).length;
+        document.getElementById('auditWordCount').textContent = words;
+    });
+});
+
+async function startAudit() {
+    var keyword = document.getElementById('keyword').value.trim();
+    var text = document.getElementById('auditText').value.trim();
+    if (!keyword) { log('Podaj haslo glowne', 'err'); return; }
+    if (!text || text.split(/\s+/).length < 30) { log('Wklej tekst artykulu (min. 30 slow)', 'err'); return; }
+    var apiKey = getApiKey();
+    if (!apiKey) { log('Podaj API key', 'err'); return; }
+    switchTab('audit');
+    document.getElementById('auditContent').innerHTML = '<div class="empty-state"><div class="icon" style="animation:spin 1s linear infinite">&#9881;</div><p>Analizuje tekst...</p></div>';
+    log('Rozpoczynam audyt: ' + keyword, 'ok');
+    try {
+        var resp = await fetch('/api/audit', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + apiKey },
+            body: JSON.stringify({ main_keyword: keyword, text: text }),
+        });
+        var data = await resp.json();
+        if (!data.job_id) { log('Blad startu audytu', 'err'); return; }
+        var aes = new EventSource('/api/stream/' + data.job_id);
+        aes.onmessage = function(e) {
+            var d = JSON.parse(e.data);
+            if (d.event === 'audit_step') { log('Krok ' + d.data.step + '/' + d.data.total + ': ' + d.data.label); }
+            else if (d.event === 'audit_step_done') { log('Krok ' + d.data.step + ' gotowy', 'ok'); }
+            else if (d.event === 'audit_complete') {
+                document.getElementById('auditContent').innerHTML = '<div class="card"><div class="card-title">Audyt zakonczony</div><div class="card-body">Score: ' + d.data.overall_score + '/100. Luki: ' + (d.data.gaps || {}).total_gaps + '. Rekomendacje: ' + (d.data.recommendations || []).length + '</div></div>';
+                log('Audyt zakonczony. Score: ' + d.data.overall_score, 'ok');
+                aes.close();
+            }
+            else if (d.event === 'error') { log('Blad: ' + (d.data ? d.data.message : ''), 'err'); aes.close(); }
+            else if (d.event === 'stream_end') { aes.close(); }
+        };
+        aes.onerror = function() { log('Blad SSE', 'err'); aes.close(); };
+    } catch (err) { log('Blad: ' + err.message, 'err'); }
+}
+
 // ── Workflow ──
 async function startWorkflow() {
+    if (mode === 'audit') { startAudit(); return; }
     const kw = document.getElementById('keyword').value.trim();
     if (!kw) { alert('Wpisz haslo glowne'); return; }
 
@@ -1281,9 +1579,26 @@ async function startWorkflow() {
         log('S1 done: ' + (s1Data.summary ? JSON.stringify(s1Data.summary) : 'ok'), 'ok');
         renderS1(s1Data);
 
-        if (mode === 's1_only') {
-            log('Mode: S1 only - done', 'ok');
-            switchTab('s1');
+        if (mode === 'brief') {
+            log('Mode: Brief - generuje brief z danych S1...', 'ok');
+            try {
+                const briefResp = await fetch('/api/generate_brief', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + apiKey },
+                    body: JSON.stringify({ main_keyword: kw, s1_data: s1Data }),
+                });
+                if (briefResp.ok) {
+                    const briefResult = await briefResp.json();
+                    if (briefResult.brief) {
+                        window._briefData = briefResult.brief;
+                        renderBrief(briefResult.brief);
+                    }
+                }
+            } catch (e) {
+                log('Brief generation error: ' + e.message, 'warn');
+            }
+            switchTab('brief');
+            log('Brief gotowy', 'ok');
             cleanup();
             return;
         }
@@ -1340,6 +1655,11 @@ async function startWorkflow() {
                     if (d.data && d.data.pre_batch_map) {
                         renderPreBatch(d.data.pre_batch_map, d.data.input_variables || {}, []);
                     }
+                    // Render brief tab when brief data arrives
+                    if (d.data && d.data.brief) {
+                        window._briefData = d.data.brief;
+                        renderBrief(d.data.brief);
+                    }
                 }
                 else if (d.event === 'article_assembled') {
                     if (d.data && d.data.full_text) {
@@ -1357,6 +1677,11 @@ async function startWorkflow() {
                         // Update pre-batch tab with full data including prompt log
                         if (d.data.pre_batch_map) {
                             renderPreBatch(d.data.pre_batch_map, d.data.input_variables || {}, d.data.prompt_log || []);
+                        }
+                        // Brief
+                        if (d.data.brief) {
+                            window._briefData = d.data.brief;
+                            renderBrief(d.data.brief);
                         }
                     }
                     // Mark all remaining steps as done

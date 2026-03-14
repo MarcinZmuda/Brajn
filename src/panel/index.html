@@ -321,9 +321,10 @@
                 <input type="text" id="keyword" placeholder="np. sucha skora glowy">
 
                 <label class="lbl">Tryb</label>
-                <div class="modes">
+                <div class="modes" style="grid-template-columns:repeat(3,1fr)">
                     <div class="mbtn on" data-mode="auto" onclick="selMode('auto')"><strong>Auto</strong><small>S1 + artykul</small></div>
-                    <div class="mbtn" data-mode="s1_only" onclick="selMode('s1_only')"><strong>Tylko S1</strong><small>Analiza SERP</small></div>
+                    <div class="mbtn" data-mode="brief" onclick="selMode('brief')"><strong>Brief</strong><small>S1 + brief</small></div>
+                    <div class="mbtn" data-mode="audit" onclick="selMode('audit')"><strong>Sprawdz tekst</strong><small>Audyt SEO</small></div>
                 </div>
 
                 <label class="lbl">Silnik</label>
@@ -332,11 +333,19 @@
                     <div class="mbtn" data-engine="openai" onclick="selEngine('openai')"><strong>OpenAI</strong><small>GPT-4o</small></div>
                 </div>
 
+                <div id="auditFields" style="display:none">
+                    <label class="lbl">Tekst do sprawdzenia</label>
+                    <textarea id="auditText" rows="12" placeholder="Wklej tekst artykulu do audytu..." style="min-height:200px;font-size:12px;line-height:1.5"></textarea>
+                    <div style="font-size:10px;color:var(--mg);margin-top:4px"><span id="auditWordCount">0</span> slow</div>
+                </div>
+
+                <div id="h2Fields">
                 <label class="lbl">Struktura H2 (opcjonalnie)</label>
                 <textarea id="h2Input" rows="4" placeholder="Jedna sekcja H2 na linie..."></textarea>
 
                 <label class="lbl">Slowa kluczowe (opcjonalnie)</label>
                 <textarea id="kwInput" rows="3" placeholder="Dodatkowe frazy kluczowe..."></textarea>
+                </div>
 
                 <button class="btn-primary" id="btnStart" onclick="startWorkflow()">Uruchom workflow</button>
                 <button class="btn-stop" id="btnStop" onclick="stopWorkflow()">Zatrzymaj</button>
@@ -362,12 +371,14 @@
         <div class="main">
             <div class="tabs">
                 <div class="tab on" data-tab="workflow" onclick="switchTab('workflow')">Workflow</div>
-                <div class="tab" data-tab="s1" onclick="switchTab('s1')">Brief</div>
+                <div class="tab" data-tab="s1" onclick="switchTab('s1')">Analiza S1</div>
+                <div class="tab" data-tab="brief" onclick="switchTab('brief')">Brief</div>
                 <div class="tab" data-tab="prebatch" onclick="switchTab('prebatch')">Dane wsadowe</div>
                 <div class="tab" data-tab="article" onclick="switchTab('article')">Artykul</div>
                 <div class="tab" data-tab="entity" onclick="switchTab('entity')">Entity SEO</div>
                 <div class="tab" data-tab="annotate" onclick="switchTab('annotate')">Annotacje</div>
                 <div class="tab" data-tab="compliance" onclick="switchTab('compliance')">Compliance</div>
+                <div class="tab" data-tab="audit" onclick="switchTab('audit')">Audyt</div>
                 <div class="tab" data-tab="optional" onclick="switchTab('optional')">Moduly opcjonalne</div>
             </div>
 
@@ -394,15 +405,24 @@
                 </div>
             </div>
 
-            <!-- ═══ BRIEF (was S1) TAB ═══ -->
+            <!-- ═══ ANALIZA S1 TAB ═══ -->
             <div class="tab-content" id="tab-s1">
+                <div id="s1Content">
+                    <div class="empty-state">
+                        <div class="icon">&#128202;</div>
+                        <p>Dane S1 pojawia sie po analizie SERP</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ═══ BRIEF TAB ═══ -->
+            <div class="tab-content" id="tab-brief">
                 <div id="briefContent">
                     <div class="empty-state">
                         <div class="icon">&#128221;</div>
                         <p>Brief pojawi sie po kroku Pre-Batch</p>
                     </div>
                 </div>
-                <div id="s1Content" style="display:none"></div>
             </div>
 
             <!-- ═══ PRE-BATCH / DANE WSADOWE TAB ═══ -->
@@ -462,6 +482,16 @@
                 </div>
             </div>
 
+            <!-- ═══ AUDIT TAB ═══ -->
+            <div class="tab-content" id="tab-audit">
+                <div id="auditContent">
+                    <div class="empty-state">
+                        <div class="icon">&#128270;</div>
+                        <p>Wybierz tryb "Sprawdz tekst", wklej artykul i kliknij "Sprawdz tekst"</p>
+                    </div>
+                </div>
+            </div>
+
             <!-- ═══ OPTIONAL MODULES TAB ═══ -->
             <div class="tab-content" id="tab-optional">
                 <div class="card">
@@ -511,6 +541,22 @@ function esc(s) {
 function selMode(m) {
     mode = m;
     document.querySelectorAll('.mbtn[data-mode]').forEach(b => b.classList.toggle('on', b.dataset.mode === m));
+    var auditFields = document.getElementById('auditFields');
+    var h2Fields = document.getElementById('h2Fields');
+    var btnStart = document.getElementById('btnStart');
+    if (m === 'audit') {
+        auditFields.style.display = 'block';
+        h2Fields.style.display = 'none';
+        btnStart.textContent = 'Sprawdz tekst';
+    } else if (m === 'brief') {
+        auditFields.style.display = 'none';
+        h2Fields.style.display = 'none';
+        btnStart.textContent = 'Generuj Brief';
+    } else {
+        auditFields.style.display = 'none';
+        h2Fields.style.display = 'block';
+        btnStart.textContent = 'Uruchom workflow';
+    }
 }
 
 function selEngine(e) {
@@ -1007,6 +1053,195 @@ function copyBriefMarkdown() {
     navigator.clipboard.writeText(md.replace(/\\n/g, '\n')).then(function() {
         alert('Brief skopiowany do schowka (10 sekcji)!');
     });
+}
+
+// ── Audit word counter ──
+document.addEventListener('DOMContentLoaded', function() {
+    var at = document.getElementById('auditText');
+    if (at) at.addEventListener('input', function() {
+        var words = this.value.trim().split(/\s+/).filter(function(w) { return w; }).length;
+        document.getElementById('auditWordCount').textContent = words;
+    });
+});
+
+// ── Audit Start ──
+async function startAudit() {
+    var keyword = document.getElementById('keyword').value.trim();
+    var text = document.getElementById('auditText').value.trim();
+    if (!keyword) { log('Podaj haslo glowne', 'err'); return; }
+    if (!text || text.split(/\s+/).length < 30) { log('Wklej tekst artykulu (min. 30 slow)', 'err'); return; }
+    var apiKey = getApiKey();
+    if (!apiKey) { log('Podaj API key', 'err'); return; }
+
+    switchTab('audit');
+    document.getElementById('auditContent').innerHTML = '<div class="empty-state"><div class="icon" style="animation:spin 1s linear infinite">&#9881;</div><p>Analizuje tekst...</p></div>';
+    log('Rozpoczynam audyt: ' + keyword, 'ok');
+
+    try {
+        var resp = await fetch('/api/audit', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + apiKey },
+            body: JSON.stringify({ main_keyword: keyword, text: text }),
+        });
+        var data = await resp.json();
+        if (!data.job_id) { log('Blad startu audytu', 'err'); return; }
+
+        var aes = new EventSource('/api/stream/' + data.job_id);
+        aes.onmessage = function(e) {
+            var d = JSON.parse(e.data);
+            if (d.event === 'audit_step') {
+                log('Krok ' + d.data.step + '/' + d.data.total + ': ' + d.data.label);
+            } else if (d.event === 'audit_step_done') {
+                log('Krok ' + d.data.step + ' gotowy', 'ok');
+            } else if (d.event === 'audit_complete') {
+                renderAuditReport(d.data);
+                if (d.data.brief) {
+                    window._briefData = d.data.brief;
+                    renderBrief(d.data.brief);
+                }
+                log('Audyt zakonczony. Score: ' + d.data.overall_score, 'ok');
+                aes.close();
+            } else if (d.event === 'error') {
+                log('Blad: ' + (d.data ? d.data.message : 'unknown'), 'err');
+                aes.close();
+            } else if (d.event === 'stream_end') {
+                aes.close();
+            }
+        };
+        aes.onerror = function() { log('Blad polaczenia SSE', 'err'); aes.close(); };
+    } catch (err) {
+        log('Blad: ' + err.message, 'err');
+    }
+}
+
+// ── Audit Report Render ──
+function renderAuditReport(data) {
+    var c = document.getElementById('auditContent');
+    var h = '';
+    var score = data.overall_score || 0;
+    var scores = data.component_scores || {};
+    var meta = data.article_meta || {};
+    var gaps = data.gaps || {};
+    var recs = data.recommendations || [];
+    var ngCov = data.ngram_coverage || {};
+    var ngStats = ngCov.stats || {};
+
+    // Score color
+    var scolor = score >= 80 ? 'var(--gn)' : (score >= 60 ? 'var(--yl)' : 'var(--rd)');
+
+    // ── Overview: Score + stats ──
+    h += '<div class="card"><div style="display:flex;align-items:center;gap:20px">';
+    h += '<div style="text-align:center"><div style="font-size:48px;font-weight:800;color:' + scolor + '">' + score + '</div><div style="font-size:12px;color:var(--mg)">/ 100</div></div>';
+    h += '<div style="flex:1;display:grid;grid-template-columns:repeat(4,1fr);gap:8px;text-align:center">';
+    h += '<div class="card" style="padding:8px"><b style="font-size:18px">' + (meta.word_count || 0) + '</b><br><span style="font-size:11px;color:var(--mg)">slow / ' + (meta.target_word_count || '?') + '</span></div>';
+    h += '<div class="card" style="padding:8px"><b style="font-size:18px">' + (meta.h2_count || 0) + '</b><br><span style="font-size:11px;color:var(--mg)">sekcji H2</span></div>';
+    h += '<div class="card" style="padding:8px"><b style="font-size:18px">' + (ngStats.coverage_pct || 0) + '%</b><br><span style="font-size:11px;color:var(--mg)">pokrycie fraz</span></div>';
+    h += '<div class="card" style="padding:8px"><b style="font-size:18px;color:var(--rd)">' + (gaps.total_gaps || 0) + '</b><br><span style="font-size:11px;color:var(--mg)">luki</span></div>';
+    h += '</div></div></div>';
+
+    // ── Recommendations ──
+    if (recs.length) {
+        h += '<div class="card"><div class="card-title">Rekomendacje (' + recs.length + ')</div>';
+        recs.forEach(function(r) {
+            var icon = r.priority === 'high' ? '<span style="color:var(--rd)">&#9679;</span>' : (r.priority === 'medium' ? '<span style="color:var(--yl)">&#9679;</span>' : '<span style="color:var(--gn)">&#9679;</span>');
+            h += '<div style="padding:6px 0;border-bottom:1px solid var(--b1);font-size:13px">';
+            h += icon + ' <b style="font-size:11px;color:var(--mg)">' + esc(r.area) + '</b><br>';
+            h += '<span>' + esc(r.action) + '</span></div>';
+        });
+        h += '</div>';
+    }
+
+    // ── Component Scores ──
+    h += '<div class="card"><div class="card-title">Wyniki komponentow</div>';
+    var compNames = {
+        entity_salience: 'Entity Salience', spo_triples: 'Trojki SPO', causal_chains: 'Lancuchy przyczynowe',
+        cooccurrence: 'Kooccurrence', mention_variety: 'Warianty wzmianek', ngram_budget: 'Pokrycie fraz',
+        centerpiece: 'Centerpiece', hard_facts: 'Hard Facts', naming_consistency: 'Spojnosc nazw'
+    };
+    Object.keys(compNames).forEach(function(key) {
+        var val = scores[key];
+        if (val === undefined) return;
+        var color = val >= 80 ? 'var(--gn)' : (val >= 60 ? 'var(--yl)' : 'var(--rd)');
+        h += '<div style="display:flex;align-items:center;gap:8px;margin:4px 0;font-size:13px">';
+        h += '<span style="width:140px;color:var(--lg)">' + compNames[key] + '</span>';
+        h += '<div style="flex:1;height:8px;background:var(--b1);border-radius:4px"><div style="height:8px;width:' + val + '%;background:' + color + ';border-radius:4px"></div></div>';
+        h += '<span style="width:35px;text-align:right;color:' + color + ';font-weight:600">' + val + '%</span>';
+        h += '</div>';
+    });
+    h += '</div>';
+
+    // ── N-gram coverage ──
+    var ngMissing = ngCov.missing || [];
+    var ngUnder = ngCov.under || [];
+    var ngOver = ngCov.over || [];
+    var ngOk = ngCov.ok || [];
+    if (ngMissing.length || ngUnder.length || ngOver.length) {
+        h += '<div class="card"><div class="card-title">Pokrycie fraz kluczowych</div>';
+        function renderNgGroup(items, label, color) {
+            if (!items.length) return '';
+            var out = '<div style="margin-bottom:8px"><b style="color:' + color + '">' + label + ' (' + items.length + '):</b>';
+            out += '<table class="s1-table" style="margin-top:4px"><thead><tr><th>Fraza</th><th>Aktualnie</th><th>Zakres</th></tr></thead><tbody>';
+            items.slice(0, 15).forEach(function(ng) {
+                out += '<tr><td>' + esc(ng.term) + '</td><td style="color:' + color + '">' + ng.actual + '</td><td>' + ng.min + '-' + ng.max + '</td></tr>';
+            });
+            out += '</tbody></table></div>';
+            return out;
+        }
+        h += renderNgGroup(ngMissing, 'Brakujace', 'var(--rd)');
+        h += renderNgGroup(ngUnder, 'Za malo', 'var(--yl)');
+        h += renderNgGroup(ngOver, 'Przekroczone', 'var(--bl)');
+        h += '<p style="font-size:12px;color:var(--gn)">OK: ' + ngOk.length + ' fraz w zakresie</p>';
+        h += '</div>';
+    }
+
+    // ── Missing entities ──
+    var entityGaps = gaps.entity_gaps || [];
+    if (entityGaps.length) {
+        h += '<div class="card"><div class="card-title">Brakujace tematy (' + entityGaps.length + ')</div>';
+        entityGaps.forEach(function(g) {
+            h += '<div style="padding:4px 0;font-size:13px"><span style="color:var(--rd)">&#9679;</span> <b>' + esc(g.entity) + '</b> -- ' + esc(g.recommendation) + '</div>';
+        });
+        h += '</div>';
+    }
+
+    // ── PAA gaps ──
+    var paaGaps = gaps.paa_gaps || [];
+    if (paaGaps.length) {
+        h += '<div class="card"><div class="card-title">Pytania PAA bez odpowiedzi (' + paaGaps.length + ')</div>';
+        paaGaps.forEach(function(g) {
+            h += '<div style="padding:4px 0;font-size:13px"><span style="color:var(--rd)">&#9679;</span> ' + esc(g.question) + '</div>';
+        });
+        h += '</div>';
+    }
+
+    // ── Mention variety ──
+    var mv = data.mention_variety || {};
+    if (mv.has_data) {
+        h += '<div class="card"><div class="card-title">Warianty wzmianek</div>';
+        var categories = [
+            { key: 'named', label: 'Named (pelna forma)', target: '40-50%' },
+            { key: 'nominal', label: 'Nominal (opis zastepczy)', target: '30-40%' },
+            { key: 'pronominal', label: 'Pronominal (zaimki)', target: '15-25%' },
+        ];
+        categories.forEach(function(cat) {
+            var d = mv[cat.key] || {};
+            var pct = d.pct || 0;
+            var color = (cat.key === 'named' && pct > 70) ? 'var(--rd)' : 'var(--gn)';
+            h += '<div style="display:flex;align-items:center;gap:8px;margin:4px 0;font-size:13px">';
+            h += '<span style="width:180px;color:var(--lg)">' + cat.label + '</span>';
+            h += '<div style="flex:1;height:8px;background:var(--b1);border-radius:4px"><div style="height:8px;width:' + Math.min(pct, 100) + '%;background:' + color + ';border-radius:4px"></div></div>';
+            h += '<span style="width:50px;text-align:right;color:var(--lg)">' + pct.toFixed(0) + '% <span style="font-size:10px">(' + cat.target + ')</span></span>';
+            h += '</div>';
+        });
+        h += '</div>';
+    }
+
+    // ── Export buttons ──
+    h += '<div style="text-align:center;margin:16px 0;display:flex;gap:8px;justify-content:center">';
+    h += '<button class="btn-secondary" onclick="switchTab(\'s1\')">Zobacz Brief</button>';
+    h += '</div>';
+
+    c.innerHTML = h;
 }
 
 // ── S1 Render ──
@@ -1746,6 +1981,7 @@ function showValidation(v) {
 
 // ── Workflow ──
 async function startWorkflow() {
+    if (mode === 'audit') { startAudit(); return; }
     const kw = document.getElementById('keyword').value.trim();
     if (!kw) { alert('Wpisz haslo glowne'); return; }
 
@@ -1789,9 +2025,27 @@ async function startWorkflow() {
         log('S1 done: ' + (s1Data.summary ? JSON.stringify(s1Data.summary) : 'ok'), 'ok');
         renderS1(s1Data);
 
-        if (mode === 's1_only') {
-            log('Mode: S1 only - done', 'ok');
-            switchTab('s1');
+        if (mode === 'brief') {
+            log('Mode: Brief - generuje brief z danych S1...', 'ok');
+            // Generate brief from S1 data via backend
+            try {
+                const briefResp = await fetch('/api/generate_brief', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + apiKey },
+                    body: JSON.stringify({ main_keyword: kw, s1_data: s1Data }),
+                });
+                if (briefResp.ok) {
+                    const briefResult = await briefResp.json();
+                    if (briefResult.brief) {
+                        window._briefData = briefResult.brief;
+                        renderBrief(briefResult.brief);
+                    }
+                }
+            } catch (e) {
+                log('Brief generation error: ' + e.message, 'warn');
+            }
+            switchTab('brief');
+            log('Brief gotowy', 'ok');
             cleanup();
             return;
         }
