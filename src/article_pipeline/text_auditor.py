@@ -21,7 +21,7 @@ def run_text_audit(
 
     # ── Step 1: S1 Analysis ──
     yield {"event": "audit_step", "data": {
-        "step": 1, "total": 5, "label": "Analiza SERP i konkurencji"
+        "step": 1, "total": 6, "label": "Analiza SERP i konkurencji"
     }}
 
     from src.s1.analysis import run_s1_analysis
@@ -40,7 +40,7 @@ def run_text_audit(
 
     # ── Step 2: Quality Gate ──
     yield {"event": "audit_step", "data": {
-        "step": 2, "total": 5, "label": "Filtracja danych S1"
+        "step": 2, "total": 6, "label": "Filtracja danych S1"
     }}
 
     try:
@@ -65,7 +65,7 @@ def run_text_audit(
 
     # ── Step 3: Build variables ──
     yield {"event": "audit_step", "data": {
-        "step": 3, "total": 5, "label": "Przygotowanie danych referencyjnych"
+        "step": 3, "total": 6, "label": "Przygotowanie danych referencyjnych"
     }}
 
     from src.article_pipeline.variables import extract_global_variables
@@ -89,7 +89,7 @@ def run_text_audit(
 
     # ── Step 4: Entity SEO Compliance ──
     yield {"event": "audit_step", "data": {
-        "step": 4, "total": 5, "label": "Analiza tekstu vs. dane SERP"
+        "step": 4, "total": 6, "label": "Analiza tekstu vs. dane SERP"
     }}
 
     ngram_coverage = _compute_ngram_coverage(article_text, s1_data)
@@ -120,7 +120,7 @@ def run_text_audit(
 
     # ── Step 5: Gap Analysis + Recommendations ──
     yield {"event": "audit_step", "data": {
-        "step": 5, "total": 5, "label": "Generowanie rekomendacji"
+        "step": 5, "total": 6, "label": "Generowanie rekomendacji"
     }}
 
     gaps = _analyze_gaps(article_text, s1_data, variables, compliance)
@@ -138,6 +138,28 @@ def run_text_audit(
     )
 
     yield {"event": "audit_step_done", "data": {"step": 5}}
+
+    # ── Step 6: Korekta redakcyjna ──
+    yield {"event": "audit_step", "data": {
+        "step": 6, "total": 6, "label": "Korekta redakcyjna"
+    }}
+
+    proofread = None
+    try:
+        from src.article_pipeline.editorial_proofreader import proofread_article
+        proofread = proofread_article(
+            article_text=article_text,
+            s1_data=s1_data,
+            variables=variables,
+            auto_fix=False,
+        )
+    except Exception as e:
+        print(f"[AUDIT] Proofreading error: {e}")
+
+    if proofread:
+        report["proofreading"] = proofread
+
+    yield {"event": "audit_step_done", "data": {"step": 6}}
     yield {"event": "audit_complete", "data": report}
 
 
