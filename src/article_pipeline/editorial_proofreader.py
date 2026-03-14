@@ -17,6 +17,36 @@ from src.common.llm import claude_call
 
 
 # ══════════════════════════════════════════════════════════════
+# Instruction detection — prevents editorial instructions from
+# being inserted into article text as "fixes"
+# ══════════════════════════════════════════════════════════════
+
+_INSTRUCTION_MARKERS = [
+    "usuń", "zastąp", "zmień", "popraw", "dodaj", "przenieś",
+    "jeśli dane", "w przeciwnym razie", "lub zastąp:",
+    "pozostaw", "sprawdź", "upewnij się",
+    "usun", "zastap", "zmien", "przenies", "sprawdz", "upewnij",
+    "__usun__", "__przeredaguj__",
+]
+
+
+def _is_editorial_instruction(text: str) -> bool:
+    """Check if suggestion is an editorial instruction, not replacement text."""
+    if not text or len(text) <= 5:
+        return True
+    t = text.lower().strip()
+    if any(t.startswith(marker) for marker in _INSTRUCTION_MARKERS):
+        return True
+    if "usun" in t and (":" in t or "lub" in t):
+        return True
+    if ": '" in t or ':"' in t:
+        return True
+    if len(t) > 200 and ("usuń" in t or "zastąp" in t or "usun" in t or "zastap" in t):
+        return True
+    return False
+
+
+# ══════════════════════════════════════════════════════════════
 # Main entry point
 # ══════════════════════════════════════════════════════════════
 
@@ -133,9 +163,7 @@ def proofread_article(
             continue
 
         if (suggestion
-                and "USUN" not in suggestion.upper()
-                and "__PRZEREDAGUJ__" not in suggestion.upper()
-                and len(suggestion) > 5
+                and not _is_editorial_instruction(suggestion)
                 and result_text.count(original) == 1):
             result_text = result_text.replace(original, suggestion, 1)
             applied.append({
@@ -149,7 +177,7 @@ def proofread_article(
             flagged.append({
                 "type": "hallucination",
                 "severity": "high",
-                "text": original,
+                "text": original[:80],
                 "reason": hall.get("reason", ""),
                 "action": suggestion if suggestion else "Usun lub zastap zweryfikowanym faktem",
             })
@@ -425,6 +453,12 @@ Zwroc WYLACZNIE JSON -- bez markdown, bez komentarzy, bez tekstu przed/po:
 3. Dla halucynacji: podaj "suggestion" z bezpiecznym zamiennikiem.
    Dla brakujacych ostrzezen: uzyj "suggestion" z lista brakujacych (np.
    "Brakuje ostrzezen o: problemach z krazeniem, nadcisnieniu").
+   KRYTYCZNA REGULA DLA "suggestion": Pole "suggestion" w halucynacjach
+   to GOTOWY TEKST ZASTEPCZY — NIE instrukcja redakcyjna.
+   DOBRZE: "suggestion": "Szkolenie trwa kilkanascie godzin dydaktycznych"
+   ZLE:    "suggestion": "Usun lub zastap: 'Szkolenie trwa kilkanascie godzin'"
+   ZLE:    "suggestion": "Jesli dane potwierdzone, pozostaw; w przeciwnym razie..."
+   Jesli nie potrafisz zaproponowac czystego tekstu zastepczego — wpisz "USUN".
 4. Dla niespe\u0142nionych obietnic: opisz w "unfulfilled_promises", nie w "corrections".
 5. Frazy SEO: {seo_phrases} -- NIGDY nie zglaszaj SAMEJ frazy jako blad.
    ALE jesli fraza jest uzyta tak ze lamie gramatyke zdania
