@@ -362,7 +362,7 @@
         <div class="main">
             <div class="tabs">
                 <div class="tab on" data-tab="workflow" onclick="switchTab('workflow')">Workflow</div>
-                <div class="tab" data-tab="s1" onclick="switchTab('s1')">Analiza S1</div>
+                <div class="tab" data-tab="s1" onclick="switchTab('s1')">Brief</div>
                 <div class="tab" data-tab="prebatch" onclick="switchTab('prebatch')">Dane wsadowe</div>
                 <div class="tab" data-tab="article" onclick="switchTab('article')">Artykul</div>
                 <div class="tab" data-tab="entity" onclick="switchTab('entity')">Entity SEO</div>
@@ -394,14 +394,15 @@
                 </div>
             </div>
 
-            <!-- ═══ S1 TAB ═══ -->
+            <!-- ═══ BRIEF (was S1) TAB ═══ -->
             <div class="tab-content" id="tab-s1">
-                <div id="s1Content">
+                <div id="briefContent">
                     <div class="empty-state">
-                        <div class="icon">&#128269;</div>
-                        <p>Uruchom workflow, aby zobaczyc analize S1</p>
+                        <div class="icon">&#128221;</div>
+                        <p>Brief pojawi sie po kroku Pre-Batch</p>
                     </div>
                 </div>
+                <div id="s1Content" style="display:none"></div>
             </div>
 
             <!-- ═══ PRE-BATCH / DANE WSADOWE TAB ═══ -->
@@ -428,6 +429,7 @@
                         <p>Artykul pojawi sie tutaj po wygenerowaniu</p>
                     </div>
                 </div>
+                <div id="proofreadingContent" style="display:none;margin-top:16px"></div>
             </div>
 
             <!-- ═══ ENTITY SEO COMPLIANCE TAB ═══ -->
@@ -650,6 +652,228 @@ function setStepError(step, message) {
         pipelineSteps[step].detail = message || 'Blad';
     }
     renderSteps();
+}
+
+// ── Brief Render ──
+function renderBrief(data) {
+    if (!data) return;
+    const c = document.getElementById('briefContent');
+    let h = '';
+
+    // Header
+    const hdr = data.header || {};
+    h += '<div class="card"><div class="card-title">BRIEF CONTENTOWY</div>';
+    h += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:13px">';
+    h += '<div><b>Haslo:</b> ' + esc(hdr.main_keyword || '') + '</div>';
+    h += '<div><b>Data:</b> ' + esc(hdr.date || '') + '</div>';
+    h += '<div><b>Dlugosc:</b> ' + esc(hdr.target_length || '?') + ' slow</div>';
+    h += '<div><b>YMYL:</b> ' + esc(hdr.ymyl_category || 'brak') + '</div>';
+    h += '</div></div>';
+
+    // Search intent
+    const si = data.search_intent || {};
+    h += '<div class="card"><div class="card-title">Intencja wyszukiwania</div>';
+    if (si.ai_overview) h += '<p style="font-size:13px"><b>AI Overview:</b> ' + esc(si.ai_overview) + '</p>';
+    if (si.featured_snippet) h += '<p style="font-size:13px"><b>Featured Snippet:</b> ' + esc(si.featured_snippet) + '</p>';
+    if (si.competitors && si.competitors.length) {
+        h += '<table class="s1-table"><thead><tr><th>#</th><th>Domena</th><th>Slowa</th><th>H2</th></tr></thead><tbody>';
+        si.competitors.forEach(function(c) {
+            h += '<tr><td>' + c.rank + '</td><td>' + esc(c.domain) + '</td><td>' + c.words + '</td><td>' + c.h2_count + '</td></tr>';
+        });
+        h += '</tbody></table>';
+        h += '<p style="font-size:12px;color:#888">Srednia: ' + (si.avg_competitor_words || '?') + ' slow</p>';
+    }
+    h += '</div>';
+
+    // Main topic
+    const mt = data.main_topic || {};
+    h += '<div class="card"><div class="card-title">Temat glowny</div>';
+    h += '<p style="font-size:14px"><b>Encja centralna:</b> <span style="color:#4fc3f7;font-size:16px">' + esc(mt.entity || '') + '</span></p>';
+    if (mt.placement_instruction) h += '<p style="font-size:13px"><b>Instrukcja:</b> ' + esc(mt.placement_instruction) + '</p>';
+    if (mt.first_paragraph_entities && mt.first_paragraph_entities.length) {
+        h += '<p style="font-size:13px"><b>Pierwszy akapit:</b> ' + mt.first_paragraph_entities.map(esc).join(', ') + '</p>';
+    }
+    h += '</div>';
+
+    // Topics
+    const tp = data.topics || {};
+    h += '<div class="card"><div class="card-title">Tematy do pokrycia</div>';
+    function renderEntityGroup(items, label, color) {
+        if (!items || !items.length) return '';
+        var out = '<div style="margin-bottom:8px"><b style="color:' + color + '">' + label + ':</b><div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:4px">';
+        items.forEach(function(t) { out += '<span class="chip">' + esc(t) + '</span>'; });
+        return out + '</div></div>';
+    }
+    h += renderEntityGroup(tp.must_cover, 'OBOWIAZKOWE', '#4caf50');
+    h += renderEntityGroup(tp.should_cover, 'WAZNE', '#ff9800');
+    h += renderEntityGroup(tp.differentiators, 'WYROZNIKI', '#9c27b0');
+    h += '</div>';
+
+    // Plan
+    const plan = data.plan || {};
+    h += '<div class="card"><div class="card-title">Plan artykulu</div>';
+    if (plan.h1_suggestion) h += '<p style="font-size:14px"><b>H1:</b> ' + esc(plan.h1_suggestion) + '</p>';
+    if (plan.sections && plan.sections.length) {
+        plan.sections.forEach(function(s, i) {
+            h += '<div style="border-left:3px solid #4fc3f7;padding:4px 8px;margin:6px 0">';
+            h += '<b>H2:</b> ' + esc(s.h2) + '';
+            if (s.entities && s.entities.length) h += '<br><span style="font-size:12px;color:#aaa">Tematy: ' + s.entities.slice(0, 5).map(esc).join(', ') + '</span>';
+            h += '</div>';
+        });
+    }
+    if (plan.faq && plan.faq.length) {
+        h += '<div style="margin-top:8px"><b>FAQ:</b><ul style="margin:4px 0;padding-left:20px">';
+        plan.faq.forEach(function(q) { h += '<li style="font-size:13px">' + esc(q) + '</li>'; });
+        h += '</ul></div>';
+    }
+    h += '</div>';
+
+    // Language variants
+    const lv = data.language_variants || {};
+    if (lv.named || lv.nominal || lv.pronominal) {
+        h += '<div class="card"><div class="card-title">Warianty jezykowe</div>';
+        if (lv.named) h += '<p style="font-size:13px"><b>Pelna nazwa:</b> ' + esc(lv.named) + '</p>';
+        if (lv.nominal) h += '<p style="font-size:13px"><b>Opisy zastepcze:</b> ' + esc(lv.nominal) + '</p>';
+        if (lv.pronominal) h += '<p style="font-size:13px"><b>Zaimki:</b> ' + esc(lv.pronominal) + '</p>';
+        h += '</div>';
+    }
+
+    // Keyphrases
+    const kp = data.keyphrases || [];
+    if (kp.length) {
+        h += '<div class="card"><div class="card-title">Frazy kluczowe (' + kp.length + ')</div>';
+        h += '<table class="s1-table"><thead><tr><th>Fraza</th><th>Zakres</th><th>Priorytet</th></tr></thead><tbody>';
+        kp.forEach(function(p) {
+            var cls = p.priority === 'OBOWIAZKOWA' ? 'color:#4caf50' : (p.priority === 'WAZNA' ? 'color:#ff9800' : 'color:#888');
+            h += '<tr><td>' + esc(p.phrase) + '</td><td>' + esc(p.freq_range) + 'x</td><td style="' + cls + '">' + esc(p.priority) + '</td></tr>';
+        });
+        h += '</tbody></table></div>';
+    }
+
+    // Hard facts
+    const hf = data.hard_facts || [];
+    if (hf.length) {
+        h += '<div class="card"><div class="card-title">Fakty i dane (' + hf.length + ')</div><ul style="padding-left:20px">';
+        hf.forEach(function(f) {
+            var cat = f.category ? ' <span style="color:#888">(' + esc(f.category) + ')</span>' : '';
+            h += '<li style="font-size:13px">' + esc(f.value) + cat + '</li>';
+        });
+        h += '</ul></div>';
+    }
+
+    // Relations
+    const rel = data.relations || {};
+    if ((rel.causal_chains && rel.causal_chains.length) || (rel.spo_triples && rel.spo_triples.length)) {
+        h += '<div class="card"><div class="card-title">Relacje i mechanizmy</div>';
+        if (rel.causal_chains && rel.causal_chains.length) {
+            h += '<div style="margin-bottom:8px"><b>Lancuchy przyczynowo-skutkowe:</b><ul style="padding-left:20px">';
+            rel.causal_chains.forEach(function(c) {
+                h += '<li style="font-size:13px">' + esc(c.cause) + ' &rarr; ' + esc(c.effect) + '</li>';
+            });
+            h += '</ul></div>';
+        }
+        if (rel.spo_triples && rel.spo_triples.length) {
+            h += '<div><b>Fakty SPO:</b><ul style="padding-left:20px">';
+            rel.spo_triples.forEach(function(t) {
+                h += '<li style="font-size:13px">' + esc(t.subject) + ' &rarr; ' + esc(t.predicate) + ' &rarr; ' + esc(t.object) + '</li>';
+            });
+            h += '</ul></div>';
+        }
+        h += '</div>';
+    }
+
+    // Export button
+    h += '<div style="text-align:center;margin:16px 0">';
+    h += '<button class="btn-secondary" onclick="copyBriefMarkdown()">Kopiuj brief (Markdown)</button>';
+    h += '</div>';
+
+    c.innerHTML = h;
+}
+
+// ── Proofreading Render ──
+function renderProofreading(data) {
+    if (!data) return;
+    var target = document.getElementById('proofreadingContent');
+    if (!target) return;
+    var h = '';
+    var stats = data.stats || {};
+    var corrections = data.corrections || [];
+    var hallucinations = data.hallucinations || [];
+    var summary = data.summary || {};
+
+    // Summary card
+    h += '<div class="card"><div class="card-title">Korekta redakcyjna</div>';
+    h += '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;font-size:13px;text-align:center">';
+    h += '<div><b style="font-size:20px;color:var(--gn)">' + (stats.applied || 0) + '</b><br>Zastosowane</div>';
+    h += '<div><b style="font-size:20px;color:var(--mg)">' + (stats.skipped || 0) + '</b><br>Pominiete</div>';
+    h += '<div><b style="font-size:20px;color:var(--rd)">' + (stats.hallucination_count || 0) + '</b><br>Halucynacje</div>';
+    var qcolor = summary.overall_quality === 'good' ? 'var(--gn)' : (summary.overall_quality === 'needs_work' ? 'var(--rd)' : 'var(--yl)');
+    h += '<div><b style="font-size:14px;color:' + qcolor + '">' + esc(summary.overall_quality || '?') + '</b><br>Jakosc</div>';
+    h += '</div></div>';
+
+    // Corrections list
+    if (corrections.length) {
+        h += '<div class="card"><div class="card-title">Poprawki (' + corrections.length + ')</div>';
+        corrections.forEach(function(c) {
+            var sev = c.severity || 'low';
+            var icon = sev === 'high' ? '<span style="color:var(--rd)">&#9679;</span>' : (sev === 'medium' ? '<span style="color:var(--yl)">&#9679;</span>' : '<span style="color:var(--gn)">&#9679;</span>');
+            var typeLabel = c.type === 'fact' ? 'FAKT' : (c.type === 'structure' ? 'STRUKTURA' : 'JEZYK');
+            h += '<div style="padding:6px 0;border-bottom:1px solid var(--b1);font-size:13px">';
+            h += icon + ' <b>' + typeLabel + '</b> ';
+            h += '<span style="color:var(--rd);text-decoration:line-through">' + esc(c.original || '') + '</span>';
+            h += ' &rarr; <span style="color:var(--gn)">' + esc(c.replacement || '') + '</span>';
+            h += '<br><span style="color:var(--mg);font-size:12px">' + esc(c.reason || '') + '</span>';
+            h += '</div>';
+        });
+        h += '</div>';
+    }
+
+    // Hallucinations
+    if (hallucinations.length) {
+        h += '<div class="card" style="border-color:rgba(248,113,113,.3)"><div class="card-title" style="color:var(--rd)">Halucynacje (' + hallucinations.length + ')</div>';
+        hallucinations.forEach(function(hal) {
+            h += '<div style="padding:6px 0;border-bottom:1px solid var(--b1);font-size:13px">';
+            h += '<span style="color:var(--rd)">&#9679;</span> <b>' + esc(hal.text || '') + '</b>';
+            h += '<br><span style="color:var(--mg);font-size:12px">' + esc(hal.reason || '') + '</span>';
+            h += '</div>';
+        });
+        h += '</div>';
+    }
+
+    if (!corrections.length && !hallucinations.length) {
+        h += '<div class="card"><p style="font-size:13px;color:var(--gn);text-align:center">Brak poprawek — artykul jest poprawny</p></div>';
+    }
+
+    target.innerHTML = h;
+    target.style.display = 'block';
+}
+
+function copyBriefMarkdown() {
+    if (!window._briefData) { alert('Brak danych briefu'); return; }
+    // Simple markdown export via fetch to backend or inline generation
+    var md = '';
+    var b = window._briefData;
+    var hdr = b.header || {};
+    md += '# BRIEF CONTENTOWY\\n';
+    md += '**Haslo:** ' + (hdr.main_keyword || '') + '\\n';
+    md += '**Data:** ' + (hdr.date || '') + '\\n';
+    md += '**Dlugosc:** ' + (hdr.target_length || '') + ' slow\\n\\n';
+
+    var mt = b.main_topic || {};
+    md += '## Temat glowny\\n';
+    md += '**Encja:** ' + (mt.entity || '') + '\\n\\n';
+
+    var kp = b.keyphrases || [];
+    if (kp.length) {
+        md += '## Frazy kluczowe\\n';
+        md += '| Fraza | Zakres | Priorytet |\\n|---|---|---|\\n';
+        kp.forEach(function(p) { md += '| ' + p.phrase + ' | ' + p.freq_range + 'x | ' + p.priority + ' |\\n'; });
+        md += '\\n';
+    }
+
+    navigator.clipboard.writeText(md.replace(/\\n/g, '\n')).then(function() {
+        alert('Brief skopiowany do schowka!');
+    });
 }
 
 // ── S1 Render ──
@@ -1491,6 +1715,15 @@ async function startWorkflow() {
                     if (d.data && d.data.pre_batch_map) {
                         renderPreBatch(d.data.pre_batch_map, d.data.input_variables || {}, []);
                     }
+                    // Render proofreading when step data arrives
+                    if (d.data && d.data.proofreading) {
+                        renderProofreading(d.data.proofreading);
+                    }
+                    // Render brief tab when brief data arrives
+                    if (d.data && d.data.brief) {
+                        window._briefData = d.data.brief;
+                        renderBrief(d.data.brief);
+                    }
                 }
                 else if (d.event === 'article_assembled') {
                     if (d.data && d.data.full_text) {
@@ -1508,6 +1741,15 @@ async function startWorkflow() {
                         // Update pre-batch tab with full data including prompt log
                         if (d.data.pre_batch_map) {
                             renderPreBatch(d.data.pre_batch_map, d.data.input_variables || {}, d.data.prompt_log || []);
+                        }
+                        // Brief
+                        if (d.data.brief) {
+                            window._briefData = d.data.brief;
+                            renderBrief(d.data.brief);
+                        }
+                        // Proofreading
+                        if (d.data.proofreading) {
+                            renderProofreading(d.data.proofreading);
                         }
                         // Store entity compliance for annotation view
                         if (d.data.entity_compliance) {

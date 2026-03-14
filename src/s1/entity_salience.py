@@ -674,8 +674,9 @@ def compute_salience_topical(
         key = e.text.lower()
         if not key or len(key) < 3:
             continue
+        display = getattr(e, "display_text", "") or e.text
         entity_signals[key] = SalienceSignals(
-            entity_text=e.text,
+            entity_text=display,
             entity_type=getattr(e, "type", "CONCEPT"),
             frequency=e.frequency,
             sources_count=e.sources_count,
