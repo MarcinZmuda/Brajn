@@ -78,14 +78,26 @@ def generate_brief(
     should_cover = entity_seo.get("should_cover_concepts") or []
     differentiators = entity_seo.get("differentiator_concepts") or []
 
-    # Try to get enriched versions with context
-    entities_with_context = variables.get("ENCJE_KRYTYCZNE_Z_KONTEKSTEM", "")
+    # Build per-entity enriched context from ENCJE_KRYTYCZNE_Z_KONTEKSTEM
+    enriched_raw = variables.get("ENCJE_KRYTYCZNE_Z_KONTEKSTEM", "")
+    enriched_lookup = {}
+    if enriched_raw:
+        try:
+            enriched_list = json.loads(enriched_raw) if isinstance(enriched_raw, str) else enriched_raw
+            if isinstance(enriched_list, list):
+                for item in enriched_list:
+                    if isinstance(item, dict):
+                        ent = item.get("entity", "")
+                        role = item.get("role", "SHOULD")
+                        cov = item.get("coverage", "")
+                        enriched_lookup[ent.lower()] = {"role": role, "coverage": cov}
+        except (json.JSONDecodeError, TypeError):
+            pass
 
     brief["topics"] = {
-        "must_cover": _format_entity_list(must_cover),
-        "should_cover": _format_entity_list(should_cover),
-        "differentiators": _format_entity_list(differentiators),
-        "enriched_context": entities_with_context,
+        "must_cover": _format_entity_list_with_context(must_cover, enriched_lookup),
+        "should_cover": _format_entity_list_with_context(should_cover, enriched_lookup),
+        "differentiators": _format_entity_list_with_context(differentiators, enriched_lookup),
     }
 
     # ── 5. PLAN ARTYKUŁU ──
@@ -100,12 +112,23 @@ def generate_brief(
             "hard_facts": batch_data.get("hard_facts", []),
         })
 
+    # FAQ with priority markers: unanswered PAA = high priority
+    paa_unanswered = set()
+    for q in (variables.get("_paa_unanswered") or []):
+        paa_unanswered.add(q.lower().strip())
     faq_questions = variables.get("_faq_questions") or []
+    faq_with_priority = []
+    for q in faq_questions[:6]:
+        is_unanswered = q.lower().strip() in paa_unanswered
+        faq_with_priority.append({
+            "question": q,
+            "priority": "unanswered" if is_unanswered else "standard",
+        })
     brief["plan"] = {
         "h1_suggestion": variables.get("H1_PROPOZYCJA", ""),
         "intro_length": variables.get("DLUGOSC_INTRO", ""),
         "sections": plan_sections,
-        "faq": faq_questions[:6],
+        "faq": faq_with_priority,
         "has_ymyl": bool(variables.get("YMYL_CONTEXT")),
         "ymyl_context": variables.get("YMYL_CONTEXT", ""),
     }
@@ -118,6 +141,7 @@ def generate_brief(
         "periphrases": variables.get("PERYFRAZY", ""),
         "colloquial": variables.get("WARIANTY_POTOCZNE", ""),
         "formal": variables.get("WARIANTY_FORMALNE", ""),
+        "rotation_pattern": "Pelna nazwa \u2192 Opis zastepczy \u2192 Zaimek \u2192 (nowy akapit = znow pelna nazwa). NIE powtarzaj tej samej formy 3 razy z rzedu.",
     }
 
     # ── 7. FRAZY KLUCZOWE ──
@@ -238,18 +262,21 @@ def render_brief_markdown(brief: Dict) -> str:
     # 4. Topics
     topics = brief.get("topics") or {}
     lines.append("## 3. Tematy do pokrycia")
-    if topics.get("must_cover"):
-        lines.append("**OBOWIĄZKOWE:**")
-        for t in topics["must_cover"]:
-            lines.append(f"- {t}")
-    if topics.get("should_cover"):
-        lines.append("**WAŻNE:**")
-        for t in topics["should_cover"]:
-            lines.append(f"- {t}")
-    if topics.get("differentiators"):
-        lines.append("**WYRÓŻNIKI:**")
-        for t in topics["differentiators"]:
-            lines.append(f"- {t}")
+    def _render_topic_group(items, label):
+        if not items:
+            return
+        lines.append(f"**{label}:**")
+        for t in items:
+            if isinstance(t, dict):
+                text = t.get("text", "")
+                cov = t.get("coverage", "")
+                ctx = f" -- w {cov} artykulow konkurencji" if cov else ""
+                lines.append(f"- {text}{ctx}")
+            else:
+                lines.append(f"- {t}")
+    _render_topic_group(topics.get("must_cover"), "OBOWIAZKOWE")
+    _render_topic_group(topics.get("should_cover"), "WAZNE")
+    _render_topic_group(topics.get("differentiators"), "WYROZNIKI")
     lines.append("")
 
     # 5. Plan
@@ -269,18 +296,32 @@ def render_brief_markdown(brief: Dict) -> str:
     if plan.get("faq"):
         lines.append("### FAQ")
         for q in plan["faq"]:
-            lines.append(f"- {q}")
+            if isinstance(q, dict):
+                qtxt = q.get("question", "")
+                prio = q.get("priority", "standard")
+                marker = " <-- priorytet: nikt na to nie odpowiada w SERP" if prio == "unanswered" else ""
+                lines.append(f"- {qtxt}{marker}")
+            else:
+                lines.append(f"- {q}")
     lines.append("")
 
     # 6. Variants
     lv = brief.get("language_variants") or {}
-    lines.append("## 5. Warianty językowe")
+    lines.append("## 5. Warianty jezykowe")
     if lv.get("named"):
-        lines.append(f"**Pełna nazwa:** {lv['named']}")
+        lines.append(f"**Pelna nazwa:** {lv['named']}")
     if lv.get("nominal"):
-        lines.append(f"**Opisy zastępcze:** {lv['nominal']}")
+        lines.append(f"**Opisy zastepcze:** {lv['nominal']}")
     if lv.get("pronominal"):
         lines.append(f"**Zaimki:** {lv['pronominal']}")
+    if lv.get("periphrases"):
+        lines.append(f"**Peryfrazy:** {lv['periphrases']}")
+    if lv.get("colloquial"):
+        lines.append(f"**Warianty potoczne:** {lv['colloquial']}")
+    if lv.get("formal"):
+        lines.append(f"**Warianty formalne:** {lv['formal']}")
+    if lv.get("rotation_pattern"):
+        lines.append(f"**Wzorzec rotacji:** {lv['rotation_pattern']}")
     lines.append("")
 
     # 7. Keyphrases
@@ -349,4 +390,22 @@ def _format_entity_list(items: list) -> list:
             text = item.get("display_text") or item.get("text") or item.get("entity") or ""
             if text:
                 result.append(text)
+    return result[:10]
+
+
+def _format_entity_list_with_context(items: list, enriched_lookup: dict) -> list:
+    """Format entity list with per-entity coverage context."""
+    result = []
+    for item in items:
+        if isinstance(item, str):
+            text = item
+        elif isinstance(item, dict):
+            text = item.get("display_text") or item.get("text") or item.get("entity") or ""
+        else:
+            continue
+        if not text:
+            continue
+        ctx = enriched_lookup.get(text.lower(), {})
+        coverage = ctx.get("coverage", "")
+        result.append({"text": text, "coverage": coverage})
     return result[:10]
