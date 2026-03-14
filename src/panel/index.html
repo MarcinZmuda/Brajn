@@ -695,13 +695,17 @@ function renderBrief(data) {
     }
     h += '</div>';
 
-    // Topics
+    // Topics (with per-entity context)
     const tp = data.topics || {};
     h += '<div class="card"><div class="card-title">Tematy do pokrycia</div>';
     function renderEntityGroup(items, label, color) {
         if (!items || !items.length) return '';
         var out = '<div style="margin-bottom:8px"><b style="color:' + color + '">' + label + ':</b><div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:4px">';
-        items.forEach(function(t) { out += '<span class="chip">' + esc(t) + '</span>'; });
+        items.forEach(function(t) {
+            var text = (typeof t === 'object') ? (t.text || '') : t;
+            var cov = (typeof t === 'object' && t.coverage) ? ' <span style="font-size:11px;color:#888">(' + esc(t.coverage) + ')</span>' : '';
+            out += '<span class="chip">' + esc(text) + cov + '</span>';
+        });
         return out + '</div></div>';
     }
     h += renderEntityGroup(tp.must_cover, 'OBOWIAZKOWE', '#4caf50');
@@ -723,18 +727,27 @@ function renderBrief(data) {
     }
     if (plan.faq && plan.faq.length) {
         h += '<div style="margin-top:8px"><b>FAQ:</b><ul style="margin:4px 0;padding-left:20px">';
-        plan.faq.forEach(function(q) { h += '<li style="font-size:13px">' + esc(q) + '</li>'; });
+        plan.faq.forEach(function(q) {
+            var qtxt = (typeof q === 'object') ? (q.question || '') : q;
+            var prio = (typeof q === 'object') ? (q.priority || 'standard') : 'standard';
+            var marker = prio === 'unanswered' ? ' <span style="color:var(--rd);font-size:11px">&larr; nikt nie odpowiada w SERP</span>' : '';
+            h += '<li style="font-size:13px">' + esc(qtxt) + marker + '</li>';
+        });
         h += '</ul></div>';
     }
     h += '</div>';
 
     // Language variants
     const lv = data.language_variants || {};
-    if (lv.named || lv.nominal || lv.pronominal) {
+    if (lv.named || lv.nominal || lv.pronominal || lv.periphrases || lv.colloquial || lv.formal) {
         h += '<div class="card"><div class="card-title">Warianty jezykowe</div>';
         if (lv.named) h += '<p style="font-size:13px"><b>Pelna nazwa:</b> ' + esc(lv.named) + '</p>';
         if (lv.nominal) h += '<p style="font-size:13px"><b>Opisy zastepcze:</b> ' + esc(lv.nominal) + '</p>';
         if (lv.pronominal) h += '<p style="font-size:13px"><b>Zaimki:</b> ' + esc(lv.pronominal) + '</p>';
+        if (lv.periphrases) h += '<p style="font-size:13px"><b>Peryfrazy:</b> ' + esc(lv.periphrases) + '</p>';
+        if (lv.colloquial) h += '<p style="font-size:13px"><b>Warianty potoczne:</b> ' + esc(lv.colloquial) + '</p>';
+        if (lv.formal) h += '<p style="font-size:13px"><b>Warianty formalne:</b> ' + esc(lv.formal) + '</p>';
+        if (lv.rotation_pattern) h += '<p style="font-size:12px;color:var(--yl);margin-top:6px;border-left:3px solid var(--yl);padding-left:8px">' + esc(lv.rotation_pattern) + '</p>';
         h += '</div>';
     }
 
@@ -780,6 +793,21 @@ function renderBrief(data) {
             h += '</ul></div>';
         }
         h += '</div>';
+    }
+
+    // Style & rules
+    const st = data.style || {};
+    if (st.banned_phrases || st.cooccurrence_pairs || st.ymyl_context) {
+        h += '<div class="card"><div class="card-title">Styl i reguly</div>';
+        h += '<ul style="padding-left:20px;font-size:13px">';
+        h += '<li>Naturalny, publicystyczny polski</li>';
+        h += '<li>Mow do czytelnika: "mozesz", "pamietaj", "jesli"</li>';
+        h += '<li>Srednia dlugosc zdania: 11-15 slow</li>';
+        h += '<li>Aktywna strona czasownika</li>';
+        if (st.banned_phrases) h += '<li><b style="color:var(--rd)">Zakazane frazy:</b> ' + esc(st.banned_phrases) + '</li>';
+        if (st.cooccurrence_pairs) h += '<li><b>Pary tematyczne:</b> ' + esc(st.cooccurrence_pairs) + '</li>';
+        if (st.ymyl_context) h += '<li><b style="color:var(--yl)">YMYL:</b> ' + esc(String(st.ymyl_context).substring(0, 200)) + '</li>';
+        h += '</ul></div>';
     }
 
     // Export button
@@ -850,29 +878,134 @@ function renderProofreading(data) {
 
 function copyBriefMarkdown() {
     if (!window._briefData) { alert('Brak danych briefu'); return; }
-    // Simple markdown export via fetch to backend or inline generation
-    var md = '';
     var b = window._briefData;
+    var md = '';
+
+    // 1. Header
     var hdr = b.header || {};
     md += '# BRIEF CONTENTOWY\\n';
     md += '**Haslo:** ' + (hdr.main_keyword || '') + '\\n';
     md += '**Data:** ' + (hdr.date || '') + '\\n';
-    md += '**Dlugosc:** ' + (hdr.target_length || '') + ' slow\\n\\n';
+    md += '**Dlugosc:** ' + (hdr.target_length || '') + ' slow\\n';
+    md += '**YMYL:** ' + (hdr.ymyl_category || 'brak') + '\\n\\n';
 
+    // 2. Search intent
+    var si = b.search_intent || {};
+    md += '## 1. Intencja wyszukiwania\\n';
+    if (si.ai_overview) md += '**AI Overview:** ' + si.ai_overview + '\\n';
+    if (si.featured_snippet) md += '**Featured Snippet:** ' + si.featured_snippet + '\\n';
+    if (si.competitors && si.competitors.length) {
+        md += '\\n| # | Domena | Slowa | H2 |\\n|---|--------|-------|----|\\n';
+        si.competitors.forEach(function(c) { md += '| ' + c.rank + ' | ' + c.domain + ' | ' + c.words + ' | ' + c.h2_count + ' |\\n'; });
+        md += 'Srednia: ' + (si.avg_competitor_words || '?') + ' slow\\n';
+    }
+    md += '\\n';
+
+    // 3. Main topic
     var mt = b.main_topic || {};
-    md += '## Temat glowny\\n';
-    md += '**Encja:** ' + (mt.entity || '') + '\\n\\n';
+    md += '## 2. Temat glowny\\n';
+    md += '**Encja centralna:** ' + (mt.entity || '') + '\\n';
+    if (mt.placement_instruction) md += '**Instrukcja:** ' + mt.placement_instruction + '\\n';
+    if (mt.first_paragraph_entities && mt.first_paragraph_entities.length) md += '**Pierwszy akapit:** ' + mt.first_paragraph_entities.join(', ') + '\\n';
+    md += '\\n';
 
+    // 4. Topics
+    var tp = b.topics || {};
+    md += '## 3. Tematy do pokrycia\\n';
+    function mdTopicGroup(items, label) {
+        if (!items || !items.length) return '';
+        var out = '**' + label + ':**\\n';
+        items.forEach(function(t) {
+            var text = (typeof t === 'object') ? (t.text || '') : t;
+            var cov = (typeof t === 'object' && t.coverage) ? ' (' + t.coverage + ')' : '';
+            out += '- ' + text + cov + '\\n';
+        });
+        return out;
+    }
+    md += mdTopicGroup(tp.must_cover, 'OBOWIAZKOWE');
+    md += mdTopicGroup(tp.should_cover, 'WAZNE');
+    md += mdTopicGroup(tp.differentiators, 'WYROZNIKI');
+    md += '\\n';
+
+    // 5. Plan
+    var plan = b.plan || {};
+    md += '## 4. Plan artykulu\\n';
+    if (plan.h1_suggestion) md += '**H1:** ' + plan.h1_suggestion + '\\n';
+    md += '**Intro:** ~' + (plan.intro_length || '?') + ' slow\\n\\n';
+    if (plan.sections) plan.sections.forEach(function(s) {
+        md += '### H2: ' + s.h2 + '\\n';
+        if (s.entities && s.entities.length) md += 'Tematy: ' + s.entities.slice(0,5).join(', ') + '\\n';
+        if (s.hard_facts && s.hard_facts.length) md += 'Fakty: ' + s.hard_facts.slice(0,3).join(', ') + '\\n';
+        md += '\\n';
+    });
+    if (plan.faq && plan.faq.length) {
+        md += '### FAQ\\n';
+        plan.faq.forEach(function(q) {
+            var qtxt = (typeof q === 'object') ? (q.question || '') : q;
+            var prio = (typeof q === 'object' && q.priority === 'unanswered') ? ' <-- nikt nie odpowiada w SERP' : '';
+            md += '- ' + qtxt + prio + '\\n';
+        });
+        md += '\\n';
+    }
+
+    // 6. Language variants
+    var lv = b.language_variants || {};
+    md += '## 5. Warianty jezykowe\\n';
+    if (lv.named) md += '**Pelna nazwa:** ' + lv.named + '\\n';
+    if (lv.nominal) md += '**Opisy zastepcze:** ' + lv.nominal + '\\n';
+    if (lv.pronominal) md += '**Zaimki:** ' + lv.pronominal + '\\n';
+    if (lv.periphrases) md += '**Peryfrazy:** ' + lv.periphrases + '\\n';
+    if (lv.colloquial) md += '**Warianty potoczne:** ' + lv.colloquial + '\\n';
+    if (lv.formal) md += '**Warianty formalne:** ' + lv.formal + '\\n';
+    if (lv.rotation_pattern) md += '**Wzorzec rotacji:** ' + lv.rotation_pattern + '\\n';
+    md += '\\n';
+
+    // 7. Keyphrases
     var kp = b.keyphrases || [];
     if (kp.length) {
-        md += '## Frazy kluczowe\\n';
-        md += '| Fraza | Zakres | Priorytet |\\n|---|---|---|\\n';
+        md += '## 6. Frazy kluczowe\\n';
+        md += '| Fraza | Zakres | Priorytet |\\n|-------|--------|-----------|\\n';
         kp.forEach(function(p) { md += '| ' + p.phrase + ' | ' + p.freq_range + 'x | ' + p.priority + ' |\\n'; });
         md += '\\n';
     }
 
+    // 8. Hard facts
+    var hf = b.hard_facts || [];
+    if (hf.length) {
+        md += '## 7. Fakty i dane\\n';
+        hf.forEach(function(f) {
+            var cat = f.category ? ' (' + f.category + ')' : '';
+            md += '- ' + f.value + cat + '\\n';
+        });
+        md += '\\n';
+    }
+
+    // 9. Relations
+    var rel = b.relations || {};
+    md += '## 8. Relacje i mechanizmy\\n';
+    if (rel.causal_chains && rel.causal_chains.length) {
+        md += '**Lancuchy przyczynowo-skutkowe:**\\n';
+        rel.causal_chains.forEach(function(c) { md += '- ' + c.cause + ' -> ' + c.effect + '\\n'; });
+    }
+    if (rel.spo_triples && rel.spo_triples.length) {
+        md += '**Fakty SPO:**\\n';
+        rel.spo_triples.forEach(function(t) { md += '- ' + t.subject + ' -> ' + t.predicate + ' -> ' + t.object + '\\n'; });
+    }
+    md += '\\n';
+
+    // 10. Style
+    var st = b.style || {};
+    md += '## 9. Styl i reguly\\n';
+    md += '- Naturalny, publicystyczny polski\\n';
+    md += '- Mow do czytelnika: "mozesz", "pamietaj", "jesli"\\n';
+    md += '- Srednia dlugosc zdania: 11-15 slow\\n';
+    md += '- Aktywna strona czasownika\\n';
+    if (st.banned_phrases) md += '- **Zakazane frazy:** ' + st.banned_phrases + '\\n';
+    if (st.cooccurrence_pairs) md += '- **Pary tematyczne:** ' + st.cooccurrence_pairs + '\\n';
+    if (st.ymyl_context) md += '- **YMYL:** ' + String(st.ymyl_context).substring(0, 200) + '\\n';
+
     navigator.clipboard.writeText(md.replace(/\\n/g, '\n')).then(function() {
-        alert('Brief skopiowany do schowka!');
+        alert('Brief skopiowany do schowka (10 sekcji)!');
     });
 }
 
