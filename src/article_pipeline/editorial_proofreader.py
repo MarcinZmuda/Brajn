@@ -13,7 +13,7 @@ import json
 import re
 from typing import Optional
 
-from src.common.llm import claude_call
+from src.common.llm import claude_call, gemini_call
 
 
 # ══════════════════════════════════════════════════════════════
@@ -232,21 +232,32 @@ def proofread_article(
 
 _AUDIT_SYSTEM_PROMPT = """Jestes doswiadczonym redaktorem naczelnym polskiego portalu internetowego. Dostajesz artykul SEO do recenzji. Twoje zadanie: znalezc WSZYSTKIE problemy i zwrocic precyzyjna liste poprawek.
 
-Sprawdzasz tekst na CZTERECH poziomach -- od najwazniejszego:
+Sprawdzasz tekst na PIECIU poziomach -- od najwazniejszego:
 
 POZIOM 1 -- DUPLIKATY I POWTORZENIA (severity: high)
 Porownuj KAZDA sekcje H2 z KAZDA inna. Szukaj:
 - Zdan identycznych lub niemal identycznych w roznych sekcjach
 - Akapitow zaczynajacych sie od tego samego schematu
-- Tych samych faktow/argumentow powtorzonych w roznych miejscach
+- Tych samych faktow/argumentow/danych powtorzonych w roznych miejscach
+  (np. "10% masy ciala" powtorzone w sekcji 1 i sekcji 2)
 - Tych samych metafor, porownan lub sformulowan uzytych wielokrotnie
+- Calych zdan lub fragmentow skopiowanych z intro do pozniejszych sekcji
+- Tych samych informacji o materiale/produkcie powtorzonych 3+ razy
+  (np. "mikrokulki szklane" opisane w trzech roznych miejscach)
 To jest NAJCZESTSZY blad w artykulach AI i NAJLATWIEJSZY do wykrycia.
+UWAGA: Nawet jesli fraza jest fraza SEO, powtorzenie calego ZDANIA lub ARGUMENTU
+w roznych sekcjach to duplikat -- zglaszaj jako duplicate.
 
 POZIOM 2 -- FAKTY I HALUCYNACJE (severity: high)
 - Konkretne liczby, statystyki, procenty, daty BEZ pokrycia w danych referencyjnych = HALUCYNACJA
 - Powolania na badania, ekspertow, instytucje BEZ pokrycia w danych = HALUCYNACJA
 - Kwoty/progi/paragrafy NIEZGODNE z danymi referencyjnymi = BLAD FAKTYCZNY
-- Sprzecznosci wewnetrzne (X w jednej sekcji, nie-X w innej)
+- SPRZECZNOSCI WEWNETRZNE: ta sama wartosc podana roznie w roznych miejscach
+  (np. raz "10%", a dalej "8-12%" -- zdecyduj sie na jedna wersja)
+- BRAKUJACE OSTRZEZENIA: jesli hard facts zawieraja ostrzezenia bezpieczenstwa,
+  przeciwwskazania medyczne lub prawne, a artykul je POMIJA lub wymienia tylko
+  czesc z nich -- zglos jako "missing_warning" w hallucinations z suggestion
+  zawierajacym pelna liste brakujacych ostrzezen
 
 POZIOM 3 -- STRUKTURA I OBIETNICE (severity: medium)
 - Naglowek H2 obiecuje cos czego tresc nie dostarcza
@@ -256,17 +267,39 @@ POZIOM 3 -- STRUKTURA I OBIETNICE (severity: medium)
 - Sekcja FAQ powtarza tresc z sekcji H2 zamiast dodawac nowa wartosc
 - Brak logicznego przejscia miedzy sekcjami
 
-POZIOM 4 -- JEZYK (severity: low)
-- Literowki, ortografia
+POZIOM 4 -- JEZYK I GRAMATYKA (severity: low/medium)
+- Literowki, ortografia (np. "szeleleszcza" zamiast "szeleszcza")
 - Bledy odmiany (przypadek, osoba, czas, rodzaj)
 - Ciezkie konstrukcje do uproszczenia
   (np. "zachowanie sie osoby zdradzajacej" -> "zachowanie osoby zdradzajacej")
 - Brak przecinka przed ktory/ze/bo, nadmiarowy przecinek
 - Powtorzenie slowa niebedacego fraza SEO w sasiednich zdaniach
   (np. "partner" 5x w jednym akapicie -- zamien czesc na zaimki lub synonimy)
+- Zle przyimki lub nienaturalna skladnia
+  (np. "zmniejsza problemy ze stresem" -> "obniza poziom stresu")
+
+POZIOM 5 -- DEFEKTY AI (severity: medium)
+Typowe bledy generowane przez modele jezykowe:
+- TAUTOLOGIE / MASLO MASLANE: definiowanie slowa tym samym slowem
+  (np. "Koldry obciazeniowe to koldry obciazeniowe dla doroslych" --
+  zdanie definiuje termin soba samym, trzeba przepisac)
+- ZLEPKI SLOW: frazy wygladajace jak losowe zestawienie slow kluczowych
+  (np. "Obciazeniowa kg koldra obciazeniowa", "Terapeutyczna kg koldry obciazeniowe"
+  -- to nie sa poprawne zdania po polsku)
+- ZEPSUTE ZDANIA: zdania ktore sa gramatycznie niepoprawne i nie da sie ich zrozumiec
+  (np. "Rozmiar to koldry obciazeniowe dla osoby dobiera sie..." --
+  brak podmiotu, pomieszany szyk)
+- NADUZYCIE FRAZ SEO w nienaturalny sposob: frazy SEO wciskane w zdania
+  tak ze lamia gramatyke lub sens
+  (np. "koldry obciazeniowe waga 8 kg sa idealne" zamiast
+  "koldry obciazeniowe o wadze 8 kg sa idealne")
+Zglos kazdy taki defekt jako type: "ai_artifact", severity: "medium".
+Jesli mozesz zaproponowac poprawke -- podaj replacement.
+Jesli zdanie jest zbyt zepsute -- podaj "__PRZEREDAGUJ__".
 
 CZEGO NIE ROBISZ:
 - NIE zmieniasz fraz kluczowych SEO (lista w danych) nawet jesli sie powtarzaja
+  (ale ZGLASZAJ jesli fraza SEO jest wstawiona tak ze lamie gramatyke!)
 - NIE dodajesz nowych tresci -- tylko poprawiasz istniejace
 - NIE przenosisz akapitow -- wskazujesz problem, copywriter zdecyduje
 - NIE wymyslasz poprawek na sile -- jesli tekst jest dobry, zwroc puste listy"""
@@ -315,13 +348,21 @@ Kontekst YMYL:
 
 Wykonaj te kroki PO KOLEI:
 
-KROK 1: Wypisz sobie WSZYSTKIE zdania otwierajace kazda sekcje H2. Porownaj je parami. Czy ktores sa podobne? Czy te same frazy/schematy powtarzaja sie?
+KROK 1 - DUPLIKATY: Wypisz sobie WSZYSTKIE zdania otwierajace kazda sekcje H2. Porownaj je parami. Czy ktores sa podobne? Czy te same frazy/schematy powtarzaja sie? Sprawdz tez czy te same INFORMACJE (np. konkretne liczby, opisy mechanizmow, opisy materialow) pojawiaja sie w wiecej niz jednej sekcji.
 
-KROK 2: Wypisz WSZYSTKIE konkretne liczby, statystyki i fakty z artykulu. Sprawdz KAZDY z nich z lista twardych faktow powyzej. Jesli faktu NIE MA na liscie -- oznacz jako halucynacje.
+KROK 2 - FAKTY: Wypisz WSZYSTKIE konkretne liczby, statystyki i fakty z artykulu. Sprawdz KAZDY z nich z lista twardych faktow powyzej. Jesli faktu NIE MA na liscie -- oznacz jako halucynacje. UWAGA: sprawdz tez czy te same wartosci sa SPOJNE -- jesli w jednym miejscu jest "10%" a w innym "8-12%", zglos jako sprzecznosc wewnetrzna.
 
-KROK 3: Przeczytaj kazdy naglowek H2. Czy tresc pod nim SPELNIA obietnice naglowka? Jesli naglowek mowi "8 objawow" -- czy jest 8 wyraznych punktow? Jesli mowi "koszty" -- czy sa konkretne kwoty?
+KROK 3 - BRAKUJACE OSTRZEZENIA: Przejrzyj twarde fakty i kontekst YMYL. Jesli zawieraja ostrzezenia bezpieczenstwa, przeciwwskazania, ograniczenia prawne -- sprawdz czy WSZYSTKIE sa wymienione w artykule. Jesli artykul wymienia tylko czesc ostrzezen a pomija inne z listy -- zglos brakujace.
 
-KROK 4: Sprawdz jezyk -- literowki, odmiane, przecinki, ciezkie konstrukcje.
+KROK 4 - STRUKTURA: Przeczytaj kazdy naglowek H2. Czy tresc pod nim SPELNIA obietnice naglowka? Jesli naglowek mowi "8 objawow" -- czy jest 8 wyraznych punktow? Jesli mowi "koszty" -- czy sa konkretne kwoty?
+
+KROK 5 - JEZYK: Sprawdz literowki, odmiane, przecinki, ciezkie konstrukcje, zle przyimki.
+
+KROK 6 - DEFEKTY AI: Przeczytaj kazde zdanie i sprawdz:
+- Czy zdanie definiuje slowo tym samym slowem? (tautologia/maslo maslane)
+- Czy zdanie wyglada jak losowe zestawienie fraz kluczowych bez gramatyki?
+- Czy zdanie jest gramatycznie poprawne i zrozumiale?
+- Czy frazy SEO sa wstawione naturalnie, czy lamia skladnie?
 
 === FORMAT ODPOWIEDZI ===
 
@@ -332,7 +373,7 @@ Zwroc WYLACZNIE JSON -- bez markdown, bez komentarzy, bez tekstu przed/po:
       "original": "dokladny cytat z artykulu (15-80 znakow, case-sensitive, z interpunkcja)",
       "replacement": "poprawiony fragment LUB '__USUN__' jesli trzeba usunac LUB '__PRZEREDAGUJ__' jesli wymaga przepisania",
       "reason": "wyjasnienie po polsku (max 20 slow)",
-      "type": "duplicate|fact|structure|language",
+      "type": "duplicate|fact|structure|language|ai_artifact",
       "severity": "high|medium|low"
     }}
   ],
@@ -378,13 +419,23 @@ Zwroc WYLACZNIE JSON -- bez markdown, bez komentarzy, bez tekstu przed/po:
 2. Dla duplikatow: wpisz w "duplicates" (NIE w "corrections"). W "text_b" podaj fragment
    Z SEKCJI KTORA MA BYC PRZEPISANA (ta gorsza/pozniejsza).
 3. Dla halucynacji: podaj "suggestion" z bezpiecznym zamiennikiem.
+   Dla brakujacych ostrzezen: uzyj "suggestion" z lista brakujacych (np.
+   "Brakuje ostrzezen o: problemach z krazeniem, nadcisnieniu").
 4. Dla niespe\u0142nionych obietnic: opisz w "unfulfilled_promises", nie w "corrections".
-5. Frazy SEO: {seo_phrases} -- NIGDY nie zglaszaj ich powtorzen jako blad.
-6. Maximum 30 pozycji lacznie. Priorytet: high -> medium -> low.
-7. "overall_quality":
-   - "good" = max 3 drobne jezykowe, 0 halucynacji, 0 duplikatow
+5. Frazy SEO: {seo_phrases} -- NIGDY nie zglaszaj SAMEJ frazy jako blad.
+   ALE jesli fraza jest uzyta tak ze lamie gramatyke zdania
+   (np. "Terapeutyczna kg koldry obciazeniowe") -- ZGLASZAJ jako ai_artifact.
+6. Dla defektow AI (tautologie, zlepki slow, zepsute zdania):
+   wpisz w "corrections" z type: "ai_artifact", severity: "medium".
+   Jesli mozesz naprawic -- podaj replacement. Jesli nie -- uzyj "__PRZEREDAGUJ__".
+7. SPRZECZNOSCI LICZBOWE: jesli ta sama wartosc jest podana roznie
+   w roznych miejscach (np. "10%" vs "8-12%") -- zglaszaj OBA wystapienia
+   w "corrections" z type: "fact", severity: "high".
+8. Maximum 40 pozycji lacznie. Priorytet: high -> medium -> low.
+9. "overall_quality":
+   - "good" = max 3 drobne jezykowe, 0 halucynacji, 0 duplikatow, 0 ai_artifact
    - "acceptable" = 4-8 jezykowych LUB 1 duplikat LUB 1 halucynacja
-   - "needs_work" = 2+ duplikatow LUB 2+ halucynacji LUB 9+ jezykowych"""
+   - "needs_work" = 2+ duplikatow LUB 2+ halucynacji LUB 9+ jezykowych LUB 2+ ai_artifact"""
 
 
 def _run_audit(
@@ -397,11 +448,11 @@ def _run_audit(
     user_prompt = _build_audit_user_prompt(article_text, s1_data, variables)
 
     try:
-        response, usage = claude_call(
+        response, usage = gemini_call(
             system_prompt=_AUDIT_SYSTEM_PROMPT,
             user_prompt=user_prompt,
-            model="claude-sonnet-4-6",
-            max_tokens=3000,
+            model="gemini-2.5-flash",
+            max_tokens=4000,
             temperature=0.2,
         )
 
@@ -532,12 +583,34 @@ def _format_hard_facts(s1_data: dict, variables: dict) -> str:
             if cause and effect:
                 lines.append(f"- RELACJA: {cause} -> {effect}")
 
-    # YMYL legal/medical facts
+    # YMYL legal/medical facts and safety warnings
     ymyl = variables.get("YMYL_CONTEXT", "")
     for line in ymyl.split("\n"):
         line = line.strip()
+        if not line:
+            continue
         if any(kw in line.lower() for kw in ["art.", "\u00a7", "kodeks", "ustaw", "rozporz"]):
             lines.append(f"- PRAWO: {line[:150]}")
+        elif any(kw in line.lower() for kw in [
+            "przeciwwskazan", "nie zaleca", "nie stosowa", "ostrzezen",
+            "bezpieczen", "zagrozen", "ryzyko", "uwaga", "zakaz",
+            "nie powinno", "nie nalezy", "niebezpiecz", "powiklan",
+            "krazeni", "oddechow", "nadcisn", "ciaz", "alergi",
+        ]):
+            lines.append(f"- BEZPIECZENSTWO: {line[:150]}")
+
+    # Safety-related factographic triples
+    for t in fact_triples[:15]:
+        if isinstance(t, dict):
+            pred = (t.get("predicate", "") or "").lower()
+            if any(kw in pred for kw in [
+                "przeciwwskazan", "ostrzez", "bezpiecz", "zakaz",
+                "nie stosowa", "nie zaleca", "ryzyko",
+            ]):
+                subj = t.get("subject", "")
+                obj = t.get("object", "")
+                if subj and obj:
+                    lines.append(f"- BEZPIECZENSTWO: {subj}: {obj}")
 
     if not lines:
         return "(brak twardych faktow -- sprawdzaj tylko jezyk i strukture)"

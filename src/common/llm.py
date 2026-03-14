@@ -55,6 +55,59 @@ def claude_call(
     return text, usage
 
 
+def gemini_call(
+    system_prompt: str,
+    user_prompt: str,
+    model: str = "gemini-2.5-flash",
+    max_tokens: int = 8000,
+    temperature: float = 0.7,
+    timeout: int = 120,
+) -> tuple[str, dict]:
+    """
+    Call Gemini API via google-generativeai SDK.
+    Returns (text_response, usage_dict).
+    Falls back to claude_call if Gemini is unavailable.
+    """
+    try:
+        import google.generativeai as genai
+        from src.common.config import GEMINI_API_KEY
+    except ImportError:
+        print("[LLM] google-generativeai not installed, falling back to Claude")
+        return claude_call(system_prompt, user_prompt, max_tokens=max_tokens,
+                           temperature=temperature, timeout=timeout)
+
+    if not GEMINI_API_KEY:
+        print("[LLM] GEMINI_API_KEY not set, falling back to Claude")
+        return claude_call(system_prompt, user_prompt, max_tokens=max_tokens,
+                           temperature=temperature, timeout=timeout)
+
+    genai.configure(api_key=GEMINI_API_KEY)
+    gemini_model = genai.GenerativeModel(
+        model_name=model,
+        system_instruction=system_prompt,
+        generation_config=genai.types.GenerationConfig(
+            max_output_tokens=max_tokens,
+            temperature=temperature,
+        ),
+    )
+
+    try:
+        response = gemini_model.generate_content(user_prompt)
+        text = response.text or ""
+        # Gemini usage metadata
+        usage_meta = getattr(response, "usage_metadata", None)
+        usage = {
+            "input_tokens": getattr(usage_meta, "prompt_token_count", 0) if usage_meta else 0,
+            "output_tokens": getattr(usage_meta, "candidates_token_count", 0) if usage_meta else 0,
+            "model": model,
+        }
+        return text, usage
+    except Exception as e:
+        print(f"[LLM] Gemini error: {e}, falling back to Claude")
+        return claude_call(system_prompt, user_prompt, max_tokens=max_tokens,
+                           temperature=temperature, timeout=timeout)
+
+
 def openai_call(
     system_prompt: str,
     user_prompt: str,
