@@ -866,56 +866,64 @@ function renderBrief(data) {
 
 // ── Proofreading Render ──
 function renderProofreading(data) {
-    if (!data) return;
+    if (!data || !data.stats) return;
     var target = document.getElementById('proofreadingContent');
     if (!target) return;
+    var stats = data.stats;
     var h = '';
-    var stats = data.stats || {};
-    var corrections = data.corrections || [];
-    var hallucinations = data.hallucinations || [];
-    var summary = data.summary || {};
 
-    // Summary card
+    // Header with summary
+    var qualityColors = {good: 'var(--gn)', acceptable: 'var(--yl)', needs_work: 'var(--rd)'};
+    var qualityLabels = {good: 'Dobry', acceptable: 'Do poprawy', needs_work: 'Wymaga pracy'};
+    var qc = qualityColors[stats.overall_quality] || 'var(--mg)';
+    var ql = qualityLabels[stats.overall_quality] || stats.overall_quality || '?';
+
     h += '<div class="card"><div class="card-title">Korekta redakcyjna</div>';
     h += '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;font-size:13px;text-align:center">';
-    h += '<div><b style="font-size:20px;color:var(--gn)">' + (stats.applied || 0) + '</b><br>Zastosowane</div>';
-    h += '<div><b style="font-size:20px;color:var(--mg)">' + (stats.skipped || 0) + '</b><br>Pominiete</div>';
-    h += '<div><b style="font-size:20px;color:var(--rd)">' + (stats.hallucination_count || 0) + '</b><br>Halucynacje</div>';
-    var qcolor = summary.overall_quality === 'good' ? 'var(--gn)' : (summary.overall_quality === 'needs_work' ? 'var(--rd)' : 'var(--yl)');
-    h += '<div><b style="font-size:14px;color:' + qcolor + '">' + esc(summary.overall_quality || '?') + '</b><br>Jakosc</div>';
+    h += '<div><b style="font-size:16px;color:' + qc + '">' + esc(ql) + '</b><br>Jakosc</div>';
+    h += '<div><b style="font-size:20px;color:var(--gn)">' + (stats.auto_fixed || 0) + '</b><br>Naprawione</div>';
+    h += '<div><b style="font-size:20px;color:var(--yl)">' + (stats.flagged_for_review || 0) + '</b><br>Do sprawdzenia</div>';
+    h += '<div><b style="font-size:20px;color:var(--rd)">' + (stats.hallucinations_found || 0) + '</b><br>Halucynacje</div>';
     h += '</div></div>';
 
-    // Corrections list
-    if (corrections.length) {
-        h += '<div class="card"><div class="card-title">Poprawki (' + corrections.length + ')</div>';
-        corrections.forEach(function(c) {
-            var sev = c.severity || 'low';
-            var icon = sev === 'high' ? '<span style="color:var(--rd)">&#9679;</span>' : (sev === 'medium' ? '<span style="color:var(--yl)">&#9679;</span>' : '<span style="color:var(--gn)">&#9679;</span>');
-            var typeLabel = c.type === 'fact' ? 'FAKT' : (c.type === 'structure' ? 'STRUKTURA' : 'JEZYK');
+    // Applied fixes
+    var applied = data.applied || [];
+    if (applied.length > 0) {
+        h += '<div class="card"><div class="card-title" style="color:var(--gn)">Naprawione automatycznie (' + applied.length + ')</div>';
+        applied.forEach(function(fix) {
+            var sevColor = fix.severity === 'high' ? 'var(--rd)' : (fix.severity === 'medium' ? 'var(--yl)' : 'var(--gn)');
             h += '<div style="padding:6px 0;border-bottom:1px solid var(--b1);font-size:13px">';
-            h += icon + ' <b>' + typeLabel + '</b> ';
-            h += '<span style="color:var(--rd);text-decoration:line-through">' + esc(c.original || '') + '</span>';
-            h += ' &rarr; <span style="color:var(--gn)">' + esc(c.replacement || '') + '</span>';
-            h += '<br><span style="color:var(--mg);font-size:12px">' + esc(c.reason || '') + '</span>';
+            h += '<span style="display:inline-block;padding:1px 6px;border-radius:4px;font-size:11px;background:rgba(255,255,255,.05);color:' + sevColor + '">' + esc(fix.type || '') + '</span> ';
+            h += '<span style="text-decoration:line-through;color:var(--mg)">' + esc((fix.original || '').substring(0, 60)) + '</span>';
+            h += ' &rarr; <span style="color:var(--gn)">' + esc((fix.replacement || '').substring(0, 60)) + '</span>';
+            h += '<br><span style="color:var(--mg);font-size:11px">' + esc(fix.reason || '') + '</span>';
             h += '</div>';
         });
         h += '</div>';
     }
 
-    // Hallucinations
-    if (hallucinations.length) {
-        h += '<div class="card" style="border-color:rgba(248,113,113,.3)"><div class="card-title" style="color:var(--rd)">Halucynacje (' + hallucinations.length + ')</div>';
-        hallucinations.forEach(function(hal) {
+    // Flagged for review
+    var flagged = data.flagged || [];
+    if (flagged.length > 0) {
+        h += '<div class="card"><div class="card-title" style="color:var(--yl)">Wymaga uwagi copywritera (' + flagged.length + ')</div>';
+        flagged.forEach(function(flag) {
+            var sevColor = flag.severity === 'high' ? 'var(--rd)' : (flag.severity === 'medium' ? 'var(--yl)' : 'var(--gn)');
+            var icons = {hallucination: '&#128308;', duplicate: '&#128993;', unfulfilled_promise: '&#128992;', language: '&#128994;'};
+            var icon = icons[flag.type] || '&#9898;';
             h += '<div style="padding:6px 0;border-bottom:1px solid var(--b1);font-size:13px">';
-            h += '<span style="color:var(--rd)">&#9679;</span> <b>' + esc(hal.text || '') + '</b>';
-            h += '<br><span style="color:var(--mg);font-size:12px">' + esc(hal.reason || '') + '</span>';
+            h += '<span>' + icon + '</span> ';
+            h += '<span style="display:inline-block;padding:1px 6px;border-radius:4px;font-size:11px;background:rgba(255,255,255,.05);color:' + sevColor + '">' + esc(flag.type || '') + '</span> ';
+            h += '<span>' + esc((flag.text || '').substring(0, 80)) + '</span>';
+            h += '<br><span style="color:var(--mg);font-size:11px">' + esc(flag.reason || '') + '</span>';
+            if (flag.action) h += '<br><span style="color:var(--yl);font-size:11px">&rarr; ' + esc(flag.action) + '</span>';
             h += '</div>';
         });
         h += '</div>';
     }
 
-    if (!corrections.length && !hallucinations.length) {
-        h += '<div class="card"><p style="font-size:13px;color:var(--gn);text-align:center">Brak poprawek — artykul jest poprawny</p></div>';
+    // No issues
+    if (!applied.length && !flagged.length) {
+        h += '<div class="card"><p style="font-size:13px;color:var(--gn);text-align:center">Tekst nie wymaga poprawek</p></div>';
     }
 
     target.innerHTML = h;
@@ -1098,6 +1106,9 @@ async function startAudit() {
                 if (d.data.brief) {
                     window._briefData = d.data.brief;
                     renderBrief(d.data.brief);
+                }
+                if (d.data.proofreading) {
+                    renderProofreading(d.data.proofreading);
                 }
                 log('Audyt zakonczony. Score: ' + d.data.overall_score, 'ok');
                 aes.close();

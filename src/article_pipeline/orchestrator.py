@@ -995,7 +995,7 @@ class ArticleOrchestrator:
                 s1_data=self._s1_full,
                 variables=self.variables,
             )
-            if proofread_result.get("stats", {}).get("applied", 0) > 0:
+            if proofread_result.get("stats", {}).get("auto_fixed", 0) > 0:
                 self.full_article = proofread_result["corrected_text"]
                 article = self.full_article
             yield {"event": "step_done", "step": total_steps - 1, "data": {"proofreading": proofread_result}}
