@@ -877,8 +877,8 @@ class ArticleOrchestrator:
         """
         # H2 plan is unknown before Claude generates it — estimate 6 sections, update after
         h2_count_est = 6
-        # Steps: YMYL + variants + H2 plan + pre-batch + batch0 + H2s + FAQ + post-processing
-        total_steps = 6 + h2_count_est
+        # Steps: YMYL + variants + H2 plan + pre-batch + batch0 + H2s + FAQ + proofreading + post-processing
+        total_steps = 7 + h2_count_est
 
         # Step 1: YMYL detection
         yield {"event": "step_start", "step": 1, "total": total_steps, "label": "YMYL: detekcja kategorii"}
@@ -894,7 +894,7 @@ class ArticleOrchestrator:
         yield {"event": "step_start", "step": 3, "total": total_steps, "label": "Plan H2: struktura artykułu"}
         h2_plan = self.run_h2_plan()
         h2_count = len(h2_plan)
-        total_steps = 6 + h2_count  # recalculate with actual H2 count
+        total_steps = 7 + h2_count  # recalculate with actual H2 count (includes proofreading step)
         yield {"event": "step_done", "step": 3, "data": {
             "h2_plan": getattr(self, "_h2_plan_full", h2_plan),
             "faq_plan": getattr(self, "_faq_plan", []),
@@ -933,10 +933,23 @@ class ArticleOrchestrator:
         # Step 4: Pre-batch
         yield {"event": "step_start", "step": 4, "total": total_steps, "label": "Pre-Batch: mapa rozmieszczeń"}
         self.run_pre_batch()
+        # Generate brief (after pre-batch, all data ready)
+        brief_data = None
+        try:
+            from src.article_pipeline.brief_generator import generate_brief
+            brief_data = generate_brief(
+                s1_data=self._s1_full,
+                variables=self.variables,
+                pre_batch_map=self.pre_batch_map,
+            )
+        except Exception as e:
+            print(f"[BRIEF] Error generating brief: {e}")
+
         yield {"event": "step_done", "step": 4, "data": {
             "pre_batch_keys": list((self.pre_batch_map or {}).keys()),
             "pre_batch_map": self.pre_batch_map or {},
             "input_variables": self.input_variables,
+            "brief": brief_data,
         }}
 
         # Step 5: Batch 0
@@ -972,6 +985,23 @@ class ArticleOrchestrator:
             "total_batches": len(self.batch_texts),
         }}
 
+        # Editorial proofreading
+        proofread_result = None
+        try:
+            from src.article_pipeline.editorial_proofreader import proofread_article
+            yield {"event": "step_start", "step": total_steps - 1, "total": total_steps, "label": "Korekta redakcyjna"}
+            proofread_result = proofread_article(
+                article_text=self.full_article,
+                s1_data=self._s1_full,
+                variables=self.variables,
+            )
+            if proofread_result.get("stats", {}).get("applied", 0) > 0:
+                self.full_article = proofread_result["corrected_text"]
+                article = self.full_article
+            yield {"event": "step_done", "step": total_steps - 1, "data": {"proofreading": proofread_result}}
+        except Exception as e:
+            print(f"[PROOFREADER] Error: {e}")
+
         # Post-processing validation
         yield {"event": "step_start", "step": total_steps, "total": total_steps, "label": "Post-Processing: walidacja"}
         validation = self.run_post_processing()
@@ -996,4 +1026,6 @@ class ArticleOrchestrator:
             "entity_compliance": entity_compliance,
             "keyword_budget": self.keyword_tracker.get_summary(),
             "keyword_reports": self.keyword_tracker.batch_reports,
+            "proofreading": proofread_result,
+            "brief": brief_data,
         }}

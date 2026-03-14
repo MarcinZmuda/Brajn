@@ -146,6 +146,24 @@ def run_s1_analysis(
         top_n=top_n,
     )
 
+    # Quality Gate — heuristic + Haiku (~$0.002)
+    try:
+        from src.s1.ngram_quality_gate import run_quality_gate
+        qg_result = run_quality_gate(
+            ngrams=ngram_result["ngrams"],
+            extended_terms=ngram_result["extended_terms"],
+            entities=[],
+            triples=[],
+            main_keyword=main_keyword,
+            use_llm=True,
+        )
+        ngram_result["ngrams"] = qg_result["ngrams"]
+        ngram_result["extended_terms"] = qg_result["extended_terms"]
+        print(f"[S1] Quality gate: ngrams {qg_result['stats']['ngrams_before']}→{qg_result['stats']['ngrams_after']}, "
+              f"extended {qg_result['stats']['extended_before']}→{qg_result['stats']['extended_after']}")
+    except Exception as e:
+        print(f"[S1] Quality gate error (continuing without): {e}")
+
     # Semantic keyphrases (Gemini)
     full_text_sample = " ".join(ngram_result["all_text_content"])[:15_000]
     semantic_keyphrases = _extract_semantic_tags_gemini(full_text_sample)
@@ -225,6 +243,32 @@ def run_s1_analysis(
         except Exception as e:
             print(f"[S1] Factographic extraction error: {e}")
             factographic_data = {"error": str(e), "status": "FAILED"}
+
+    # Quality Gate stage 2 — entities and triples
+    try:
+        from src.s1.ngram_quality_gate import run_quality_gate
+        must_cover = (entity_seo_data or {}).get("must_cover_concepts", [])
+        fact_triples = []
+        if factographic_data and isinstance(factographic_data, dict):
+            fact_triples = (factographic_data.get("spo") or []) + (factographic_data.get("eav") or [])
+
+        qg2 = run_quality_gate(
+            ngrams=[], extended_terms=[],
+            entities=must_cover if isinstance(must_cover, list) else [],
+            triples=fact_triples if isinstance(fact_triples, list) else [],
+            main_keyword=main_keyword,
+            use_llm=True,
+        )
+        if entity_seo_data and qg2.get("entities"):
+            entity_seo_data["must_cover_concepts"] = qg2["entities"]
+        if factographic_data and qg2.get("triples"):
+            spo_count = len(factographic_data.get("spo") or [])
+            all_clean = qg2["triples"]
+            factographic_data["spo"] = [t for t in all_clean if t.get("triplet_type") == "spo"]
+            factographic_data["eav"] = [t for t in all_clean if t.get("triplet_type") != "spo"]
+            factographic_data["count"] = len(all_clean)
+    except Exception as e:
+        print(f"[S1] Quality gate stage 2 error: {e}")
 
     # Content Gaps
     content_gaps_data = None

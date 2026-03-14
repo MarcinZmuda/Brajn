@@ -237,7 +237,7 @@ def _extract_main_entity(s1_data):
         for item in salience_list:
             if not isinstance(item, dict):
                 continue
-            text = item.get("entity") or item.get("text") or ""
+            text = item.get("display_text") or item.get("entity") or item.get("text") or ""
             score = float(item.get("salience") or item.get("score") or 0.5)
             if text and not _is_garbage(text) and _is_natural_polish_phrase(text):
                 return text, score
@@ -251,7 +251,7 @@ def _extract_main_entity(s1_data):
             reverse=True,
         )
         for top in sorted_ents:
-            text = top.get("text") or ""
+            text = top.get("display_text") or top.get("text") or ""
             score = float(top.get("importance") or top.get("salience") or 0.5)
             if text and not _is_garbage(text) and _is_natural_polish_phrase(text):
                 return text, score
@@ -266,7 +266,9 @@ def _extract_must_cover(s1_data, main_entity):
 
     for src_key in ("must_cover_concepts", "should_cover_concepts"):
         for item in (entity_seo.get(src_key) or [])[:6]:
-            text = item if isinstance(item, str) else item.get("text") or item.get("entity") or ""
+            text = item if isinstance(item, str) else (
+                item.get("display_text") or item.get("text") or item.get("entity") or ""
+            )
             if text and text not in result:
                 result.append(text)
         if len(result) >= 5:
@@ -274,7 +276,7 @@ def _extract_must_cover(s1_data, main_entity):
 
     for src_key in ("entities", "concept_entities"):
         for e in (entity_seo.get(src_key) or [])[:6]:
-            text = e.get("text") or "" if isinstance(e, dict) else str(e)
+            text = (e.get("display_text") or e.get("text") or "") if isinstance(e, dict) else str(e)
             if text and text not in result:
                 result.append(text)
         if len(result) >= 10:

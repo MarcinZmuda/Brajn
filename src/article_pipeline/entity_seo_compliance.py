@@ -983,8 +983,28 @@ def run_entity_seo_compliance(
     compliance["hard_facts"] = analyze_hard_facts(parsed, s1_data)
     print(f"[COMPLIANCE] Hard facts: {compliance['hard_facts']['stats']}")
 
-    # N-gram budget (reuse or empty)
+    # N-gram budget (reuse or empty) — filter garbage before counting
     if ngram_coverage:
+        try:
+            from src.s1.ngram_quality_gate import is_garbage_ngram
+            for key in ("missing", "under", "over", "ok"):
+                if key in ngram_coverage:
+                    ngram_coverage[key] = [
+                        ng for ng in ngram_coverage[key]
+                        if not is_garbage_ngram(ng.get("term", ""))[0]
+                    ]
+            # Recalculate stats
+            total = sum(len(ngram_coverage.get(k, [])) for k in ("missing", "under", "over", "ok"))
+            ngram_coverage["stats"] = {
+                "total": total,
+                "missing": len(ngram_coverage.get("missing", [])),
+                "under": len(ngram_coverage.get("under", [])),
+                "over": len(ngram_coverage.get("over", [])),
+                "ok": len(ngram_coverage.get("ok", [])),
+                "coverage_pct": round(len(ngram_coverage.get("ok", [])) / max(total, 1) * 100),
+            }
+        except ImportError:
+            pass
         compliance["ngram_budget"] = ngram_coverage
     else:
         compliance["ngram_budget"] = {"stats": {"total": 0, "ok": 0, "over": 0, "missing": 0}}
