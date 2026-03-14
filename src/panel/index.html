@@ -429,6 +429,7 @@
                         <p>Artykul pojawi sie tutaj po wygenerowaniu</p>
                     </div>
                 </div>
+                <div id="proofreadingContent" style="display:none;margin-top:16px"></div>
             </div>
 
             <!-- ═══ ENTITY SEO COMPLIANCE TAB ═══ -->
@@ -787,6 +788,64 @@ function renderBrief(data) {
     h += '</div>';
 
     c.innerHTML = h;
+}
+
+// ── Proofreading Render ──
+function renderProofreading(data) {
+    if (!data) return;
+    var target = document.getElementById('proofreadingContent');
+    if (!target) return;
+    var h = '';
+    var stats = data.stats || {};
+    var corrections = data.corrections || [];
+    var hallucinations = data.hallucinations || [];
+    var summary = data.summary || {};
+
+    // Summary card
+    h += '<div class="card"><div class="card-title">Korekta redakcyjna</div>';
+    h += '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;font-size:13px;text-align:center">';
+    h += '<div><b style="font-size:20px;color:var(--gn)">' + (stats.applied || 0) + '</b><br>Zastosowane</div>';
+    h += '<div><b style="font-size:20px;color:var(--mg)">' + (stats.skipped || 0) + '</b><br>Pominiete</div>';
+    h += '<div><b style="font-size:20px;color:var(--rd)">' + (stats.hallucination_count || 0) + '</b><br>Halucynacje</div>';
+    var qcolor = summary.overall_quality === 'good' ? 'var(--gn)' : (summary.overall_quality === 'needs_work' ? 'var(--rd)' : 'var(--yl)');
+    h += '<div><b style="font-size:14px;color:' + qcolor + '">' + esc(summary.overall_quality || '?') + '</b><br>Jakosc</div>';
+    h += '</div></div>';
+
+    // Corrections list
+    if (corrections.length) {
+        h += '<div class="card"><div class="card-title">Poprawki (' + corrections.length + ')</div>';
+        corrections.forEach(function(c) {
+            var sev = c.severity || 'low';
+            var icon = sev === 'high' ? '<span style="color:var(--rd)">&#9679;</span>' : (sev === 'medium' ? '<span style="color:var(--yl)">&#9679;</span>' : '<span style="color:var(--gn)">&#9679;</span>');
+            var typeLabel = c.type === 'fact' ? 'FAKT' : (c.type === 'structure' ? 'STRUKTURA' : 'JEZYK');
+            h += '<div style="padding:6px 0;border-bottom:1px solid var(--b1);font-size:13px">';
+            h += icon + ' <b>' + typeLabel + '</b> ';
+            h += '<span style="color:var(--rd);text-decoration:line-through">' + esc(c.original || '') + '</span>';
+            h += ' &rarr; <span style="color:var(--gn)">' + esc(c.replacement || '') + '</span>';
+            h += '<br><span style="color:var(--mg);font-size:12px">' + esc(c.reason || '') + '</span>';
+            h += '</div>';
+        });
+        h += '</div>';
+    }
+
+    // Hallucinations
+    if (hallucinations.length) {
+        h += '<div class="card" style="border-color:rgba(248,113,113,.3)"><div class="card-title" style="color:var(--rd)">Halucynacje (' + hallucinations.length + ')</div>';
+        hallucinations.forEach(function(hal) {
+            h += '<div style="padding:6px 0;border-bottom:1px solid var(--b1);font-size:13px">';
+            h += '<span style="color:var(--rd)">&#9679;</span> <b>' + esc(hal.text || '') + '</b>';
+            h += '<br><span style="color:var(--mg);font-size:12px">' + esc(hal.reason || '') + '</span>';
+            h += '</div>';
+        });
+        h += '</div>';
+    }
+
+    if (!corrections.length && !hallucinations.length) {
+        h += '<div class="card"><p style="font-size:13px;color:var(--gn);text-align:center">Brak poprawek — artykul jest poprawny</p></div>';
+    }
+
+    target.innerHTML = h;
+    target.style.display = 'block';
 }
 
 function copyBriefMarkdown() {
@@ -1656,6 +1715,10 @@ async function startWorkflow() {
                     if (d.data && d.data.pre_batch_map) {
                         renderPreBatch(d.data.pre_batch_map, d.data.input_variables || {}, []);
                     }
+                    // Render proofreading when step data arrives
+                    if (d.data && d.data.proofreading) {
+                        renderProofreading(d.data.proofreading);
+                    }
                     // Render brief tab when brief data arrives
                     if (d.data && d.data.brief) {
                         window._briefData = d.data.brief;
@@ -1683,6 +1746,10 @@ async function startWorkflow() {
                         if (d.data.brief) {
                             window._briefData = d.data.brief;
                             renderBrief(d.data.brief);
+                        }
+                        // Proofreading
+                        if (d.data.proofreading) {
+                            renderProofreading(d.data.proofreading);
                         }
                         // Store entity compliance for annotation view
                         if (d.data.entity_compliance) {

@@ -231,6 +231,32 @@ def _extract_main_entity(s1_data):
             return is_entity_garbage(text)
         return False
 
+    # Helper: validate entity against main_keyword and competitor titles
+    def _validate_entity_vs_context(text, score):
+        """If entity doesn't overlap with main_keyword AND doesn't appear in
+        competitor titles, fall back to main_keyword (FAZA 0 1e)."""
+        if not text or not main_keyword:
+            return text, score
+        text_lower = text.lower()
+        kw_lower = main_keyword.lower()
+        # Check overlap with main_keyword
+        if text_lower in kw_lower or kw_lower in text_lower:
+            return text, score
+        # Check word overlap
+        text_words = set(text_lower.split())
+        kw_words = set(kw_lower.split())
+        if text_words & kw_words:
+            return text, score
+        # No keyword overlap — check competitor titles
+        serp = s1_data.get("serp_analysis") or {}
+        titles = " ".join(
+            (c.get("title") or "") for c in (serp.get("competitors") or [])
+        ).lower()
+        if text_lower in titles:
+            return text, score
+        # Entity is disconnected from keyword and titles — fallback
+        return main_keyword, 1.0
+
     # 1. entity_salience list (already filtered by entity_salience.py v3.1)
     salience_list = entity_seo.get("entity_salience") or []
     if salience_list and isinstance(salience_list, list):
@@ -240,7 +266,7 @@ def _extract_main_entity(s1_data):
             text = item.get("display_text") or item.get("entity") or item.get("text") or ""
             score = float(item.get("salience") or item.get("score") or 0.5)
             if text and not _is_garbage(text) and _is_natural_polish_phrase(text):
-                return text, score
+                return _validate_entity_vs_context(text, score)
 
     # 2. entities sorted by importance
     entities = entity_seo.get("entities") or []
@@ -254,7 +280,7 @@ def _extract_main_entity(s1_data):
             text = top.get("display_text") or top.get("text") or ""
             score = float(top.get("importance") or top.get("salience") or 0.5)
             if text and not _is_garbage(text) and _is_natural_polish_phrase(text):
-                return text, score
+                return _validate_entity_vs_context(text, score)
 
     # 3. fallback → main_keyword
     return main_keyword, 1.0
