@@ -65,6 +65,11 @@ _PRODUCT_CARD_PATTERNS = [
     re.compile(r'(?:stan\s+magazynow|dost[eę]pno[sś][cć]|w\s+magazynie)', re.IGNORECASE),
 ]
 
+# Rule 2b: Measurement units mixed with product words
+_UNIT_PATTERN = re.compile(
+    r'\b(?:kg|g|cm|mm|ml|l|szt|zł|pln|eur|usd|%)\b', re.IGNORECASE
+)
+
 # Rule 7: Code characters
 _RE_CODE_CHARS = re.compile(r'[{}();=<>\\|@#$%^&*]')
 
@@ -95,6 +100,20 @@ def is_garbage_ngram(text: str) -> Tuple[bool, str]:
     # Rule 2: Repeated word (menu menu, void void)
     if _RE_REPEATED_WORD.match(t):
         return True, "repeated_word"
+
+    # Rule 2b: Content word repeated in multi-word ngram (non-consecutive)
+    # Catches: "obciążeniowa kg kołdra obciążeniowa", "kołdra obciążeniowa classic kołdra"
+    if len(words) >= 3:
+        long_words = [w for w in words if len(w) > 3]
+        if len(long_words) >= 2 and len(long_words) != len(set(long_words)):
+            return True, "repeated_content_word"
+
+    # Rule 2c: Measurement unit mixed with product words in 3+ word ngram
+    # Catches: "obciążeniowa kg kołdra", "kołdra 7kg obciążeniowa"
+    if len(words) >= 3 and _UNIT_PATTERN.search(t):
+        non_unit_words = [w for w in words if not _UNIT_PATTERN.match(w)]
+        if len(non_unit_words) >= 2:
+            return True, "product_spec_with_unit"
 
     # Rule 3: First word is CSS/JS/HTML + rest has no Polish chars
     if len(words) >= 2 and words[0] in _CSS_JS_FIRST_WORDS:

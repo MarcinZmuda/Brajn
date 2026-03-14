@@ -75,6 +75,13 @@ class TextAuditRequest(BaseModel):
     text: str = Field(..., min_length=50, description="Article text to audit")
 
 
+class ProofreadRequest(BaseModel):
+    text: str = Field(..., min_length=50, description="Article text to proofread")
+    s1_data: Optional[dict] = Field(default=None, description="S1 data for context")
+    variables: Optional[dict] = Field(default=None, description="Article variables")
+    auto_fix: bool = Field(default=True, description="Apply automatic fixes")
+
+
 class ArticleEditRequest(BaseModel):
     text: str = Field(..., min_length=1)
     instruction: str = Field(..., min_length=1)
@@ -308,6 +315,22 @@ async def export_article(job_id: str, fmt: str):
         })
 
     raise HTTPException(status_code=400, detail=f"Unknown format: {fmt}")
+
+
+@app.post("/api/proofread", dependencies=[Depends(require_api_key)])
+async def proofread_article_endpoint(req: ProofreadRequest):
+    """Run editorial proofreader on article text. Separate from pipeline to avoid timeout."""
+    try:
+        from src.article_pipeline.editorial_proofreader import proofread_article
+        result = proofread_article(
+            article_text=req.text,
+            s1_data=req.s1_data or {},
+            variables=req.variables or {},
+            auto_fix=req.auto_fix,
+        )
+        return result
+    except Exception as e:
+        return {"error": str(e), "status": "error"}
 
 
 @app.post("/api/edit", dependencies=[Depends(require_api_key)])
