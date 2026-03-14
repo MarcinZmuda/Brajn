@@ -65,6 +65,11 @@ class ArticleStartRequest(BaseModel):
     nw_terms: Optional[list[str]] = Field(default=None, description="NW/Surfer terms for coverage analysis")
 
 
+class BriefGenerateRequest(BaseModel):
+    main_keyword: str = Field(..., min_length=1)
+    s1_data: dict = Field(..., description="Pre-computed S1 data")
+
+
 class TextAuditRequest(BaseModel):
     main_keyword: str = Field(..., min_length=1)
     text: str = Field(..., min_length=50, description="Article text to audit")
@@ -185,6 +190,23 @@ async def start_workflow(req: ArticleStartRequest):
     thread.start()
 
     return {"job_id": job_id, "status": "started", "main_keyword": req.main_keyword}
+
+
+@app.post("/api/generate_brief", dependencies=[Depends(require_api_key)])
+async def generate_brief_endpoint(req: BriefGenerateRequest):
+    """Generate content brief from S1 data without running full article pipeline."""
+    try:
+        from src.article_pipeline.variables import extract_global_variables
+        from src.article_pipeline.brief_generator import generate_brief
+
+        variables = extract_global_variables(req.s1_data)
+        brief_data = generate_brief(
+            s1_data=req.s1_data,
+            variables=variables,
+        )
+        return {"brief": brief_data, "status": "ok"}
+    except Exception as e:
+        return {"brief": None, "status": "error", "error": str(e)}
 
 
 @app.post("/api/audit", dependencies=[Depends(require_api_key)])
