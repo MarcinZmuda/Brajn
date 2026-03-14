@@ -545,24 +545,25 @@ function selMode(m) {
     var h2Fields = document.getElementById('h2Fields');
     var btnStart = document.getElementById('btnStart');
     if (m === 'audit') {
-        auditFields.style.display = 'block';
-        h2Fields.style.display = 'none';
-        btnStart.textContent = 'Sprawdz tekst';
+        if (auditFields) auditFields.style.display = 'block';
+        if (h2Fields) h2Fields.style.display = 'none';
+        if (btnStart) btnStart.textContent = 'Sprawdz tekst';
     } else if (m === 'brief') {
-        auditFields.style.display = 'none';
-        h2Fields.style.display = 'none';
-        btnStart.textContent = 'Generuj Brief';
+        if (auditFields) auditFields.style.display = 'none';
+        if (h2Fields) h2Fields.style.display = 'none';
+        if (btnStart) btnStart.textContent = 'Generuj Brief';
     } else {
-        auditFields.style.display = 'none';
-        h2Fields.style.display = 'block';
-        btnStart.textContent = 'Uruchom workflow';
+        if (auditFields) auditFields.style.display = 'none';
+        if (h2Fields) h2Fields.style.display = 'block';
+        if (btnStart) btnStart.textContent = 'Uruchom workflow';
     }
 }
 
 function selEngine(e) {
     engine = e;
     document.querySelectorAll('.mbtn[data-engine]').forEach(b => b.classList.toggle('on', b.dataset.engine === e));
-    document.getElementById('engineLabel').textContent = e === 'claude' ? 'Claude' : 'OpenAI';
+    var lbl = document.getElementById('engineLabel');
+    if (lbl) lbl.textContent = e === 'claude' ? 'Claude' : 'OpenAI';
 }
 
 function switchTab(t) {
@@ -572,6 +573,7 @@ function switchTab(t) {
 
 function log(m, cls) {
     const c = document.getElementById('logC');
+    if (!c) return;
     if (!cls) cls = m.includes('error') ? 'err' : m.includes('warning') ? 'warn' : (m.includes('done') || m.includes('ok')) ? 'ok' : '';
     c.innerHTML += '<div class="log-line ' + cls + '"><span class="ts">' + new Date().toLocaleTimeString('pl-PL') + '</span> ' + esc(m) + '</div>';
     c.scrollTop = c.scrollHeight;
@@ -606,12 +608,13 @@ function initApiKey() {
 function resetSteps() {
     pipelineSteps = {};
     totalSteps = 0;
-    document.getElementById('stepsC').innerHTML = '<div class="empty-state"><div class="icon">&#9881;</div><p>Uruchamianie pipeline...</p></div>';
+    var el = document.getElementById('stepsC');
+    if (el) el.innerHTML = '<div class="empty-state"><div class="icon">&#9881;</div><p>Uruchamianie pipeline...</p></div>';
 }
 
 function renderSteps() {
     const c = document.getElementById('stepsC');
-    if (Object.keys(pipelineSteps).length === 0) return;
+    if (!c || Object.keys(pipelineSteps).length === 0) return;
 
     const sorted = Object.keys(pipelineSteps).map(Number).sort((a, b) => a - b);
     let html = '';
@@ -675,7 +678,7 @@ function setStepDone(step, data) {
         if (data.word_count) details.push(data.word_count + ' slow');
         if (data.ymyl !== undefined) details.push('YMYL: ' + (data.ymyl ? 'TAK' : 'NIE'));
         if (data.variants_count) details.push(data.variants_count + ' wariantow');
-        if (data.pre_batch_keys) details.push(data.pre_batch_keys + ' kluczy');
+        if (data.pre_batch_keys) details.push((Array.isArray(data.pre_batch_keys) ? data.pre_batch_keys.length : data.pre_batch_keys) + ' kluczy');
         if (data.validation) {
             const vs = data.validation.score || data.validation.validation_score;
             if (vs !== undefined) details.push('Score: ' + vs);
@@ -704,6 +707,7 @@ function setStepError(step, message) {
 function renderBrief(data) {
     if (!data) return;
     const c = document.getElementById('briefContent');
+    if (!c) return;
     let h = '';
 
     // Header
@@ -1175,6 +1179,7 @@ async function startAudit() {
 // ── Audit Report Render ──
 function renderAuditReport(data) {
     var c = document.getElementById('auditContent');
+    if (!c) return;
     var h = '';
     var score = data.overall_score || 0;
     var scores = data.component_scores || {};
@@ -1306,6 +1311,7 @@ function renderAuditReport(data) {
 function renderS1(data) {
     s1Data = data;
     const c = document.getElementById('s1Content');
+    if (!c) return;
     let html = '';
 
     const ngrams = data.ngrams || [];
@@ -1728,6 +1734,7 @@ function buildSection(id, title, count, contentFn, openByDefault) {
 // ── Pre-Batch / Dane wsadowe Render ──
 function renderPreBatch(preBatchMap, inputVars, promptLog) {
     const c = document.getElementById('prebatchContent');
+    if (!c) return;
     let html = '';
     const batches = (preBatchMap || {}).batches || {};
     const batchKeys = Object.keys(batches);
@@ -1981,9 +1988,12 @@ function renderPreBatch(preBatchMap, inputVars, promptLog) {
 function renderArticle(text) {
     articleText = text;
     const preview = document.getElementById('articlePreview');
-    let html = text;
+    if (!preview) return;
 
-    // Markdown to HTML conversion
+    // Escape HTML entities first to prevent XSS
+    let html = esc(text);
+
+    // Markdown to HTML conversion (on escaped text — safe)
     html = html.replace(/^### (.+)$/gm, '<h3>$1</h3>');
     html = html.replace(/^## (.+)$/gm, '<h2>$1</h2>');
     html = html.replace(/^# (.+)$/gm, '<h1>$1</h1>');
@@ -2011,8 +2021,10 @@ function renderArticle(text) {
 
     // Word count
     const wc = text.trim().split(/\s+/).filter(function(w) { return w.length > 0; }).length;
-    document.getElementById('articleWC').textContent = wc + ' slow';
-    document.getElementById('articleActions').style.display = 'flex';
+    var wcEl = document.getElementById('articleWC');
+    if (wcEl) wcEl.textContent = wc + ' slow';
+    var actEl = document.getElementById('articleActions');
+    if (actEl) actEl.style.display = 'flex';
     document.querySelectorAll('.opt-btn').forEach(function(b) { b.disabled = false; });
 
     // Update annotation view if it exists
@@ -2021,19 +2033,26 @@ function renderArticle(text) {
 
 // ── Validation ──
 function showValidation(v) {
-    document.getElementById('qualityCard').style.display = '';
+    var qCard = document.getElementById('qualityCard');
+    if (qCard) qCard.style.display = '';
     const score = v.score || v.validation_score || 0;
     const badge = document.getElementById('scoreBadge');
-    badge.textContent = score + '/100';
-    badge.style.background = score >= 80 ? 'var(--gnd)' : score >= 60 ? 'var(--yld)' : 'var(--rdd)';
-    badge.style.color = score >= 80 ? 'var(--gn)' : score >= 60 ? 'var(--yl)' : 'var(--rd)';
-    document.getElementById('qualityFill').style.width = score + '%';
-    document.getElementById('qualityFill').style.background = score >= 80 ? 'var(--gn)' : score >= 60 ? 'var(--yl)' : 'var(--rd)';
+    if (badge) {
+        badge.textContent = score + '/100';
+        badge.style.background = score >= 80 ? 'var(--gnd)' : score >= 60 ? 'var(--yld)' : 'var(--rdd)';
+        badge.style.color = score >= 80 ? 'var(--gn)' : score >= 60 ? 'var(--yl)' : 'var(--rd)';
+    }
+    var qFill = document.getElementById('qualityFill');
+    if (qFill) {
+        qFill.style.width = score + '%';
+        qFill.style.background = score >= 80 ? 'var(--gn)' : score >= 60 ? 'var(--yl)' : 'var(--rd)';
+    }
     const det = document.getElementById('validationDetails');
+    if (!det) return;
     let html = '';
     if (v.errors && v.errors.length) html += '<div style="color:var(--rd);margin-bottom:4px">Errors: ' + v.errors.map(function(e) { return esc(e.type || e.message || JSON.stringify(e)); }).join(', ') + '</div>';
     if (v.warnings && v.warnings.length) html += '<div style="color:var(--yl);margin-bottom:4px">Warnings: ' + v.warnings.map(function(w) { return esc(w.type || w.message || JSON.stringify(w)); }).join(', ') + '</div>';
-    if (v.passed && v.passed.length) html += '<div style="color:var(--gn)">Passed: ' + v.passed.join(', ') + '</div>';
+    if (v.passed && v.passed.length) html += '<div style="color:var(--gn)">Passed: ' + v.passed.map(function(p) { return esc(String(p)); }).join(', ') + '</div>';
     det.innerHTML = html;
 }
 
@@ -2117,8 +2136,10 @@ async function startWorkflow() {
             engine: engine
         };
         // Add optional H2 structure and keywords if provided
-        const h2Val = document.getElementById('h2Input').value.trim();
-        const kwVal = document.getElementById('kwInput').value.trim();
+        var h2El = document.getElementById('h2Input');
+        var kwEl = document.getElementById('kwInput');
+        var h2Val = h2El ? h2El.value.trim() : '';
+        var kwVal = kwEl ? kwEl.value.trim() : '';
         if (h2Val) body.h2_structure = h2Val.split('\n').filter(function(l) { return l.trim(); });
         if (kwVal) body.extra_keywords = kwVal.split('\n').filter(function(l) { return l.trim(); });
 
@@ -2246,8 +2267,10 @@ async function startWorkflow() {
 
 function cleanup() {
     if (es) { es.close(); es = null; }
-    document.getElementById('btnStart').disabled = false;
-    document.getElementById('btnStop').style.display = 'none';
+    var btn = document.getElementById('btnStart');
+    if (btn) btn.disabled = false;
+    var stop = document.getElementById('btnStop');
+    if (stop) stop.style.display = 'none';
 }
 
 function stopWorkflow() {
@@ -2315,6 +2338,7 @@ function copyArticle() {
 // ── Entity SEO Compliance ──
 function renderEntityCompliance(data) {
     const c = document.getElementById('entityContent');
+    if (!c) return;
     if (!data) { c.innerHTML = '<div class="empty-state"><div class="icon">&#128300;</div><p>Brak danych Entity SEO</p></div>'; return; }
 
     const entitySeo = data.entity_seo || {};
@@ -2851,6 +2875,7 @@ function toggleAnnLayer(id) {
 
 function renderAnnotationView() {
     var c = document.getElementById('annotateContent');
+    if (!c) return;
     if (!articleText) {
         c.innerHTML = '<div class="ann-empty"><div style="font-size:40px;margin-bottom:12px;opacity:.3">&#128270;</div><p>Wygeneruj artykul, aby zobaczyc widok annotacji</p></div>';
         return;
@@ -2948,6 +2973,7 @@ function _compStatusDot(status) {
 
 function renderCompliance(data) {
     var c = document.getElementById('complianceContent');
+    if (!c) return;
     if (!data || data.error) {
         c.innerHTML = '<div class="ann-empty"><div style="font-size:40px;margin-bottom:12px;opacity:.3">&#9888;</div><p>' + esc(data ? data.error : 'Brak danych') + '</p></div>';
         return;
