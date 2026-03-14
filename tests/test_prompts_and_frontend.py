@@ -41,6 +41,104 @@ class TestAuditPromptInstructionRule:
         assert "zastąp" in _INSTRUCTION_MARKERS
 
 
+class TestProofreaderDiagnosticLogging:
+    """Verify diagnostic logging was added to editorial_proofreader.py."""
+
+    def _read_proofreader(self):
+        filepath = os.path.join(
+            os.path.dirname(__file__), "..", "src", "article_pipeline", "editorial_proofreader.py"
+        )
+        with open(filepath, encoding="utf-8") as f:
+            return f.read()
+
+    def test_proofread_article_logs_entry(self):
+        source = self._read_proofreader()
+        fn_start = source.find("def proofread_article(")
+        fn_chunk = source[fn_start:fn_start + 800]
+        assert "[PROOFREADER] Called:" in fn_chunk
+
+    def test_run_audit_logs_entry(self):
+        source = self._read_proofreader()
+        fn_start = source.find("def _run_audit(")
+        fn_chunk = source[fn_start:fn_start + 500]
+        assert "[PROOFREADER] Starting audit:" in fn_chunk
+
+    def test_run_audit_logs_traceback_on_error(self):
+        source = self._read_proofreader()
+        fn_start = source.find("def _run_audit(")
+        fn_chunk = source[fn_start:fn_start + 1200]
+        assert "traceback.format_exc()" in fn_chunk
+
+
+class TestHallucinationPrevention:
+    """Verify <hallucination_prevention> block in prompts."""
+
+    def _read_prompts(self):
+        filepath = os.path.join(
+            os.path.dirname(__file__), "..", "src", "article_pipeline", "prompts.py"
+        )
+        with open(filepath, encoding="utf-8") as f:
+            return f.read()
+
+    def test_hallucination_prevention_exists(self):
+        source = self._read_prompts()
+        assert "<hallucination_prevention>" in source
+        assert "</hallucination_prevention>" in source
+
+    def test_prevention_forbids_ungrounded_facts(self):
+        source = self._read_prompts()
+        start = source.find("<hallucination_prevention>")
+        end = source.find("</hallucination_prevention>")
+        block = source[start:end]
+        assert "BEZWZGLĘDNY ZAKAZ" in block or "ZAKAZ" in block
+        assert "NIE MA" in block
+        assert "hard_facts" in block
+
+    def test_prevention_suggests_generic_alternatives(self):
+        source = self._read_prompts()
+        start = source.find("<hallucination_prevention>")
+        end = source.find("</hallucination_prevention>")
+        block = source[start:end]
+        assert "kara grzywny" in block or "ogólnie" in block
+
+    def test_prevention_mentions_consequences(self):
+        """Should warn about real-world consequences of wrong numbers."""
+        source = self._read_prompts()
+        start = source.find("<hallucination_prevention>")
+        end = source.find("</hallucination_prevention>")
+        block = source[start:end]
+        assert "szkoda" in block or "błąd" in block
+
+
+class TestProofreadEndpointErrorHandling:
+    """Verify /api/proofread returns proper fallback on error."""
+
+    def _read_app(self):
+        filepath = os.path.join(
+            os.path.dirname(__file__), "..", "src", "app.py"
+        )
+        with open(filepath, encoding="utf-8") as f:
+            return f.read()
+
+    def test_endpoint_returns_fallback_fields(self):
+        source = self._read_app()
+        fn_start = source.find("async def proofread_article_endpoint")
+        fn_end = source.find("\n@app.", fn_start + 10)
+        fn = source[fn_start:fn_end]
+        assert '"corrected_text"' in fn, "Error fallback must include corrected_text"
+        assert '"applied"' in fn, "Error fallback must include applied"
+        assert '"flagged"' in fn, "Error fallback must include flagged"
+        assert '"stats"' in fn, "Error fallback must include stats"
+
+    def test_endpoint_logs_traceback(self):
+        source = self._read_app()
+        fn_start = source.find("async def proofread_article_endpoint")
+        fn_end = source.find("\n@app.", fn_start + 10)
+        fn = source[fn_start:fn_end]
+        assert "traceback.format_exc()" in fn, "Should log full traceback"
+        assert "[PROOFREAD API]" in fn, "Should use [PROOFREAD API] log prefix"
+
+
 class TestPromptsCompanyBan:
     """Verify company/brand name ban is present in prompts."""
 

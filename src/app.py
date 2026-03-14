@@ -79,6 +79,7 @@ class ProofreadRequest(BaseModel):
     text: str = Field(..., min_length=50, description="Article text to proofread")
     s1_data: Optional[dict] = Field(default=None, description="S1 data for context")
     variables: Optional[dict] = Field(default=None, description="Article variables")
+    brief: Optional[str] = Field(default=None, description="Brief text for context")
     auto_fix: bool = Field(default=True, description="Apply automatic fixes")
 
 
@@ -330,7 +331,20 @@ async def proofread_article_endpoint(req: ProofreadRequest):
         )
         return result
     except Exception as e:
-        return {"error": str(e), "status": "error"}
+        import traceback
+        print(f"[PROOFREAD API] Error: {traceback.format_exc()}")
+        return {
+            "error": str(e),
+            "corrected_text": req.text,
+            "applied": [],
+            "flagged": [],
+            "stats": {
+                "auto_fixed": 0,
+                "flagged_for_review": 0,
+                "hallucinations_found": 0,
+                "overall_quality": "error",
+            },
+        }
 
 
 @app.post("/api/edit", dependencies=[Depends(require_api_key)])

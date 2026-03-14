@@ -115,7 +115,8 @@ class ArticleOrchestrator:
         self.prompt_log = []   # [{label, system, user}]
         self.input_variables = {}  # snapshot after all variables are ready
 
-    def _llm_call(self, system_prompt: str, user_prompt: str, max_tokens: int = 4000, label: str = "") -> str:
+    def _llm_call(self, system_prompt: str, user_prompt: str, max_tokens: int = 4000,
+                  label: str = "", timeout: int = 120) -> str:
         """Make LLM call with the configured engine. Logs prompt for Dane wsadowe tab."""
         text, usage = claude_call(
             system_prompt=system_prompt,
@@ -123,6 +124,7 @@ class ArticleOrchestrator:
             model=self.model,
             max_tokens=max_tokens,
             temperature=0.7,
+            timeout=timeout,
         )
         # Log prompt for panel
         if label:
@@ -619,6 +621,7 @@ class ArticleOrchestrator:
             "NAGLOWEK_H2": h2_heading,
             "NASTEPNY_H2": next_h2,
             "OSTATNIE_ZDANIE_POPRZEDNIEGO_BATCHA": self.bridge_sentences[-1] if self.bridge_sentences else "",
+            "COVERED_CONTENT_SUMMARY": self._build_covered_summary(),
             "ENCJE_BATCH_N_JSON": json.dumps(merged_entities, ensure_ascii=False),
             "NGRAMY_BATCH_N": ngrams_formatted,
             "TRIPLETS_BATCH_N_JSON": json.dumps(batch_data.get("lancuchy", []), ensure_ascii=False),
@@ -653,6 +656,32 @@ class ArticleOrchestrator:
         self.keyword_tracker.update_after_batch(text, batch_label=f"batch_{n}")
 
         return text
+
+    def _build_covered_summary(self) -> str:
+        """Build summary of already covered content for deduplication."""
+        if not self.batch_texts:
+            return ""
+
+        covered_facts = set()
+        covered_topics = set()
+        for prev_text in self.batch_texts:
+            numbers = re.findall(
+                r'\d[\d\s,.]*(?:promil[aei]|zł|złotych|lat|roku|lat[a]?|%|tys|mies)',
+                prev_text.lower()
+            )
+            covered_facts.update(n.strip() for n in numbers[:10])
+            h2s = re.findall(r'^##\s+(.+)', prev_text, re.MULTILINE)
+            covered_topics.update(h2s)
+
+        if not covered_facts and not covered_topics:
+            return ""
+
+        parts = ["TEMATY JUŻ OPISANE (NIE POWTARZAJ):"]
+        if covered_topics:
+            parts.append("Sekcje: " + ", ".join(covered_topics))
+        if covered_facts:
+            parts.append("Fakty użyte: " + ", ".join(list(covered_facts)[:15]))
+        return "\n".join(parts)
 
     def _filter_faq_questions(self, questions: list, max_faq: int = 4) -> list:
         """
@@ -751,6 +780,21 @@ class ArticleOrchestrator:
     def assemble_article(self) -> str:
         """Assemble all batches into final article."""
         self.full_article = "\n\n".join(self.batch_texts)
+
+        # Structure validation
+        h1_found = bool(re.search(r'^# .+', self.full_article, re.MULTILINE))
+        h2_found = re.findall(r'^## .+', self.full_article, re.MULTILINE)
+        h2_plan = self.variables.get("_h2_plan_list", [])
+        total_words = len(self.full_article.split())
+        target_length = int(self.variables.get("DLUGOSC_CEL", 0) or 0)
+
+        if not h1_found:
+            print("[ORCHESTRATOR] WARNING: No H1 found in assembled article")
+        if len(h2_found) < len(h2_plan):
+            print(f"[ORCHESTRATOR] WARNING: Expected {len(h2_plan)} H2s, found {len(h2_found)}")
+        if target_length > 0 and total_words < target_length * 0.5:
+            print(f"[ORCHESTRATOR] WARNING: Article too short ({total_words}/{target_length} words)")
+
         return self.full_article
 
     # Regex for repeated-word n-grams: "menu menu", "void void void"

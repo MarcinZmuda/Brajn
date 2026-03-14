@@ -795,11 +795,33 @@ function renderBrief(data) {
     const plan = data.plan || {};
     h += '<div class="card"><div class="card-title">Plan artykulu</div>';
     if (plan.h1_suggestion) h += '<p style="font-size:14px"><b>H1:</b> ' + esc(plan.h1_suggestion) + '</p>';
+    // Centerpiece block
+    if (plan.centerpiece) {
+        var cp = plan.centerpiece;
+        h += '<div style="background:rgba(79,195,247,.08);border-left:3px solid #4fc3f7;padding:8px 12px;margin:8px 0;font-size:13px">';
+        h += '<b style="color:#4fc3f7">Struktura intro:</b><br>';
+        if (cp.definition) h += esc(cp.definition) + '<br>';
+        if (cp.related_topics) h += esc(cp.related_topics) + '<br>';
+        if (cp.outline) h += esc(cp.outline) + '<br>';
+        if (cp.goal) h += '<span style="color:var(--yl)">' + esc(cp.goal) + '</span>';
+        h += '</div>';
+    }
     if (plan.sections && plan.sections.length) {
         plan.sections.forEach(function(s, i) {
             h += '<div style="border-left:3px solid #4fc3f7;padding:4px 8px;margin:6px 0">';
             h += '<b>H2:</b> ' + esc(s.h2) + '';
             if (s.entities && s.entities.length) h += '<br><span style="font-size:12px;color:#aaa">Tematy: ' + s.entities.slice(0, 5).map(esc).join(', ') + '</span>';
+            if (s.hard_facts && s.hard_facts.length) h += '<br><span style="font-size:12px;color:var(--gn)">Fakty: ' + s.hard_facts.slice(0, 3).map(esc).join(', ') + '</span>';
+            if (s.cooccurrence_pairs && s.cooccurrence_pairs.length) {
+                h += '<br><span style="font-size:11px;color:var(--yl)">Razem w akapicie: ';
+                s.cooccurrence_pairs.forEach(function(p) { h += '&ldquo;' + esc(p.entity_a) + '&rdquo; + &ldquo;' + esc(p.entity_b) + '&rdquo; '; });
+                h += '</span>';
+            }
+            if (s.causal_relations && s.causal_relations.length) {
+                h += '<br><span style="font-size:11px;color:#ce93d8">Przyczyny: ';
+                s.causal_relations.forEach(function(r) { h += esc(r.cause) + ' &rarr; ' + esc(r.effect) + ' '; });
+                h += '</span>';
+            }
             h += '</div>';
         });
     }
@@ -888,6 +910,13 @@ function renderBrief(data) {
         h += '</ul></div>';
     }
 
+    // Empty data warning
+    if (data.empty_data_warning) {
+        h += '<div class="card" style="border-color:var(--yl)"><div class="card-title" style="color:var(--yl)">Ograniczone dane SERP</div>';
+        h += '<p style="font-size:13px;color:var(--yl)">' + esc(data.empty_data_warning) + '</p>';
+        h += '</div>';
+    }
+
     // Export button
     h += '<div style="text-align:center;margin:16px 0">';
     h += '<button class="btn-secondary" onclick="copyBriefMarkdown()">Kopiuj brief (Markdown)</button>';
@@ -910,15 +939,21 @@ function runProofreader(pipelineData) {
         text: pipelineData.full_text || '',
         s1_data: pipelineData.s1_data || {},
         variables: pipelineData.input_variables || {},
+        brief: pipelineData.brief ? JSON.stringify(pipelineData.brief) : '',
         auto_fix: true,
     });
+
+    var controller = new AbortController();
+    var timeoutId = setTimeout(function() { controller.abort(); }, 180000); // 3 min timeout
 
     fetch('/api/proofread', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + apiKey },
         body: body,
+        signal: controller.signal,
     })
     .then(function(resp) {
+        clearTimeout(timeoutId);
         if (!resp.ok) throw new Error('HTTP ' + resp.status);
         return resp.json();
     })
