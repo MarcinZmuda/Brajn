@@ -115,7 +115,8 @@ class ArticleOrchestrator:
         self.prompt_log = []   # [{label, system, user}]
         self.input_variables = {}  # snapshot after all variables are ready
 
-    def _llm_call(self, system_prompt: str, user_prompt: str, max_tokens: int = 4000, label: str = "") -> str:
+    def _llm_call(self, system_prompt: str, user_prompt: str, max_tokens: int = 4000,
+                  label: str = "", timeout: int = 120) -> str:
         """Make LLM call with the configured engine. Logs prompt for Dane wsadowe tab."""
         text, usage = claude_call(
             system_prompt=system_prompt,
@@ -123,6 +124,7 @@ class ArticleOrchestrator:
             model=self.model,
             max_tokens=max_tokens,
             temperature=0.7,
+            timeout=timeout,
         )
         # Log prompt for panel
         if label:
@@ -778,6 +780,21 @@ class ArticleOrchestrator:
     def assemble_article(self) -> str:
         """Assemble all batches into final article."""
         self.full_article = "\n\n".join(self.batch_texts)
+
+        # Structure validation
+        h1_found = bool(re.search(r'^# .+', self.full_article, re.MULTILINE))
+        h2_found = re.findall(r'^## .+', self.full_article, re.MULTILINE)
+        h2_plan = self.variables.get("_h2_plan_list", [])
+        total_words = len(self.full_article.split())
+        target_length = int(self.variables.get("DLUGOSC_CEL", 0) or 0)
+
+        if not h1_found:
+            print("[ORCHESTRATOR] WARNING: No H1 found in assembled article")
+        if len(h2_found) < len(h2_plan):
+            print(f"[ORCHESTRATOR] WARNING: Expected {len(h2_plan)} H2s, found {len(h2_found)}")
+        if target_length > 0 and total_words < target_length * 0.5:
+            print(f"[ORCHESTRATOR] WARNING: Article too short ({total_words}/{target_length} words)")
+
         return self.full_article
 
     # Regex for repeated-word n-grams: "menu menu", "void void void"

@@ -102,15 +102,37 @@ def generate_brief(
 
     # ── 5. PLAN ARTYKUŁU ──
     h2_plan = variables.get("_h2_plan_list") or []
+    cooccurrence = entity_seo.get("entity_cooccurrence") or []
+    fact_triples = factographic.get("spo") or []
     plan_sections = []
     for i, h2 in enumerate(h2_plan):
         batch_key = f"batch_{i+1}"
         batch_data = pre_batch_map.get(batch_key) or {}
-        plan_sections.append({
+        section_data = {
             "h2": h2,
             "entities": batch_data.get("entities", []),
             "hard_facts": batch_data.get("hard_facts", []),
-        })
+        }
+        # Co-occurrence pairs relevant to this H2
+        section_pairs = _find_relevant_pairs(h2, cooccurrence)
+        if section_pairs:
+            section_data["cooccurrence_pairs"] = section_pairs
+        # Causal relations relevant to this H2
+        all_causal = (causal.get("chains") or []) + (causal.get("singles") or [])
+        section_causal = _find_relevant_causal(h2, all_causal)
+        if section_causal:
+            section_data["causal_relations"] = section_causal
+        plan_sections.append(section_data)
+
+    # Centerpiece block for intro
+    keyword = s1_data.get("main_keyword", "")
+    main_entity = variables.get("ENCJA_GLOWNA", keyword)
+    centerpiece = {
+        "definition": f"Zdanie 1: zdefiniuj \"{main_entity}\" - czym jest, w jednym zdaniu.",
+        "related_topics": "Zdanie 2-3: wspomniej powiazane tematy z listy obowiazkowych.",
+        "outline": "Zdanie 3-4: zarysuj co artykul pokryje (odwrocona piramida).",
+        "goal": "Cel: Google z pierwszych 100 slow musi zrozumiec O CZYM jest strona.",
+    }
 
     # FAQ with priority markers: unanswered PAA = high priority
     paa_unanswered = set()
@@ -127,6 +149,7 @@ def generate_brief(
     brief["plan"] = {
         "h1_suggestion": variables.get("H1_PROPOZYCJA", ""),
         "intro_length": variables.get("DLUGOSC_INTRO", ""),
+        "centerpiece": centerpiece,
         "sections": plan_sections,
         "faq": faq_with_priority,
         "has_ymyl": bool(variables.get("YMYL_CONTEXT")),
@@ -167,6 +190,14 @@ def generate_brief(
                 "weight": round(weight, 3),
             })
     phrases.sort(key=lambda p: (-{"OBOWIĄZKOWA": 3, "WAŻNA": 2, "OPCJONALNA": 1}[p["priority"]], -p["weight"]))
+
+    # Filter garbage n-grams that slipped past quality gate
+    try:
+        from src.s1.ngram_quality_gate import is_garbage_ngram
+        phrases = [p for p in phrases if not is_garbage_ngram(p["phrase"])[0]]
+    except (ImportError, Exception):
+        pass
+
     brief["keyphrases"] = phrases[:30]
 
     # ── 8. FAKTY I DANE ──
@@ -214,11 +245,37 @@ def generate_brief(
 
     # ── 10. STYL I REGUŁY ──
     cooc_pairs = variables.get("PARY_KOOCCURRENCE", "")
+    # YMYL context with fallback (if filter too strict, use first 500 chars)
+    ymyl_raw = variables.get("YMYL_CONTEXT", "")
+    ymyl_display = ymyl_raw
+    if ymyl_raw and len(ymyl_raw) > 20:
+        kw_filters = ["art.", "§", "kodeks", "ustaw", "rozporzą", "pubmed",
+                       "ostrzeż", "przeciwwsk", "dawkow", "leczeni"]
+        filtered = [ln.strip() for ln in ymyl_raw.split("\n")
+                    if ln.strip() and any(k in ln.lower() for k in kw_filters)]
+        if filtered:
+            ymyl_display = "\n".join(filtered[:10])
+        else:
+            ymyl_display = ymyl_raw[:500]
+
     brief["style"] = {
-        "ymyl_context": variables.get("YMYL_CONTEXT", ""),
+        "ymyl_context": ymyl_display,
         "cooccurrence_pairs": cooc_pairs,
         "banned_phrases": "Warto zaznaczyć, Należy podkreślić, Jest to ważne, W dzisiejszym artykule, Kluczowym aspektem, Co więcej, Ponadto, Niemniej jednak",
     }
+
+    # Empty S1 data fallback
+    content_size = (len(brief.get("keyphrases") or [])
+                    + len(brief.get("hard_facts") or [])
+                    + len((brief.get("relations") or {}).get("causal_chains") or []))
+    if content_size < 3:
+        keyword = s1_data.get("main_keyword", "")
+        target_length = variables.get("DLUGOSC_CEL", "800")
+        brief["empty_data_warning"] = (
+            f"Dane z analizy SERP sa ograniczone. "
+            f"Napisz artykul informacyjny o \"{keyword}\" na ~{target_length} slow. "
+            f"Uzywaj swojej wiedzy ale nie wymyslaj konkretnych kwot ani dat."
+        )
 
     return brief
 
@@ -286,12 +343,33 @@ def render_brief_markdown(brief: Dict) -> str:
         lines.append(f"**H1:** {plan['h1_suggestion']}")
     lines.append(f"**Intro:** ~{plan.get('intro_length', '?')} słów")
     lines.append("")
+    # Centerpiece
+    cp = plan.get("centerpiece") or {}
+    if cp:
+        lines.append("**Struktura intro (blok deklaracji tematu):**")
+        for key in ("definition", "related_topics", "outline", "goal"):
+            if cp.get(key):
+                lines.append(f"  {cp[key]}")
+        lines.append("")
+
     for i, s in enumerate(plan.get("sections") or []):
         lines.append(f"### H2: {s['h2']}")
         if s.get("entities"):
             lines.append(f"Tematy: {', '.join(str(e) for e in s['entities'][:5])}")
         if s.get("hard_facts"):
-            lines.append(f"Fakty: {', '.join(str(f) for f in s['hard_facts'][:3])}")
+            lines.append(f"Fakty (TYLKO te, nie wymyslaj): {', '.join(str(f) for f in s['hard_facts'][:5])}")
+            lines.append(f"  Kazdy fakt opisz zdaniem: KTO/CO → ROBI → CZEMU/JAK.")
+        if s.get("cooccurrence_pairs"):
+            lines.append("Tematy do trzymania RAZEM w jednym akapicie:")
+            for pair in s["cooccurrence_pairs"]:
+                a = pair.get("entity_a", "")
+                b = pair.get("entity_b", "")
+                cnt = pair.get("sentence_count", 0)
+                lines.append(f"  - \"{a}\" + \"{b}\" (u konkurencji razem w {cnt} zdaniach)")
+        if s.get("causal_relations"):
+            lines.append("Relacje przyczynowo-skutkowe:")
+            for rel in s["causal_relations"]:
+                lines.append(f"  - {rel['cause']} → {rel['effect']}")
         lines.append("")
     if plan.get("faq"):
         lines.append("### FAQ")
@@ -391,6 +469,43 @@ def _format_entity_list(items: list) -> list:
             if text:
                 result.append(text)
     return result[:10]
+
+
+def _find_relevant_pairs(h2_title: str, cooccurrence: list) -> list:
+    """Find co-occurrence pairs relevant to H2 section."""
+    h2_lower = h2_title.lower()
+    h2_words = [w for w in h2_lower.split() if len(w) > 3]
+    results = []
+    for pair in cooccurrence:
+        if not isinstance(pair, dict):
+            continue
+        a = pair.get("entity_a", "").lower()
+        b = pair.get("entity_b", "").lower()
+        if any(w in a or w in b for w in h2_words):
+            results.append({
+                "entity_a": pair.get("entity_a", ""),
+                "entity_b": pair.get("entity_b", ""),
+                "sentence_count": pair.get("sentence_count", 0),
+            })
+    return results[:3]
+
+
+def _find_relevant_causal(h2_title: str, causal_items: list) -> list:
+    """Find causal relations relevant to H2 section."""
+    h2_lower = h2_title.lower()
+    h2_words = [w for w in h2_lower.split() if len(w) > 3]
+    results = []
+    for item in causal_items:
+        if not isinstance(item, dict):
+            continue
+        cause = item.get("cause", "").lower()
+        effect = item.get("effect", "").lower()
+        if any(w in cause or w in effect for w in h2_words):
+            results.append({
+                "cause": item.get("cause", ""),
+                "effect": item.get("effect", ""),
+            })
+    return results[:3]
 
 
 def _format_entity_list_with_context(items: list, enriched_lookup: dict) -> list:

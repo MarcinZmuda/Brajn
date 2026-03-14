@@ -79,6 +79,7 @@ class ProofreadRequest(BaseModel):
     text: str = Field(..., min_length=50, description="Article text to proofread")
     s1_data: Optional[dict] = Field(default=None, description="S1 data for context")
     variables: Optional[dict] = Field(default=None, description="Article variables")
+    brief: Optional[str] = Field(default=None, description="Brief text for context")
     auto_fix: bool = Field(default=True, description="Apply automatic fixes")
 
 
