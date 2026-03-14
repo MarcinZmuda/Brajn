@@ -864,6 +864,53 @@ function renderBrief(data) {
     c.innerHTML = h;
 }
 
+// ── Proofreader — separate API call after pipeline complete ──
+function runProofreader(pipelineData) {
+    var el = document.getElementById('proofreadingContent');
+    if (!el) return;
+
+    el.innerHTML = '<div style="padding:16px;color:#94a3b8;text-align:center">' +
+        '<div style="font-size:24px;animation:spin 1s linear infinite;display:inline-block">&#9881;</div>' +
+        '<p>Korekta redakcyjna w toku...</p></div>';
+
+    var apiKey = getApiKey();
+    var body = JSON.stringify({
+        text: pipelineData.full_text || '',
+        s1_data: pipelineData.s1_data || {},
+        variables: pipelineData.input_variables || {},
+        auto_fix: true,
+    });
+
+    fetch('/api/proofread', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-API-Key': apiKey },
+        body: body,
+    })
+    .then(function(resp) {
+        if (!resp.ok) throw new Error('HTTP ' + resp.status);
+        return resp.json();
+    })
+    .then(function(result) {
+        if (result.error) {
+            el.innerHTML = '<div style="color:#ef4444;padding:16px">Błąd korektora: ' + esc(result.error) + '</div>';
+            log('Korektor: ' + result.error, 'err');
+            return;
+        }
+        // If proofreader fixed things — update article in panel
+        if (result.stats && result.stats.auto_fixed > 0 && result.corrected_text) {
+            renderArticle(result.corrected_text);
+            log('Korektor naprawił ' + result.stats.auto_fixed + ' problemów', 'ok');
+        } else {
+            log('Korektor: brak poprawek do zastosowania', 'ok');
+        }
+        renderProofreading(result);
+    })
+    .catch(function(err) {
+        el.innerHTML = '<div style="color:#ef4444;padding:16px">Błąd: ' + esc(err.message) + '</div>';
+        log('Korektor: ' + err.message, 'err');
+    });
+}
+
 // ── Proofreading Render ──
 function renderProofreading(data) {
     if (!data || !data.stats) return;
@@ -2145,10 +2192,8 @@ async function startWorkflow() {
                             window._briefData = d.data.brief;
                             renderBrief(d.data.brief);
                         }
-                        // Proofreading
-                        if (d.data.proofreading) {
-                            renderProofreading(d.data.proofreading);
-                        }
+                        // Proofreading — run as separate API call (avoids Render timeout)
+                        runProofreader(d.data);
                         // Store entity compliance for annotation view
                         if (d.data.entity_compliance) {
                             window._entityCompliance = d.data.entity_compliance;

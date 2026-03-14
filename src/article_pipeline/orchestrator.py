@@ -985,22 +985,9 @@ class ArticleOrchestrator:
             "total_batches": len(self.batch_texts),
         }}
 
-        # Editorial proofreading
+        # Editorial proofreading — runs as separate /api/proofread call from frontend
+        # (removed from pipeline to avoid Render SIGTERM killing the worker)
         proofread_result = None
-        try:
-            from src.article_pipeline.editorial_proofreader import proofread_article
-            yield {"event": "step_start", "step": total_steps - 1, "total": total_steps, "label": "Korekta redakcyjna"}
-            proofread_result = proofread_article(
-                article_text=self.full_article,
-                s1_data=self._s1_full,
-                variables=self.variables,
-            )
-            if proofread_result.get("stats", {}).get("auto_fixed", 0) > 0:
-                self.full_article = proofread_result["corrected_text"]
-                article = self.full_article
-            yield {"event": "step_done", "step": total_steps - 1, "data": {"proofreading": proofread_result}}
-        except Exception as e:
-            print(f"[PROOFREADER] Error: {e}")
 
         # Post-processing validation
         yield {"event": "step_start", "step": total_steps, "total": total_steps, "label": "Post-Processing: walidacja"}
@@ -1028,4 +1015,5 @@ class ArticleOrchestrator:
             "keyword_reports": self.keyword_tracker.batch_reports,
             "proofreading": proofread_result,
             "brief": brief_data,
+            "s1_data": self._s1_full,
         }}
