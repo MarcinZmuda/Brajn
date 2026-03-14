@@ -196,15 +196,61 @@ def _pubmed_fetch(pmids: List[str]) -> List[Dict]:
         return []
 
 
+def _is_relevant_publication(pub: Dict, keyword: str) -> bool:
+    """Check if a PubMed publication is relevant to the keyword.
+
+    Validates that abstract/title actually relates to the topic.
+    Prevents matching echocardiography studies to "kołdra obciążeniowa".
+    """
+    keyword_lower = keyword.lower()
+    title_lower = (pub.get("title") or "").lower()
+    abstract_lower = (pub.get("abstract") or "").lower()
+    combined = title_lower + " " + abstract_lower
+
+    # Translate keyword to get English terms
+    en_query = _translate_to_en(keyword).lower()
+    en_words = [w for w in en_query.split() if len(w) > 3]
+
+    # Check 1: At least one keyword word appears in title or abstract
+    keyword_words = [w for w in keyword_lower.split() if len(w) > 3]
+    en_found = sum(1 for w in en_words if w in combined)
+    pl_found = sum(1 for w in keyword_words if w in combined)
+
+    if en_found == 0 and pl_found == 0:
+        # None of the keyword words appear — likely irrelevant
+        print(f"[MEDICAL] Skipping irrelevant: '{pub.get('title', '')[:60]}' "
+              f"(no keyword overlap with '{keyword}')")
+        return False
+
+    # Check 2: Minimum relevance ratio for multi-word queries
+    if len(en_words) >= 2:
+        ratio = en_found / len(en_words)
+        if ratio < 0.3:
+            print(f"[MEDICAL] Skipping low-relevance ({ratio:.0%}): '{pub.get('title', '')[:60]}'")
+            return False
+
+    return True
+
+
 def search_pubmed(keyword: str, max_results: int = 4) -> List[Dict]:
-    """Full PubMed pipeline: search → fetch."""
+    """Full PubMed pipeline: search → fetch → validate relevance."""
     en_query = _translate_to_en(keyword)
     print(f"[MEDICAL] PubMed query: '{en_query}'")
-    pmids = _pubmed_search(en_query, max_results=max_results)
+    # Fetch more than needed to have room after filtering
+    pmids = _pubmed_search(en_query, max_results=max_results * 2)
     if not pmids:
         # Fallback: simplified query
-        pmids = _pubmed_search(keyword, max_results=max_results)
-    return _pubmed_fetch(pmids[:max_results])
+        pmids = _pubmed_search(keyword, max_results=max_results * 2)
+    results = _pubmed_fetch(pmids[:max_results * 2])
+
+    # Relevance validation — better no citation than wrong citation
+    relevant = [pub for pub in results if _is_relevant_publication(pub, keyword)]
+    skipped = len(results) - len(relevant)
+    if skipped > 0:
+        print(f"[MEDICAL] Relevance filter: {len(results)} → {len(relevant)} publications "
+              f"({skipped} irrelevant)")
+
+    return relevant[:max_results]
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -245,8 +291,19 @@ def search_clinical_trials(keyword: str, max_results: int = 2) -> List[Dict]:
                 "url": f"https://clinicaltrials.gov/study/{nct_id}",
                 "source": "clinicaltrials",
             })
-        print(f"[MEDICAL] ClinicalTrials → {len(results)} badań")
-        return results
+        # Relevance filter for trials too
+        relevant = []
+        for trial in results:
+            title_lower = (trial.get("title") or "").lower()
+            summary_lower = (trial.get("summary") or "").lower()
+            combined = title_lower + " " + summary_lower
+            en_words = [w for w in en_query.lower().split() if len(w) > 3]
+            if any(w in combined for w in en_words):
+                relevant.append(trial)
+            else:
+                print(f"[MEDICAL] Skipping irrelevant trial: '{trial.get('title', '')[:60]}'")
+        print(f"[MEDICAL] ClinicalTrials → {len(relevant)} relevant badań (of {len(results)} fetched)")
+        return relevant
     except Exception as e:
         print(f"[MEDICAL] ClinicalTrials error: {e}")
         return []
