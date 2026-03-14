@@ -103,6 +103,11 @@
         .article-preview ul,.article-preview ol{margin:0 0 .8em 1.4em;color:var(--lg)}
         .article-preview li{margin-bottom:.3em}
 
+        /* ── Proofreader highlights ── */
+        .proof-hl-high{background:rgba(248,113,113,.25);color:var(--rd);border-bottom:2px solid var(--rd);padding:1px 2px;border-radius:2px;cursor:help}
+        .proof-hl-med{background:rgba(251,191,36,.2);color:var(--yl);border-bottom:2px solid var(--yl);padding:1px 2px;border-radius:2px;cursor:help}
+        .proof-hl-low{background:rgba(52,211,153,.15);color:var(--gn);border-bottom:2px solid var(--gn);padding:1px 2px;border-radius:2px;cursor:help}
+
         /* ── S1 sections ── */
         .s1-section{background:var(--s3);border:1px solid var(--b1);border-radius:var(--rs);margin-bottom:8px;overflow:hidden}
         .s1-header{display:flex;align-items:center;gap:8px;padding:12px 14px;cursor:pointer;font-size:13px;font-weight:600;user-select:none;transition:background .15s}
@@ -549,7 +554,7 @@
    ═══════════════════════════════════════════════════════════════ */
 
 let mode = 'auto', engine = 'claude', es = null, jobId = null;
-let articleText = '', s1Data = null;
+let articleText = '', s1Data = null, proofFlagged = [];
 let pipelineSteps = {};  // step_number -> {label, status, detail}
 let totalSteps = 0;
 
@@ -923,11 +928,14 @@ function runProofreader(pipelineData) {
             log('Korektor: ' + result.error, 'err');
             return;
         }
+        // Store flagged data for article highlighting
+        proofFlagged = result.flagged || [];
         // If proofreader fixed things — update article in panel
         if (result.stats && result.stats.auto_fixed > 0 && result.corrected_text) {
             renderArticle(result.corrected_text);
             log('Korektor naprawił ' + result.stats.auto_fixed + ' problemów', 'ok');
         } else {
+            renderArticle(articleText); // re-render to apply highlights
             log('Korektor: brak poprawek do zastosowania', 'ok');
         }
         renderProofreading(result);
@@ -1182,6 +1190,7 @@ async function startAudit() {
                     renderBrief(d.data.brief);
                 }
                 if (d.data.proofreading) {
+                    proofFlagged = (d.data.proofreading.flagged || []);
                     renderProofreading(d.data.proofreading);
                 }
                 log('Audyt zakonczony. Score: ' + d.data.overall_score, 'ok');
@@ -2040,6 +2049,26 @@ function renderArticle(text) {
         return '<p>' + p.replace(/\n/g, '<br>') + '</p>';
     }).join('\n');
 
+    // Highlight flagged fragments from proofreader
+    if (proofFlagged && proofFlagged.length > 0) {
+        proofFlagged.forEach(function(flag) {
+            var frag = (flag.text || '').trim();
+            if (!frag || frag.length < 10) return;
+            // Escape for safe regex and HTML matching (text was already esc'd)
+            var escaped = esc(frag.length > 80 ? frag.substring(0, 80) : frag);
+            var sevCls = flag.severity === 'high' ? 'proof-hl-high' : (flag.severity === 'medium' ? 'proof-hl-med' : 'proof-hl-low');
+            var title = esc((flag.type || '') + ': ' + (flag.reason || ''));
+            // Replace first occurrence in HTML (careful: only in text nodes, not tags)
+            var idx = html.indexOf(escaped);
+            if (idx !== -1) {
+                html = html.substring(0, idx)
+                    + '<mark class="' + sevCls + '" title="' + title + '">'
+                    + escaped + '</mark>'
+                    + html.substring(idx + escaped.length);
+            }
+        });
+    }
+
     preview.innerHTML = html;
 
     // Word count
@@ -2210,6 +2239,7 @@ async function startWorkflow() {
                     }
                     // Render proofreading when step data arrives
                     if (d.data && d.data.proofreading) {
+                        proofFlagged = (d.data.proofreading.flagged || []);
                         renderProofreading(d.data.proofreading);
                     }
                     // Render brief tab when brief data arrives

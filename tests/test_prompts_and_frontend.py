@@ -10,6 +10,37 @@ import sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 
+class TestAuditPromptInstructionRule:
+    """Verify the KRYTYCZNA REGULA for suggestion format is in the audit prompt."""
+
+    def _read_proofreader(self):
+        filepath = os.path.join(
+            os.path.dirname(__file__), "..", "src", "article_pipeline", "editorial_proofreader.py"
+        )
+        with open(filepath, encoding="utf-8") as f:
+            return f.read()
+
+    def test_rule_in_audit_prompt(self):
+        source = self._read_proofreader()
+        assert "GOTOWY TEKST ZASTEPCZY" in source, \
+            "Audit prompt missing KRYTYCZNA REGULA about suggestion format"
+
+    def test_rule_has_good_bad_examples(self):
+        source = self._read_proofreader()
+        assert "DOBRZE:" in source, "Rule should have DOBRZE example"
+        assert "ZLE:" in source, "Rule should have ZLE examples"
+
+    def test_is_editorial_instruction_function_exists(self):
+        from src.article_pipeline.editorial_proofreader import _is_editorial_instruction
+        assert callable(_is_editorial_instruction)
+
+    def test_instruction_markers_defined(self):
+        from src.article_pipeline.editorial_proofreader import _INSTRUCTION_MARKERS
+        assert len(_INSTRUCTION_MARKERS) > 5, "Should have multiple instruction markers"
+        assert "usuń" in _INSTRUCTION_MARKERS
+        assert "zastąp" in _INSTRUCTION_MARKERS
+
+
 class TestPromptsCompanyBan:
     """Verify company/brand name ban is present in prompts."""
 
@@ -155,6 +186,40 @@ class TestFrontendIndexHtml:
         source = self._read_html()
         assert "pre_batch_keys.length" in source, \
             "pre_batch_keys should use .length for display"
+
+    # ── Proofreader highlights ──
+
+    def test_proof_highlight_css_exists(self):
+        """CSS classes for proofreader highlights should exist."""
+        source = self._read_html()
+        assert ".proof-hl-high" in source, "Missing proof-hl-high CSS class"
+        assert ".proof-hl-med" in source, "Missing proof-hl-med CSS class"
+        assert ".proof-hl-low" in source, "Missing proof-hl-low CSS class"
+
+    def test_proofFlagged_global_declared(self):
+        """proofFlagged global variable should be declared."""
+        source = self._read_html()
+        assert "proofFlagged" in source, "Missing proofFlagged global variable"
+
+    def test_renderArticle_applies_highlights(self):
+        """renderArticle should highlight flagged fragments."""
+        source = self._read_html()
+        fn_start = source.find("function renderArticle(text)")
+        fn_end = source.find("\n// ──", fn_start + 10)
+        fn = source[fn_start:fn_end]
+        assert "proofFlagged" in fn, "renderArticle should use proofFlagged"
+        assert "proof-hl-" in fn, "renderArticle should apply proof-hl- classes"
+        assert "<mark" in fn, "renderArticle should use <mark> for highlights"
+
+    def test_proofFlagged_set_before_render(self):
+        """proofFlagged should be set before renderProofreading/renderArticle calls."""
+        source = self._read_html()
+        # In standalone proofreader flow
+        set_pos = source.find("proofFlagged = result.flagged")
+        assert set_pos != -1, "proofFlagged should be set from result.flagged"
+        # In pipeline flow
+        set_pos2 = source.find("proofFlagged = (d.data.proofreading.flagged")
+        assert set_pos2 != -1, "proofFlagged should be set in pipeline flow"
 
     # ── Article Editor ──
 

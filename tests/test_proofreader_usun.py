@@ -1,7 +1,6 @@
 """
-Tests for the proofreader USUN condition fix.
-Verifies that hallucination suggestions containing "USUN" (in any form)
-are NOT applied as text replacements.
+Tests for the proofreader instruction detection and hallucination filtering.
+Verifies that editorial instructions in suggestions are NOT inserted into article text.
 """
 import sys
 import os
@@ -9,11 +8,13 @@ import os
 # Add project root to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
+from src.article_pipeline.editorial_proofreader import _is_editorial_instruction
+
 
 def _apply_hallucination_fix(result_text: str, hallucinations: list) -> dict:
     """
-    Extracted logic from editorial_proofreader.py _apply_corrections()
-    section 2b — hallucination handling. Mirrors the actual code.
+    Mirrors the actual code from editorial_proofreader.py section 2b.
+    Uses the real _is_editorial_instruction function.
     """
     applied = []
     flagged = []
@@ -26,9 +27,7 @@ def _apply_hallucination_fix(result_text: str, hallucinations: list) -> dict:
             continue
 
         if (suggestion
-                and "USUN" not in suggestion.upper()
-                and "__PRZEREDAGUJ__" not in suggestion.upper()
-                and len(suggestion) > 5
+                and not _is_editorial_instruction(suggestion)
                 and result_text.count(original) == 1):
             result_text = result_text.replace(original, suggestion, 1)
             applied.append({
@@ -38,20 +37,92 @@ def _apply_hallucination_fix(result_text: str, hallucinations: list) -> dict:
         else:
             flagged.append({
                 "type": "hallucination",
-                "text": original,
+                "text": original[:80],
                 "action": suggestion if suggestion else "Usun lub zastap zweryfikowanym faktem",
             })
 
     return {"text": result_text, "applied": applied, "flagged": flagged}
 
 
-class TestUsunCondition:
-    """Tests for the USUN hallucination filter."""
+# ── Tests for _is_editorial_instruction ──
+
+class TestIsEditorialInstruction:
+    """Direct tests for the instruction detection function."""
+
+    def test_empty_is_instruction(self):
+        assert _is_editorial_instruction("") is True
+
+    def test_short_is_instruction(self):
+        assert _is_editorial_instruction("abc") is True
+        assert _is_editorial_instruction("12345") is True
+
+    def test_usun_is_instruction(self):
+        assert _is_editorial_instruction("USUN") is True
+        assert _is_editorial_instruction("usun") is True
+        assert _is_editorial_instruction("Usuń ten fragment") is True
+        assert _is_editorial_instruction("usun lub zastap innym") is True
+
+    def test_zastap_is_instruction(self):
+        assert _is_editorial_instruction("Zastąp ogólnym stwierdzeniem") is True
+        assert _is_editorial_instruction("zastap: 'nowy tekst'") is True
+
+    def test_conditional_is_instruction(self):
+        assert _is_editorial_instruction(
+            "Jeśli dane są potwierdzone, pozostaw; w przeciwnym razie usuń"
+        ) is True
+
+    def test_sprawdz_is_instruction(self):
+        assert _is_editorial_instruction("Sprawdź czy dane są aktualne") is True
+
+    def test_popraw_is_instruction(self):
+        assert _is_editorial_instruction("Popraw na bardziej ogólne sformułowanie") is True
+
+    def test_przeredaguj_is_instruction(self):
+        assert _is_editorial_instruction("__PRZEREDAGUJ__") is True
+        assert _is_editorial_instruction("__USUN__") is True
+
+    def test_colon_quote_pattern(self):
+        """Instructions like "Usuń lub zastąp: 'replacement text'" should be caught."""
+        assert _is_editorial_instruction(
+            "USUN lub zastąp: 'Szkolenie trwa kilkanaście godzin'"
+        ) is True
+        assert _is_editorial_instruction(
+            'Zmień na: "inna wersja tekstu"'
+        ) is True
+
+    def test_real_bug_case(self):
+        """The actual bug case from production."""
+        assert _is_editorial_instruction(
+            "Jeśli dane są potwierdzone przez organizatora, pozostaw; "
+            "w przeciwnym razie usuń lub zastąp: 'Szkolenie trwa kilkanaście godzin dydaktycznych'"
+        ) is True
+
+    def test_valid_replacement_not_instruction(self):
+        """Clean replacement text should NOT be flagged."""
+        assert _is_editorial_instruction(
+            "Szkolenie trwa kilkanaście godzin dydaktycznych"
+        ) is False
+        assert _is_editorial_instruction(
+            "Szkoła barberska zapewnia solidne wykształcenie."
+        ) is False
+        assert _is_editorial_instruction(
+            "Producent oferuje swoje produkty na rynku polskim."
+        ) is False
+
+    def test_long_instruction_with_usun(self):
+        """Very long text containing 'usuń' should be caught."""
+        long_text = "x" * 201 + " usuń ten fragment"
+        assert _is_editorial_instruction(long_text) is True
+
+
+# ── Integration tests: hallucination fix flow ──
+
+class TestHallucinationFixFlow:
+    """Tests for the full hallucination fix flow with instruction detection."""
 
     ARTICLE = "To inwestycja w przyszłość, która się zwróci. Szkoła XYZ zapewnia najlepsze wykształcenie."
 
     def test_exact_usun_blocked(self):
-        """Exact 'USUN' suggestion should be blocked."""
         result = _apply_hallucination_fix(self.ARTICLE, [{
             "text": "Szkoła XYZ zapewnia najlepsze wykształcenie.",
             "suggestion": "USUN",
@@ -59,20 +130,24 @@ class TestUsunCondition:
         }])
         assert len(result["applied"]) == 0
         assert len(result["flagged"]) == 1
-        assert "Szkoła XYZ" in result["text"]  # Original preserved
+        assert "Szkoła XYZ" in result["text"]
 
-    def test_usun_lowercase_blocked(self):
-        """Lowercase 'usun' should also be blocked."""
+    def test_instruction_as_suggestion_blocked(self):
+        """THE CRITICAL BUG: LLM returns instruction instead of replacement text."""
         result = _apply_hallucination_fix(self.ARTICLE, [{
             "text": "Szkoła XYZ zapewnia najlepsze wykształcenie.",
-            "suggestion": "usun",
-            "reason": "Hallucination"
+            "suggestion": "Jeśli dane są potwierdzone przez organizatora, pozostaw; w przeciwnym razie usuń lub zastąp: 'Szkoła barberska zapewnia solidne wykształcenie.'",
+            "reason": "Company name - possible hallucination"
         }])
         assert len(result["applied"]) == 0
         assert len(result["flagged"]) == 1
+        # Article must NOT contain the instruction text
+        assert "Jeśli dane" not in result["text"]
+        assert "w przeciwnym razie" not in result["text"]
+        # Original must be preserved
+        assert "Szkoła XYZ" in result["text"]
 
     def test_usun_lub_zastap_blocked(self):
-        """BUG FIX: 'USUN lub zastąp: ...' should be blocked (was passing before)."""
         result = _apply_hallucination_fix(self.ARTICLE, [{
             "text": "Szkoła XYZ zapewnia najlepsze wykształcenie.",
             "suggestion": "USUN lub zastąp: 'To inwestycja w rozwój zawodowy'",
@@ -80,18 +155,19 @@ class TestUsunCondition:
         }])
         assert len(result["applied"]) == 0
         assert len(result["flagged"]) == 1
-        # Original text should NOT contain "USUN lub zastąp"
         assert "USUN lub" not in result["text"]
-        assert "Szkoła XYZ" in result["text"]  # Original preserved
+        assert "Szkoła XYZ" in result["text"]
 
-    def test_usun_or_replace_variations(self):
-        """Various 'USUN' variations in suggestion should all be blocked."""
+    def test_usun_variations(self):
         variants = [
             "USUN ten fragment",
             "Usun i zastap ogolnym stwierdzeniem",
             "USUN - halucynacja",
             "USUN lub przeredaguj",
             "usun calkowicie",
+            "Zastąp ogólnym sformułowaniem o szkoleniach",
+            "Sprawdź dane i popraw",
+            "Popraw na: 'Szkolenie trwa kilka godzin'",
         ]
         for suggestion in variants:
             result = _apply_hallucination_fix(self.ARTICLE, [{
@@ -99,31 +175,10 @@ class TestUsunCondition:
                 "suggestion": suggestion,
                 "reason": "Hallucination"
             }])
-            assert len(result["applied"]) == 0, f"Should block suggestion: '{suggestion}'"
-            assert len(result["flagged"]) == 1, f"Should flag suggestion: '{suggestion}'"
-
-    def test_przeredaguj_blocked(self):
-        """__PRZEREDAGUJ__ suggestion should be blocked."""
-        result = _apply_hallucination_fix(self.ARTICLE, [{
-            "text": "Szkoła XYZ zapewnia najlepsze wykształcenie.",
-            "suggestion": "__PRZEREDAGUJ__",
-            "reason": "AI artifact"
-        }])
-        assert len(result["applied"]) == 0
-        assert len(result["flagged"]) == 1
-
-    def test_short_suggestion_blocked(self):
-        """Suggestions <= 5 chars should be blocked (too short to be valid)."""
-        result = _apply_hallucination_fix(self.ARTICLE, [{
-            "text": "Szkoła XYZ zapewnia najlepsze wykształcenie.",
-            "suggestion": "abc",
-            "reason": "Too short"
-        }])
-        assert len(result["applied"]) == 0
-        assert len(result["flagged"]) == 1
+            assert len(result["applied"]) == 0, f"Should block: '{suggestion}'"
+            assert len(result["flagged"]) == 1, f"Should flag: '{suggestion}'"
 
     def test_valid_suggestion_applied(self):
-        """A proper replacement suggestion should be applied."""
         result = _apply_hallucination_fix(self.ARTICLE, [{
             "text": "Szkoła XYZ zapewnia najlepsze wykształcenie.",
             "suggestion": "Szkoła barberska zapewnia solidne wykształcenie.",
@@ -132,10 +187,8 @@ class TestUsunCondition:
         assert len(result["applied"]) == 1
         assert len(result["flagged"]) == 0
         assert "Szkoła barberska" in result["text"]
-        assert "Szkoła XYZ" not in result["text"]
 
     def test_empty_suggestion_flagged(self):
-        """Empty suggestion should be flagged, not applied."""
         result = _apply_hallucination_fix(self.ARTICLE, [{
             "text": "Szkoła XYZ zapewnia najlepsze wykształcenie.",
             "suggestion": "",
@@ -145,7 +198,6 @@ class TestUsunCondition:
         assert len(result["flagged"]) == 1
 
     def test_duplicate_original_flagged(self):
-        """When original appears more than once, should be flagged."""
         text = "To To inwestycja. To zwrot."
         result = _apply_hallucination_fix(text, [{
             "text": "To",
@@ -156,7 +208,6 @@ class TestUsunCondition:
         assert len(result["flagged"]) == 1
 
     def test_multiple_hallucinations_mixed(self):
-        """Mix of valid and invalid suggestions processed correctly."""
         text = "Firma ABC produkuje. Ekspert Jan Kowalski twierdzi że jest dobrze."
         result = _apply_hallucination_fix(text, [
             {
@@ -170,7 +221,7 @@ class TestUsunCondition:
                 "reason": "Person name hallucination"
             },
         ])
-        assert len(result["applied"]) == 1  # First one applied
-        assert len(result["flagged"]) == 1  # Second one blocked
+        assert len(result["applied"]) == 1
+        assert len(result["flagged"]) == 1
         assert "Producent oferuje" in result["text"]
         assert "USUN lub" not in result["text"]
