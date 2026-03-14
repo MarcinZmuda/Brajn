@@ -362,8 +362,7 @@
         <div class="main">
             <div class="tabs">
                 <div class="tab on" data-tab="workflow" onclick="switchTab('workflow')">Workflow</div>
-                <div class="tab" data-tab="brief" onclick="switchTab('brief')">Brief</div>
-                <div class="tab" data-tab="s1" onclick="switchTab('s1')">Analiza S1</div>
+                <div class="tab" data-tab="s1" onclick="switchTab('s1')">Brief</div>
                 <div class="tab" data-tab="prebatch" onclick="switchTab('prebatch')">Dane wsadowe</div>
                 <div class="tab" data-tab="article" onclick="switchTab('article')">Artykul</div>
                 <div class="tab" data-tab="entity" onclick="switchTab('entity')">Entity SEO</div>
@@ -395,24 +394,15 @@
                 </div>
             </div>
 
-            <!-- ═══ S1 TAB ═══ -->
-            <!-- ═══ BRIEF TAB ═══ -->
-            <div class="tab-content" id="tab-brief">
+            <!-- ═══ BRIEF (was S1) TAB ═══ -->
+            <div class="tab-content" id="tab-s1">
                 <div id="briefContent">
                     <div class="empty-state">
                         <div class="icon">&#128221;</div>
                         <p>Brief pojawi sie po kroku Pre-Batch</p>
                     </div>
                 </div>
-            </div>
-
-            <div class="tab-content" id="tab-s1">
-                <div id="s1Content">
-                    <div class="empty-state">
-                        <div class="icon">&#128269;</div>
-                        <p>Uruchom workflow, aby zobaczyc analize S1</p>
-                    </div>
-                </div>
+                <div id="s1Content" style="display:none"></div>
             </div>
 
             <!-- ═══ PRE-BATCH / DANE WSADOWE TAB ═══ -->
