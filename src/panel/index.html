@@ -449,6 +449,29 @@
                         <p>Artykul pojawi sie tutaj po wygenerowaniu</p>
                     </div>
                 </div>
+                <div id="articleEditSection" style="margin-top:16px; display:none">
+                    <div style="display:flex; gap:8px; margin-bottom:8px">
+                        <button class="btn-secondary" onclick="toggleArticleEdit()">Edytuj tekst</button>
+                        <button class="btn-secondary" onclick="fixSelection()">Popraw zaznaczenie</button>
+                    </div>
+                    <div id="articleEditMode" style="display:none">
+                        <textarea id="articleEditArea" rows="20" style="width:100%; font-size:13px; line-height:1.6; background:var(--s2); color:var(--white); border:1px solid var(--b1); border-radius:var(--rs); padding:12px; font-family:inherit;"></textarea>
+                        <div style="display:flex; gap:8px; margin-top:8px">
+                            <button class="btn-primary" onclick="saveArticleEdit()">Zapisz zmiany</button>
+                            <button class="btn-secondary" onclick="toggleArticleEdit()">Anuluj</button>
+                        </div>
+                    </div>
+                    <div id="selectionFixModal" style="display:none; margin-top:8px; background:var(--s2); border:1px solid var(--b1); border-radius:var(--rs); padding:12px">
+                        <label class="lbl">Zaznaczony fragment:</label>
+                        <div id="selectedText" style="font-size:12px; color:var(--lg); padding:8px; background:var(--s3); border-radius:4px; margin-bottom:8px"></div>
+                        <label class="lbl">Instrukcja poprawki:</label>
+                        <textarea id="fixInstruction" rows="2" placeholder="np. Popraw odmiane / Usun powtorzenie / Uproscij zdanie..." style="width:100%; font-size:13px; background:var(--s3); color:var(--white); border:1px solid var(--b1); border-radius:4px; padding:8px; font-family:inherit;"></textarea>
+                        <div style="display:flex; gap:8px; margin-top:8px">
+                            <button class="btn-primary" onclick="applySelectionFix()">Popraw z AI</button>
+                            <button class="btn-secondary" onclick="closeSelectionFix()">Anuluj</button>
+                        </div>
+                    </div>
+                </div>
                 <div id="proofreadingContent" style="display:none;margin-top:16px"></div>
             </div>
 
@@ -2027,6 +2050,10 @@ function renderArticle(text) {
     if (actEl) actEl.style.display = 'flex';
     document.querySelectorAll('.opt-btn').forEach(function(b) { b.disabled = false; });
 
+    // Show edit section
+    var editSec = document.getElementById('articleEditSection');
+    if (editSec) editSec.style.display = 'block';
+
     // Update annotation view if it exists
     renderAnnotationView();
 }
@@ -2333,6 +2360,97 @@ function downloadText(text, filename, mime) {
 
 function copyArticle() {
     navigator.clipboard.writeText(articleText).then(function() { log('Skopiowano do schowka', 'ok'); });
+}
+
+// ── Article Edit ──
+function toggleArticleEdit() {
+    var editMode = document.getElementById('articleEditMode');
+    var preview = document.getElementById('articlePreview');
+    if (!editMode || !preview) return;
+    if (editMode.style.display === 'none') {
+        document.getElementById('articleEditArea').value = articleText;
+        editMode.style.display = 'block';
+        preview.style.display = 'none';
+    } else {
+        editMode.style.display = 'none';
+        preview.style.display = 'block';
+    }
+}
+
+function saveArticleEdit() {
+    var area = document.getElementById('articleEditArea');
+    if (!area) return;
+    var newText = area.value;
+    articleText = newText;
+    renderArticle(newText);
+    var editMode = document.getElementById('articleEditMode');
+    if (editMode) editMode.style.display = 'none';
+    var preview = document.getElementById('articlePreview');
+    if (preview) preview.style.display = 'block';
+    log('Tekst zaktualizowany', 'ok');
+}
+
+function fixSelection() {
+    var selection = window.getSelection().toString().trim();
+    if (!selection || selection.length < 5) {
+        log('Zaznacz fragment tekstu w artykule (min. 5 znakow)', 'err');
+        return;
+    }
+    var selEl = document.getElementById('selectedText');
+    if (selEl) selEl.textContent = selection;
+    var modal = document.getElementById('selectionFixModal');
+    if (modal) modal.style.display = 'block';
+    window._selectedFragment = selection;
+}
+
+function closeSelectionFix() {
+    var modal = document.getElementById('selectionFixModal');
+    if (modal) modal.style.display = 'none';
+}
+
+async function applySelectionFix() {
+    var fragment = window._selectedFragment;
+    var instrEl = document.getElementById('fixInstruction');
+    var instruction = instrEl ? instrEl.value.trim() : '';
+    if (!fragment || !instruction) {
+        log('Podaj instrukcje poprawki', 'err');
+        return;
+    }
+
+    var apiKey = getApiKey();
+    if (!apiKey) { log('Podaj API key', 'err'); return; }
+    log('Poprawiam fragment...', 'ok');
+
+    try {
+        var resp = await fetch('/api/edit', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': 'Bearer ' + apiKey
+            },
+            body: JSON.stringify({
+                text: fragment,
+                instruction: instruction,
+                engine: 'claude'
+            })
+        });
+
+        if (!resp.ok) throw new Error('HTTP ' + resp.status);
+        var result = await resp.json();
+
+        if (result.edited_text) {
+            if (articleText.includes(fragment)) {
+                articleText = articleText.replace(fragment, result.edited_text);
+                renderArticle(articleText);
+                log('Fragment poprawiony', 'ok');
+                closeSelectionFix();
+            } else {
+                log('Nie znaleziono fragmentu w tekscie', 'err');
+            }
+        }
+    } catch (err) {
+        log('Blad: ' + err.message, 'err');
+    }
 }
 
 // ── Entity SEO Compliance ──

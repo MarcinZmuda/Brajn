@@ -132,7 +132,11 @@ def proofread_article(
         if not original:
             continue
 
-        if suggestion and suggestion.upper() != "USUN" and result_text.count(original) == 1:
+        if (suggestion
+                and "USUN" not in suggestion.upper()
+                and "__PRZEREDAGUJ__" not in suggestion.upper()
+                and len(suggestion) > 5
+                and result_text.count(original) == 1):
             result_text = result_text.replace(original, suggestion, 1)
             applied.append({
                 "original": original,
