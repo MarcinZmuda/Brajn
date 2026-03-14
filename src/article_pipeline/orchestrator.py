@@ -877,7 +877,7 @@ class ArticleOrchestrator:
         """
         # H2 plan is unknown before Claude generates it — estimate 6 sections, update after
         h2_count_est = 6
-        # Steps: YMYL + variants + H2 plan + pre-batch + batch0 + H2s + FAQ + proofreading + post-processing
+        # Steps: YMYL + variants + H2 plan + pre-batch + batch0 + H2s + FAQ + post-processing
         total_steps = 7 + h2_count_est
 
         # Step 1: YMYL detection
@@ -894,7 +894,7 @@ class ArticleOrchestrator:
         yield {"event": "step_start", "step": 3, "total": total_steps, "label": "Plan H2: struktura artykułu"}
         h2_plan = self.run_h2_plan()
         h2_count = len(h2_plan)
-        total_steps = 7 + h2_count  # recalculate with actual H2 count (includes proofreading step)
+        total_steps = 7 + h2_count  # recalculate with actual H2 count
         yield {"event": "step_done", "step": 3, "data": {
             "h2_plan": getattr(self, "_h2_plan_full", h2_plan),
             "faq_plan": getattr(self, "_faq_plan", []),
@@ -960,10 +960,10 @@ class ArticleOrchestrator:
             "keyword_budget": self.keyword_tracker.get_summary(),
         }}
 
-        # Steps 5..N: H2 sections
+        # Steps 6..N: H2 sections
         h2_plan = self.variables.get("_h2_plan_list", [])
         for i, h2 in enumerate(h2_plan):
-            step = 5 + i
+            step = 6 + i
             yield {"event": "step_start", "step": step, "total": total_steps, "label": f"Batch {i+1}: {h2[:50]}"}
             section = self.run_batch_n(i + 1, h2, h2)
             yield {"event": "step_done", "step": step, "data": {
@@ -972,7 +972,7 @@ class ArticleOrchestrator:
             }}
 
         # FAQ
-        faq_step = 5 + h2_count
+        faq_step = 6 + h2_count
         yield {"event": "step_start", "step": faq_step, "total": total_steps, "label": "Batch FAQ"}
         faq = self.run_batch_faq()
         yield {"event": "step_done", "step": faq_step, "data": {"text": faq, "word_count": len(faq.split())}}
