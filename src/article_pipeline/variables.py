@@ -234,19 +234,34 @@ def _extract_main_entity(s1_data):
     # Helper: validate entity against main_keyword and competitor titles
     def _validate_entity_vs_context(text, score):
         """If entity doesn't overlap with main_keyword AND doesn't appear in
-        competitor titles, fall back to main_keyword (FAZA 0 1e)."""
+        competitor titles, fall back to main_keyword (FAZA 0 1e).
+        Also prefer keyword over lemma fragments like 'wpływem alkoholu'."""
         if not text or not main_keyword:
             return text, score
-        text_lower = text.lower()
-        kw_lower = main_keyword.lower()
-        # Check overlap with main_keyword
-        if text_lower in kw_lower or kw_lower in text_lower:
+        text_lower = text.lower().strip()
+        kw_lower = main_keyword.lower().strip()
+
+        # Exact or containment match — entity is good
+        if text_lower == kw_lower:
             return text, score
+        if kw_lower in text_lower:
+            return text, score
+        if text_lower in kw_lower:
+            # Entity is a sub-phrase of keyword — use full keyword
+            return main_keyword, score
+
         # Check word overlap
         text_words = set(text_lower.split())
         kw_words = set(kw_lower.split())
-        if text_words & kw_words:
+        overlap = text_words & kw_words
+        if overlap:
+            # Partial word overlap — entity is likely a lemma fragment
+            # (e.g. "wpływem alkoholu" vs "jazda po alkoholu")
+            # Prefer keyword if entity is NOT a superset of keyword words
+            if not kw_words.issubset(text_words):
+                return main_keyword, score
             return text, score
+
         # No keyword overlap — check competitor titles
         serp = s1_data.get("serp_analysis") or {}
         titles = " ".join(

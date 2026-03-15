@@ -102,8 +102,9 @@ def is_garbage_ngram(text: str) -> Tuple[bool, str]:
         return True, "repeated_word"
 
     # Rule 2b: Content word repeated in multi-word ngram (non-consecutive)
-    # Catches: "obciążeniowa kg kołdra obciążeniowa", "kołdra obciążeniowa classic kołdra"
-    if len(words) >= 3:
+    # Catches: "obciążeniowa kg kołdra obciążeniowa", "melatonina melatonina",
+    # "kołdra obciążeniowa classic kołdra"
+    if len(words) >= 2:
         long_words = [w for w in words if len(w) > 3]
         if len(long_words) >= 2 and len(long_words) != len(set(long_words)):
             return True, "repeated_content_word"
@@ -114,6 +115,17 @@ def is_garbage_ngram(text: str) -> Tuple[bool, str]:
         non_unit_words = [w for w in words if not _UNIT_PATTERN.match(w)]
         if len(non_unit_words) >= 2:
             return True, "product_spec_with_unit"
+
+    # Rule 2d: Short unit+product patterns from product cards
+    # Catches: "cena zł", "200 cm kołdra", "kg materac"
+    _UNIT_PRODUCT_PATTERNS = [
+        re.compile(r'^\d+\s*(cm|mm|kg|g|ml|l|zł|pln)\b', re.IGNORECASE),
+        re.compile(r'^(cena|wymiar|waga|rozmiar)\s+(zł|pln|cm|kg)', re.IGNORECASE),
+        re.compile(r'\b(szt|op|kpl)\b', re.IGNORECASE),
+    ]
+    for pat in _UNIT_PRODUCT_PATTERNS:
+        if pat.search(t_lower):
+            return True, "unit_product_pattern"
 
     # Rule 3: First word is CSS/JS/HTML + rest has no Polish chars
     if len(words) >= 2 and words[0] in _CSS_JS_FIRST_WORDS:
