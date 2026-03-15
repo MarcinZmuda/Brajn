@@ -161,18 +161,35 @@ def analyze_ngrams(
                 continue  # single-source high-freq without keyword overlap = CSS garbage
         page_presence_set = {s for s in ngram_presence[ngram] if s != HIGH_SIGNAL_LABEL}
 
-        # ── Cross-page boilerplate filter ──
-        # N-gram appearing on ≥80% of pages with low per-page freq (≤3)
-        # and no keyword overlap = likely nav/footer boilerplate
-        if num_sources >= 3 and len(page_presence_set) >= num_sources * 0.8:
+        # ── Statistical boilerplate filter ──
+        # Boilerplate signature: high page coverage + low avg freq per page
+        # Nav/footer items appear on most pages but only 1-2x each.
+        # Content terms appear on fewer pages but more frequently.
+        _boilerplate_penalty = False
+        if num_sources >= 3 and len(page_presence_set) >= 2:
             _per_src = ngram_per_source.get(ngram, {})
-            _src_counts = [_per_src.get(i, 0) for i in range(num_sources) if _per_src.get(i, 0) > 0]
-            _max_per_src = max(_src_counts) if _src_counts else 0
-            if _max_per_src <= 3:
-                _kw_words = set(main_keyword.lower().split()) if main_keyword else set()
-                _ngram_words = set(re.findall(r"[a-ząćęłńóśźż]+", display_ngram.lower()))
-                if not (_ngram_words & _kw_words):
-                    continue  # cross-page low-freq without keyword = boilerplate
+            _src_counts = [
+                _per_src.get(i, 0)
+                for i in range(num_sources)
+                if _per_src.get(i, 0) > 0
+            ]
+
+            page_coverage = len(page_presence_set) / num_sources
+            avg_freq = sum(_src_counts) / len(_src_counts) if _src_counts else 0
+
+            _kw_words = set(main_keyword.lower().split()) if main_keyword else set()
+            _ngram_words = set(re.findall(r"[a-ząćęłńóśźż]+", display_ngram.lower()))
+            has_keyword_overlap = bool(_ngram_words & _kw_words)
+
+            # Rule 1: ≥80% pages, avg ≤1.5x per page, no keyword overlap
+            # = nav/footer element (mapa serwisu, nota prawna, etc.)
+            if page_coverage >= 0.8 and avg_freq <= 1.5 and not has_keyword_overlap:
+                continue
+
+            # Rule 2: ≥60% pages, avg ≤1.0x per page, no keyword overlap
+            # = weaker boilerplate signal — penalize weight instead of dropping
+            if page_coverage >= 0.6 and avg_freq <= 1.0 and not has_keyword_overlap:
+                _boilerplate_penalty = True
 
         freq_norm = page_freq / max_freq if max_freq else 0
         site_score = len(page_presence_set) / num_sources if num_sources else 0
@@ -182,6 +199,10 @@ def analyze_ngrams(
             weight += 0.1
         if HIGH_SIGNAL_LABEL in ngram_presence[ngram]:
             weight += 0.08
+
+        # Penalize boilerplate-signature n-grams (80% weight reduction)
+        if _boilerplate_penalty:
+            weight *= 0.2
 
         # Per-source frequency stats (Surfer-style ranges)
         per_src = ngram_per_source.get(ngram, {})

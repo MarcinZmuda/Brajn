@@ -25,6 +25,12 @@ try:
 except ImportError:
     TRAFILATURA_AVAILABLE = False
 
+try:
+    import justext
+    JUSTEXT_AVAILABLE = True
+except ImportError:
+    JUSTEXT_AVAILABLE = False
+
 _USER_AGENT = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
     "AppleWebKit/537.36 (KHTML, like Gecko) "
@@ -126,13 +132,38 @@ def _extract_h2_from_html(html: str) -> list[str]:
     ]
 
 
+def _extract_content_justext(html: str) -> str | None:
+    """
+    Extract content using JusText — stopword-density based classifier.
+    Complementary to trafilatura: better at filtering institutional/gov boilerplate.
+    """
+    if not JUSTEXT_AVAILABLE:
+        return None
+
+    try:
+        paragraphs = justext.justext(
+            html[:500_000].encode("utf-8", errors="ignore"),
+            justext.get_stoplist("Polish"),
+        )
+        content_paragraphs = [
+            p.text for p in paragraphs
+            if not p.is_boilerplate and len(p.text.strip()) > 20
+        ]
+        if content_paragraphs:
+            return "\n\n".join(content_paragraphs)
+    except Exception as e:
+        print(f"[SCRAPER] JusText failed: {e}")
+
+    return None
+
+
 def _extract_content_from_html(html: str) -> str | None:
-    """Extract clean text content from HTML using trafilatura or regex fallback."""
+    """Extract clean text using trafilatura + JusText ensemble."""
     content = None
 
+    # Primary: Trafilatura (precision first, recall fallback)
     if TRAFILATURA_AVAILABLE:
         try:
-            # Try precision=True first (cleaner boilerplate removal)
             content = trafilatura.extract(
                 html[:500_000],
                 include_comments=False,
@@ -140,7 +171,6 @@ def _extract_content_from_html(html: str) -> str | None:
                 no_fallback=False,
                 favor_precision=True,
             )
-            # If too short — fallback to recall mode
             if not content or len(content) < 300:
                 content = trafilatura.extract(
                     html[:500_000],
@@ -153,11 +183,45 @@ def _extract_content_from_html(html: str) -> str | None:
             print(f"[SCRAPER] trafilatura failed: {e}")
             content = None
 
+    # Secondary: JusText crosscheck
+    justext_content = _extract_content_justext(html)
+
+    if content and justext_content and len(justext_content) > 200:
+        # Ensemble: filter trafilatura lines that JusText doesn't have
+        traf_lines = content.split("\n")
+        just_text_lower = justext_content.lower()
+        filtered_lines = []
+
+        for line in traf_lines:
+            line_stripped = line.strip()
+            if not line_stripped:
+                filtered_lines.append(line)
+                continue
+
+            # Short lines (< 50 chars) — verify against JusText
+            if len(line_stripped) < 50:
+                line_words = [w for w in line_stripped.lower().split() if len(w) > 3]
+                if line_words:
+                    found = sum(1 for w in line_words if w in just_text_lower)
+                    if found / len(line_words) < 0.5:
+                        # JusText doesn't have >50% of words → boilerplate
+                        continue
+
+            filtered_lines.append(line)
+
+        content = "\n".join(filtered_lines)
+        print(f"[SCRAPER] Ensemble: trafilatura={len(traf_lines)} lines, "
+              f"after JusText filter={len(filtered_lines)} lines")
+
+    elif not content and justext_content:
+        # Trafilatura gave nothing — use JusText
+        content = justext_content
+
+    # Regex fallback
     if not content:
         raw = html
         if len(raw) > MAX_CONTENT_SIZE * 2:
             raw = raw[: MAX_CONTENT_SIZE * 2]
-        # Remove boilerplate elements before stripping tags
         _REMOVE_TAGS = [
             "script", "style", "nav", "footer", "header", "aside",
             "noscript", "iframe",
@@ -167,12 +231,10 @@ def _extract_content_from_html(html: str) -> str | None:
                 rf"<{tag}[^>]*>.*?</{tag}>", "", raw,
                 flags=re.DOTALL | re.IGNORECASE,
             )
-        # Remove elements with navigation/banner ARIA roles
         raw = re.sub(
             r'<[^>]+role\s*=\s*["\'](?:navigation|banner|contentinfo|complementary)["\'][^>]*>.*?</\w+>',
             "", raw, flags=re.DOTALL | re.IGNORECASE,
         )
-        # Remove common nav/footer/sidebar CSS classes
         raw = re.sub(
             r'<[^>]+class\s*=\s*["\'][^"\']*(?:sidebar|breadcrumb|pagination|cookie|social-share|related-posts|menu-item|footer-widget|site-footer|site-header)[^"\']*["\'][^>]*>.*?</\w+>',
             "", raw, flags=re.DOTALL | re.IGNORECASE,

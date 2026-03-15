@@ -96,9 +96,57 @@ _BOILERPLATE_LINE_PATTERNS = re.compile(
     re.IGNORECASE
 )
 
+# Polska stoplista do density classifiera
+_PL_STOPWORDS_FOR_DENSITY = {
+    "i", "w", "na", "z", "do", "że", "się", "nie", "to", "jest", "za", "po",
+    "od", "o", "jak", "ale", "co", "ten", "tym", "być", "może", "już", "tak",
+    "gdy", "lub", "czy", "tego", "tej", "są", "dla", "ich", "przez", "jako",
+    "te", "ze", "było", "ma", "przy", "które", "który", "która", "jego",
+    "jej", "także", "więc", "tylko", "też", "bardzo", "jeszcze", "przed",
+    "między", "pod", "nad", "bez", "oraz", "a",
+}
+
+
+def _is_boilerplate_by_density(line: str) -> bool:
+    """
+    Classify line as boilerplate based on statistical features.
+    No hardcoded phrases — pure statistics.
+    Conservative: lines with stopwords or ending in punctuation are NOT flagged.
+    """
+    stripped = line.strip()
+    if not stripped or len(stripped) < 5:
+        return True
+
+    words = stripped.split()
+    word_count = len(words)
+    if word_count == 0:
+        return True
+
+    is_short = len(stripped) < 60
+    stop_count = sum(1 for w in words if w.lower() in _PL_STOPWORDS_FOR_DENSITY)
+    stopword_density = stop_count / word_count
+    cap_words = sum(1 for w in words if w and w[0].isupper())
+    cap_ratio = cap_words / word_count
+    is_sentence = stripped[-1] in ".!?;:" if stripped else False
+
+    # Short + no stopwords + no sentence-ending punctuation = nav/UI element
+    if is_short and stopword_density < 0.15 and not is_sentence:
+        return True
+
+    # Short + mostly capitalized words (≤5 words) = menu/nav header
+    if is_short and cap_ratio > 0.6 and word_count <= 5:
+        return True
+
+    # Very short (1-3 words) + no stopwords + not a sentence = UI element
+    if word_count <= 3 and stopword_density == 0 and not is_sentence:
+        return True
+
+    return False
+
+
 # Linie "menu-like" — krótkie, powtarzające się
 def _is_nav_line(line: str) -> bool:
-    """Wykrywa linie nawigacyjne / menu."""
+    """Wykrywa linie nawigacyjne — regex + density classifier."""
     stripped = line.strip()
     if len(stripped) < 3:
         return True
@@ -106,9 +154,14 @@ def _is_nav_line(line: str) -> bool:
         return True
     if _BOILERPLATE_LINE_PATTERNS.match(stripped):
         return True
+
+    # Statistical density classifier
+    if _is_boilerplate_by_density(stripped):
+        return True
+
+    # Fallback: 1-2 words all capitalized = likely nav link
     words = stripped.split()
     if len(words) <= 2 and all(w[0].isupper() for w in words if w.isalpha()):
-        # Bardzo krótkie zdanie z Dużych liter = prawdopodobnie link nawigacyjny
         return True
     return False
 
