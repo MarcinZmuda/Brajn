@@ -1,41 +1,27 @@
 """
-Article Pipeline Orchestrator — BRAJEN_PROMPTS_v1.0
-Drives the full article generation workflow:
-1. Pre-Batch (entity/phrase placement map)
-2. Batch 0 (H1 + intro)
-3. Batch 1..N (H2 sections)
-4. Batch FAQ
-5. Post-Processing validation
+BRAJN Article Orchestrator v2.0
+
+3-step pipeline:
+1. Brief compilation (code) -> Writer (Sonnet) -> Article
+2. N-gram check (code) -> optional Haiku patch
+3. Compliance check (code)
+
+Proofreader runs as separate /api/proofread call from frontend.
 """
+
 import json
 import re
 from typing import Generator
 
 from src.common.llm import claude_call
 from src.article_pipeline.prompts import (
-    SYSTEM_PROMPT,
-    ARTICLE_WRITER_PROMPT,
-    H2_PLAN_SYSTEM,
-    H2_PLAN_PROMPT,
-    PRE_BATCH_PROMPT,
-    BATCH_0_PROMPT,
-    BATCH_N_SYSTEM,
-    BATCH_N_PROMPT,
-    BATCH_FAQ_PROMPT,
-    POST_PROCESSING_PROMPT,
+    WRITER_SYSTEM, WRITER_USER,
+    H2_PLAN_SYSTEM, H2_PLAN_USER,
     FORBIDDEN_PHRASES,
-    DISCLAIMERS,
 )
-from src.article_pipeline.variables import extract_global_variables, fill_template, format_ngrams_for_section
-from src.article_pipeline.keyword_tracker import KeywordTracker
-from src.article_pipeline.validators import (
-    validate_batch,
-    validate_global,
-    check_forbidden_phrases,
-)
-from src.article_pipeline.ymyl_detector import detect_ymyl, get_disclaimer_text
-from src.article_pipeline.search_variants import generate_search_variants
-from src.article_pipeline.entity_seo_compliance import run_entity_seo_compliance
+from src.article_pipeline.variables import extract_global_variables
+from src.article_pipeline.validators import check_forbidden_phrases, validate_global
+from src.article_pipeline.brief_compiler import compile_brief, build_example_paragraph
 
 
 def _safe_json_parse(text: str) -> dict | None:
@@ -53,1018 +39,361 @@ def _safe_json_parse(text: str) -> dict | None:
     try:
         return json.loads(text[first : last + 1])
     except json.JSONDecodeError:
-        return None
-
-
-def _get_last_sentence(text: str) -> str:
-    """Extract last sentence from text."""
-    sentences = re.split(r"[.!?]+\s*", text.strip())
-    sentences = [s.strip() for s in sentences if s.strip()]
-    return sentences[-1] if sentences else ""
-
-
-def _hard_facts_values(facts: list) -> list:
-    """Extract plain string values from hard facts (handles both str and dict)."""
-    return [f.get("value", "") if isinstance(f, dict) else str(f) for f in facts if f]
+        # Fix trailing commas
+        clean = re.sub(r',\s*([}\]])', r'\1', text[first : last + 1])
+        try:
+            return json.loads(clean)
+        except json.JSONDecodeError:
+            return None
 
 
 class ArticleOrchestrator:
-    """Orchestrates the full BRAJEN article generation pipeline."""
+    """Orchestrates the BRAJN v2.0 article generation pipeline."""
 
-    def __init__(self, s1_data: dict, engine: str = "claude", model: str = "claude-sonnet-4-6",
-                 nw_terms: list = None, h2_keywords: list = None, project_id: str = None):
-        # Use LLM-optimized version if available, fallback to full s1_data
+    def __init__(self, s1_data: dict, engine: str = "claude",
+                 model: str = "claude-sonnet-4-6",
+                 nw_terms: list = None, h2_keywords: list = None,
+                 project_id: str = None):
         self.s1_data = s1_data.get("_llm_ready") or s1_data
-        self._s1_full = s1_data  # full version for panel display
+        self._s1_full = s1_data
         self.engine = engine
         self.model = model
         self.project_id = project_id
         self.variables = extract_global_variables(s1_data)
-        # H2 keywords from user (NW/Surfer phrases required in H2 headings)
         self._h2_keywords = h2_keywords or []
-        # NW/Surfer coverage analysis
+        self.full_article = ""
+        self.prompt_log = []
+        self.input_variables = {}
+
+        # NW analysis
         from src.article_pipeline.nw_analyzer import analyze_nw_coverage
         self._nw_analysis = analyze_nw_coverage(nw_terms or [], s1_data)
-        nw_block = self._nw_analysis.get("prompt_block", "")
-        self.variables["NW_LUKI"] = nw_block
-        if self._nw_analysis.get("stats", {}).get("total", 0) > 0:
-            print(f"[NW] Coverage analysis: {self._nw_analysis['stats']}")
-        self.pre_batch_map = None
-        self.batch_texts = []
-        self.bridge_sentences = []
-        self.full_article = ""
-        self.validation_result = None
-        self.ymyl_result = None
-        self.search_variants_result = None
-        # Keyword budget tracker (in-memory + Firestore write-only for panel)
-        h2_count = len(self.variables.get("_h2_plan_list", []))
-        _target_length = int(self.variables.get("_target_length", 0) or 0)
-        _intro_words = int(self.variables.get("DLUGOSC_INTRO", "180") or 180)
-        _section_length = ((_target_length - _intro_words) // max(1, h2_count)) if _target_length and h2_count else 0
-        self.keyword_tracker = KeywordTracker(
-            main_keyword=self.variables.get("HASLO_GLOWNE", ""),
-            ngrams=self.variables.get("_ngrams", []),
-            extended_ngrams=(self.variables.get("_ngrams_full", [])
-                             [len(self.variables.get("_ngrams", [])):]),  # extended only
-            total_batches=max(3, h2_count + 2),
-            project_id=project_id,
-            target_length=_target_length,
-            section_length=_section_length,
-        )
-        # Logging for "Dane wsadowe" panel tab
-        self.prompt_log = []   # [{label, system, user}]
-        self.input_variables = {}  # snapshot after all variables are ready
 
-    def _llm_call(self, system_prompt: str, user_prompt: str, max_tokens: int = 4000,
-                  label: str = "", timeout: int = 120) -> str:
-        """Make LLM call with the configured engine. Logs prompt for Dane wsadowe tab."""
-        text, usage = claude_call(
-            system_prompt=system_prompt,
-            user_prompt=user_prompt,
-            model=self.model,
+    def _llm_call(self, system: str, user: str,
+                   max_tokens: int = 8000, label: str = "",
+                   model: str = None, temperature: float = 0.7,
+                   timeout: int = 120) -> str:
+        """Unified LLM call with logging."""
+        use_model = model or self.model
+        response, usage = claude_call(
+            system_prompt=system,
+            user_prompt=user,
+            model=use_model,
             max_tokens=max_tokens,
-            temperature=0.7,
+            temperature=temperature,
             timeout=timeout,
         )
-        # Log prompt for panel
-        if label:
-            self.prompt_log.append({
-                "label": label,
-                "system": system_prompt[:2000] + ("..." if len(system_prompt) > 2000 else ""),
-                "user": user_prompt[:3000] + ("..." if len(user_prompt) > 3000 else ""),
-                "tokens_out": len(text.split()),
-            })
-        return text
-
-    def _calc_faq_count(self, target_h2: int, must_cover: list,
-                        paa_priority: list, paa_standard: list,
-                        candidates: list) -> int:
-        """
-        Dynamic FAQ count: base 4, increases if phrase/entity coverage is low.
-
-        Logic:
-        - Each H2 section can realistically cover ~2-3 entities and ~3-5 n-grams
-        - If we have more entities/n-grams than H2 sections can absorb, FAQ acts as overflow
-        - PAA priority questions are always included
-        - Range: 4-10
-        """
-        base = 4
-
-        # 1. PAA priority always included
-        paa_bonus = max(0, len(paa_priority) - base)  # if >4 priority PAA, add extra
-
-        # 2. Entity coverage pressure
-        entity_capacity = target_h2 * 3  # each H2 covers ~3 entities
-        entity_overflow = max(0, len(must_cover) - entity_capacity)
-        entity_bonus = min(2, entity_overflow // 2)  # +1 FAQ per 2 uncovered entities
-
-        # 3. N-gram coverage pressure
-        ngrams = self.variables.get("_ngrams", [])
-        total_ngrams = len(ngrams)
-        ngram_capacity = target_h2 * 5  # each H2 can weave ~5 n-grams
-        ngram_overflow = max(0, total_ngrams - ngram_capacity)
-        ngram_bonus = min(2, ngram_overflow // 4)  # +1 FAQ per 4 uncovered n-grams
-
-        # 4. Scored H2 candidates that didn't make it into sections
-        # These represent topics that should be covered somewhere
-        rejected_candidates = max(0, len([c for c in candidates if (c.get("score") or 0) >= 0.20]) - target_h2)
-        rejected_bonus = min(2, rejected_candidates // 2)
-
-        faq_count = base + paa_bonus + entity_bonus + ngram_bonus + rejected_bonus
-
-        # Clamp to 4-10
-        faq_count = max(4, min(10, faq_count))
-
-        if faq_count > base:
-            reasons = []
-            if paa_bonus: reasons.append(f"PAA+{paa_bonus}")
-            if entity_bonus: reasons.append(f"entities+{entity_bonus}")
-            if ngram_bonus: reasons.append(f"ngrams+{ngram_bonus}")
-            if rejected_bonus: reasons.append(f"rejected_h2+{rejected_bonus}")
-            print(f"[H2_PLAN] FAQ count: {faq_count} (base {base} + {', '.join(reasons)})")
-        else:
-            print(f"[H2_PLAN] FAQ count: {faq_count} (base)")
-
-        return faq_count
-
-    def run_ymyl_detection(self) -> dict:
-        """Detect YMYL category, then enrich with legal/medical sources."""
-        keyword = self.variables.get("HASLO_GLOWNE", "")
-        self.ymyl_result = detect_ymyl(keyword)
-        category = self.ymyl_result.get("category", "none")
-        self.variables["YMYL_KLASYFIKACJA"] = category
-        self.variables["YMYL_CONTEXT"] = ""  # default empty
-
-        if category == "prawo":
-            try:
-                from src.ymyl.legal_enricher import get_legal_context
-                legal = get_legal_context(keyword)
-                self.ymyl_result["legal"] = legal
-                self.variables["YMYL_CONTEXT"] = legal.get("prompt_block", "")
-                print(f"[YMYL] ⚖️ Legal context: {legal.get('status')} — {len(legal.get('judgments', []))} orzeczeń")
-            except Exception as e:
-                print(f"[YMYL] ⚠️ Legal enricher error: {e}")
-
-        elif category == "zdrowie":
-            try:
-                from src.ymyl.medical_enricher import get_medical_context
-                medical = get_medical_context(keyword)
-                self.ymyl_result["medical"] = medical
-                self.variables["YMYL_CONTEXT"] = medical.get("prompt_block", "")
-                print(f"[YMYL] 🏥 Medical context: {medical.get('status')} — sources: {medical.get('sources_used', [])}")
-            except Exception as e:
-                print(f"[YMYL] ⚠️ Medical enricher error: {e}")
-
-        return self.ymyl_result
-
-    def run_search_variants(self) -> dict:
-        """Generate search variants and update variables."""
-        keyword = self.variables.get("HASLO_GLOWNE", "")
-        ngrams = self.variables.get("_ngrams", [])
-        secondary = [ng.get("ngram", "") for ng in ngrams[:10]]
-        self.search_variants_result = generate_search_variants(keyword, secondary)
-
-        self.variables["PERYFRAZY"] = json.dumps(
-            self.search_variants_result.get("peryfrazy", []), ensure_ascii=False
-        )
-        self.variables["PERYFRAZY_ALL"] = self.variables["PERYFRAZY"]
-        self.variables["WARIANTY_POTOCZNE"] = json.dumps(
-            self.search_variants_result.get("warianty_potoczne", []), ensure_ascii=False
-        )
-        self.variables["WARIANTY_FORMALNE"] = json.dumps(
-            self.search_variants_result.get("warianty_formalne", []), ensure_ascii=False
-        )
-        mention_forms = self.search_variants_result.get("mention_forms", {})
-        self.variables["MENTION_FORMS_JSON"] = json.dumps(mention_forms, ensure_ascii=False)
-        self.variables["_mention_forms"] = mention_forms
-        # Flat string forms for prompt templates
-        named = mention_forms.get("named", "")
-        if isinstance(named, list):
-            self.variables["NAMED_FORMS"] = ", ".join(named)
-        else:
-            self.variables["NAMED_FORMS"] = str(named)
-        nominal = mention_forms.get("nominal", [])
-        self.variables["NOMINAL_FORMS"] = ", ".join(nominal) if isinstance(nominal, list) else str(nominal)
-        pronominal = mention_forms.get("pronominal", [])
-        self.variables["PRONOMINAL_CUES"] = ", ".join(pronominal) if isinstance(pronominal, list) else str(pronominal)
-        return self.search_variants_result
-
-    def run_h2_plan(self) -> list:
-        """
-        Step 2.5: Generate H2 article plan using Claude — v2.0.
-        Uses structured XML prompt with explicit JSON schema, selection criteria,
-        hard constraints, and self-check.
-        Updates _h2_plan_list, PLAN_ARTYKULU, PLAN_H2, and FAQ variables.
-        """
-        import json
-
-        s1 = self.s1_data
-        keyword = self.variables.get("HASLO_GLOWNE", "")
-
-        # ── Scored H2 candidates ──
-        h2_scored = s1.get("h2_scored_candidates") or {}
-        candidates = (
-            (h2_scored.get("must_have") or [])
-            + (h2_scored.get("high_priority") or [])
-            + (h2_scored.get("optional") or [])
-        )
-        scored_h2_json = json.dumps(
-            [{"text": c.get("text"), "score": c.get("score"), "reason": c.get("reason")}
-             for c in candidates[:20]],
-            ensure_ascii=False, indent=2
-        )
-
-        # ── Entities ──
-        entity_seo = s1.get("entity_seo") or {}
-        must_cover = entity_seo.get("must_cover_concepts") or []
-        if not must_cover:
-            must_cover = self.variables.get("_must_cover", [])
-
-        entity_salience_raw = entity_seo.get("entity_salience") or []
-        entity_salience = [
-            {"entity": e.get("entity_text") or e.get("entity", ""),
-             "salience": e.get("salience_score") or e.get("salience", 0),
-             "type": e.get("type", "")}
-            for e in entity_salience_raw[:12]
-            if (e.get("salience_score") or e.get("salience", 0)) > 0.1
-        ]
-
-        # ── Hard facts (extract values only for prompt) ──
-        hard_facts = _hard_facts_values(self.variables.get("_hard_facts", []))
-
-        # ── PAA: priority = unanswered, standard = answered ──
-        paa_priority = self.variables.get("_paa_unanswered", [])
-        paa_standard = self.variables.get("_paa_standard", [])
-
-        # ── H2 keywords (from NW/Surfer or user-provided h2_structure) ──
-        h2_keywords = getattr(self, "_h2_keywords", []) or []
-
-        # ── Determine target H2 count ──
-        # Base on target article length: ~250 words per H2 section + intro + FAQ
-        target_length = int(self.variables.get("DLUGOSC_CEL", "2000") or "2000")
-        intro_words = int(self.variables.get("DLUGOSC_INTRO", "180") or "180")
-        faq_est_words = 400  # ~80 words x 5 questions
-        h2_words_available = target_length - intro_words - faq_est_words
-        target_h2_by_length = max(3, h2_words_available // 250)
-
-        # Also consider candidate count (don't ask for more than available + some gen)
-        candidate_count = len([c for c in candidates if (c.get("score") or 0) >= 0.20])
-        target_h2_by_candidates = max(candidate_count, 3)  # at least 3, or candidates
-
-        # Take the minimum of both, clamped 5-10
-        target_h2 = min(target_h2_by_length, target_h2_by_candidates)
-        target_h2 = max(3, min(10, target_h2))
-        print(f"[H2_PLAN] Target H2: {target_h2} (by_length={target_h2_by_length}, by_candidates={target_h2_by_candidates})")
-
-        # ── FAQ count: base 4, scale up if many uncovered phrases/entities ──
-        faq_count = self._calc_faq_count(
-            target_h2=target_h2,
-            must_cover=must_cover,
-            paa_priority=paa_priority,
-            paa_standard=paa_standard,
-            candidates=candidates,
-        )
-
-        # ── Build prompt variables ──
-        prompt_vars = {
-            "HASLO_GLOWNE": keyword,
-            "LICZBA_H2": str(target_h2),
-            "LICZBA_FAQ": str(faq_count),
-            "SCORED_H2_JSON": scored_h2_json,
-            "MUST_COVER_ENTITIES_JSON": json.dumps(must_cover[:15], ensure_ascii=False),
-            "ENTITY_SALIENCE_JSON": json.dumps(entity_salience, ensure_ascii=False),
-            "HARD_FACTS_JSON": json.dumps(hard_facts[:15], ensure_ascii=False),
-            "PAA_PRIORITY_JSON": json.dumps(paa_priority[:8], ensure_ascii=False),
-            "PAA_STANDARD_JSON": json.dumps(paa_standard[:10], ensure_ascii=False),
-            "H2_KEYWORDS_JSON": json.dumps(h2_keywords, ensure_ascii=False),
-        }
-
-        user = fill_template(H2_PLAN_PROMPT, prompt_vars)
-        response = self._llm_call(
-            system_prompt=H2_PLAN_SYSTEM,
-            user_prompt=user,
-            max_tokens=3000,
-            label="h2_plan"
-        )
-
-        # ── Parse v2.0 response ──
-        h2_plan = []
-        faq_items = []
-        coverage_check = {}
-        try:
-            text = response.strip()
-            if "```" in text:
-                text = text.split("```")[1]
-                if text.startswith("json"):
-                    text = text[4:]
-            # Find JSON boundaries
-            first_brace = text.find("{")
-            last_brace = text.rfind("}")
-            if first_brace != -1 and last_brace != -1:
-                text = text[first_brace:last_brace + 1]
-            parsed = json.loads(text.strip())
-
-            # Extract sections → h2_plan
-            sections = parsed.get("sections", [])
-            if sections:
-                h2_plan = [s["h2"] for s in sections if s.get("h2")]
-                self._h2_plan_full = sections  # full section objects for panel
-            else:
-                # Fallback: try old format
-                h2_plan = [h["heading"] for h in parsed.get("h2_plan", []) if h.get("heading")]
-                self._h2_plan_full = parsed.get("h2_plan", [])
-
-            # Extract FAQ
-            faq_items = parsed.get("faq", [])
-            self._faq_plan = faq_items
-
-            # Coverage check
-            coverage_check = parsed.get("coverage_check", {})
-            if coverage_check:
-                uncovered = coverage_check.get("uncovered_entities", [])
-                if uncovered:
-                    print(f"[H2_PLAN] ⚠️ Uncovered entities: {uncovered}")
-                unused_kw = coverage_check.get("unused_h2_keywords", [])
-                if unused_kw:
-                    print(f"[H2_PLAN] ⚠️ Unused h2_keywords: {unused_kw}")
-
-            print(f"[H2_PLAN] ✅ v2.0 generated {len(h2_plan)} sections + {len(faq_items)} FAQ")
-        except Exception as e:
-            print(f"[H2_PLAN] ⚠️ Parse error: {e} — falling back to scored candidates")
-            h2_plan = [c.get("text") for c in candidates[:target_h2] if c.get("text")]
-
-        if not h2_plan:
-            kw = keyword or "Temat"
-            h2_plan = [f"Czym jest {kw}", f"Jak działa {kw}", f"Konsekwencje: {kw}", f"FAQ: {kw}"]
-
-        # ── Update variables ──
-        h2_plan = h2_plan[:target_h2]
-        self.variables["_h2_plan_list"] = h2_plan
-        self.variables["PLAN_ARTYKULU"] = "\n".join(f"{i+1}. {h}" for i, h in enumerate(h2_plan))
-        self.variables["PLAN_H2"] = json.dumps(h2_plan, ensure_ascii=False)
-        self.variables["LICZBA_H2"] = str(len(h2_plan))
-
-        # ── FAQ questions from plan → merge into PAA ──
-        if faq_items:
-            faq_questions = [f.get("question", "") for f in faq_items if f.get("question")]
-            # Split into priority and standard based on source
-            paa_from_plan = [f.get("question") for f in faq_items
-                             if f.get("source") == "paa_priority" and f.get("question")]
-            other_faq = [f.get("question") for f in faq_items
-                         if f.get("source") != "paa_priority" and f.get("question")]
-
-            existing_paa = self.variables.get("_paa_unanswered", [])
-            merged_priority = list(dict.fromkeys(paa_from_plan + existing_paa))
-            self.variables["PAA_BEZ_ODPOWIEDZI"] = json.dumps(merged_priority, ensure_ascii=False)
-            self.variables["_paa_unanswered"] = merged_priority
-
-            existing_std = self.variables.get("_paa_standard", [])
-            merged_std = list(dict.fromkeys(other_faq + existing_std))
-            self.variables["PAA_STANDARDOWE"] = json.dumps(merged_std, ensure_ascii=False)
-            self.variables["_paa_standard"] = merged_std
-
-        # Store coverage for panel display
-        self._h2_coverage_check = coverage_check
-
-        return h2_plan
-
-    def run_pre_batch(self) -> dict:
-        """
-        Step 1: Generate entity/phrase placement map.
-        Returns JSON map for batch-level phrase assignment.
-        """
-        system = fill_template(SYSTEM_PROMPT, self.variables)
-        user = fill_template(PRE_BATCH_PROMPT, self.variables)
-
-        response = self._llm_call(system, user, max_tokens=3000, label="pre_batch")
-        parsed = _safe_json_parse(response)
-
-        if not parsed:
-            print("[ORCHESTRATOR] Pre-batch JSON parse failed, using fallback")
-            parsed = self._generate_fallback_pre_batch()
-
-        self.pre_batch_map = parsed
-        return parsed
-
-    def _get_factographic_for_batch(self, batch_n: int) -> list:
-        """Return factographic triplets assigned to a specific batch by round-robin."""
-        all_facto = self.variables.get("_factographic_triplets") or []
-        if not all_facto:
-            return []
-        h2_count = len(self.variables.get("_h2_plan_list", [])) or 1
-        total_batches = h2_count + 2  # intro + H2s + FAQ
-        return [t for i, t in enumerate(all_facto) if i % total_batches == batch_n]
-
-    def _get_spo_for_batch(self, batch_n: int) -> list:
-        """Return entity relationships (SPO) assigned to a specific batch by round-robin."""
-        all_spo = self.variables.get("_entity_relationships") or []
-        if not all_spo:
-            return []
-        h2_count = len(self.variables.get("_h2_plan_list", [])) or 1
-        total_batches = h2_count + 2
-        return [t for i, t in enumerate(all_spo) if i % total_batches == batch_n]
-
-    def _get_cooccurrence_for_batch(self, batch_n: int, batch_entities: list) -> list:
-        """Return cooccurrence pairs relevant to this batch's entities."""
-        all_pairs = self.variables.get("_cooccurrence_pairs") or []
-        if not all_pairs or not batch_entities:
-            return all_pairs[:3] if batch_n <= 1 else []
-        # Filter pairs where at least one entity matches batch entities
-        batch_ents_lower = {e.lower() for e in batch_entities if isinstance(e, str)}
-        relevant = []
-        for p in all_pairs:
-            if not isinstance(p, dict):
-                continue
-            a = (p.get("entity_a") or "").lower()
-            b = (p.get("entity_b") or "").lower()
-            if a in batch_ents_lower or b in batch_ents_lower:
-                relevant.append(p)
-        return relevant[:3]
-
-    def _generate_fallback_pre_batch(self) -> dict:
-        """Generate minimal pre-batch map when LLM fails."""
-        h2_plan = self.variables.get("_h2_plan_list", [])
-        ngrams = self.variables.get("_ngrams", [])
-        encje = json.loads(self.variables.get("ENCJE_KRYTYCZNE", "[]"))
-
-        batches = {}
-        batches["batch_0"] = {
-            "encje_obowiazkowe": encje[:3],
-            "ngramy": [ng.get("ngram", "") for ng in ngrams[:5]],
-            "lancuchy": [],
-            "peryfrazy": [],
-            "hard_facts_do_uzycia": _hard_facts_values(self.variables.get("_hard_facts", [])[:3]),
-        }
-
-        ngrams_per_batch = max(1, len(ngrams) // max(1, len(h2_plan)))
-        for i, h2 in enumerate(h2_plan):
-            start = i * ngrams_per_batch
-            batch_ngrams = [ng.get("ngram", "") for ng in ngrams[start : start + ngrams_per_batch]]
-            batches[f"batch_{i + 1}"] = {
-                "encje_obowiazkowe": [self.variables["ENCJA_GLOWNA"]] + encje[i : i + 2],
-                "ngramy": batch_ngrams,
-                "lancuchy": [],
-                "peryfrazy": [],
-                "hard_facts_do_uzycia": [],
-            }
-
-        batches["batch_faq"] = {
-            "pytania_priorytetowe": self.variables.get("_paa_unanswered", []),
-            "pytania_standardowe": self.variables.get("_paa_standard", [])[:5],
-            "ngramy": [ng.get("ngram", "") for ng in ngrams[-3:]],
-        }
-
-        return {
-            "hard_facts": self.variables.get("_hard_facts", []),
-            "paa_bez_odpowiedzi": self.variables.get("_paa_unanswered", []),
-            "related_searches_brands": self.variables.get("_brands", []),
-            "batches": batches,
-        }
-
-    def run_batch_0(self) -> str:
-        """
-        Step 2: Generate H1 + intro paragraph (v2 — AI Overview strategy).
-        """
-        pre = self.pre_batch_map or {}
-        batch_0_data = (pre.get("batches") or {}).get("batch_0", {})
-
-        # Hard facts for batch 0: from pre-batch allocation or global
-        hard_facts_b0 = batch_0_data.get("hard_facts_do_uzycia", [])
-        if not hard_facts_b0:
-            hard_facts_b0 = _hard_facts_values(self.variables.get("_hard_facts", [])[:5])
-
-        batch_vars = {
-            **self.variables,
-            "HARD_FACTS_BATCH_0_JSON": json.dumps(hard_facts_b0, ensure_ascii=False),
-        }
-
-        system = fill_template(BATCH_N_SYSTEM, batch_vars)
-        user = fill_template(BATCH_0_PROMPT, batch_vars)
-
-        text = self._llm_call(system, user, max_tokens=2000, label="batch_0")
-
-        # Validate
-        issues = check_forbidden_phrases(text)
-        if issues:
-            print(f"[ORCHESTRATOR] Batch 0: {len(issues)} forbidden phrases, retrying...")
-            retry_prompt = user + f"\n\nUWAGA: W poprzedniej wersji wykryto zakazane frazy: {', '.join(issues)}. Przepisz bez nich."
-            text = self._llm_call(system, retry_prompt, max_tokens=2000)
-
-        self.batch_texts.append(text)
-        self.bridge_sentences.append(_get_last_sentence(text))
-
-        # Update phrase budget after batch 0
-        self.keyword_tracker.update_after_batch(text, batch_label="batch_0")
-
-        # Extract H1 from batch_0 output for use in ARTICLE_WRITER_PROMPT
-        h1_match = re.match(r"#\s+(.+)", text.strip())
-        if h1_match:
-            self.variables["H1"] = h1_match.group(1).strip()
-
-        return text
-
-    def run_batch_n(self, n: int, section_name: str, h2_heading: str) -> str:
-        """
-        Step 3: Generate H2 section.
-        """
-        pre = self.pre_batch_map or {}
-        batch_data = (pre.get("batches") or {}).get(f"batch_{n}", {})
-        target_length = self.variables.get("_target_length", 2000)
-        h2_plan = self.variables.get("_h2_plan_list", [])
-        h2_count = len(h2_plan)
-        # Distribute words: subtract intro, divide rest among H2s
-        intro_words = int(self.variables.get("DLUGOSC_INTRO", "180") or "180")
-        section_length = (target_length - intro_words) // max(1, h2_count)
-
-        # Determine next section title for bridge sentence
-        if n < h2_count:
-            next_h2 = h2_plan[n]  # n is 1-based, so h2_plan[n] = next section
-        elif self.variables.get("PLAN_FAQ"):
-            next_h2 = "FAQ"
-        else:
-            next_h2 = ""
-
-        # Get section-specific data from H2 plan (v2.0)
-        h2_plan_full = getattr(self, "_h2_plan_full", [])
-        section_plan = h2_plan_full[n - 1] if n - 1 < len(h2_plan_full) and isinstance(h2_plan_full, list) else {}
-        if isinstance(section_plan, dict):
-            section_hard_facts = section_plan.get("hard_facts", [])
-            section_entities = section_plan.get("entities", [])
-        else:
-            section_hard_facts = []
-            section_entities = []
-
-        # Merge pre-batch entities with plan entities
-        pre_batch_entities = batch_data.get("encje_obowiazkowe", [])
-        merged_entities = list(dict.fromkeys(pre_batch_entities + section_entities))
-
-        # Merge hard facts
-        pre_batch_hf = batch_data.get("hard_facts_do_uzycia", [])
-        merged_hf = list(dict.fromkeys(pre_batch_hf + section_hard_facts))
-
-        # Format ngrams with remaining budget from in-memory tracker
-        assigned_ngrams = batch_data.get("ngramy", [])
-        ngrams_formatted = self.keyword_tracker.format_phrases_for_prompt(assigned_ngrams, h2_heading=h2_heading)
-
-        # Periphrases: from pre-batch or fallback to global
-        periphrases = batch_data.get("peryfrazy", [])
-        if not periphrases:
-            try:
-                periphrases = json.loads(self.variables.get("PERYFRAZY", "[]"))[:3]
-            except (json.JSONDecodeError, TypeError):
-                periphrases = []
-
-        batch_vars = {
-            **self.variables,
-            "N": str(n),
-            "NAZWA_SEKCJI": section_name,
-            "NAGLOWEK_H2": h2_heading,
-            "NASTEPNY_H2": next_h2,
-            "OSTATNIE_ZDANIE_POPRZEDNIEGO_BATCHA": self.bridge_sentences[-1] if self.bridge_sentences else "",
-            "COVERED_CONTENT_SUMMARY": self._build_covered_summary(),
-            "ENCJE_BATCH_N_JSON": json.dumps(merged_entities, ensure_ascii=False),
-            "NGRAMY_BATCH_N": ngrams_formatted,
-            "TRIPLETS_BATCH_N_JSON": json.dumps(batch_data.get("lancuchy", []), ensure_ascii=False),
-            "TROJKI_BATCH_N_JSON": json.dumps(self._get_factographic_for_batch(n), ensure_ascii=False),
-            "SPO_BATCH_N_JSON": json.dumps(self._get_spo_for_batch(n), ensure_ascii=False),
-            "COOCCURRENCE_BATCH_N_JSON": json.dumps(self._get_cooccurrence_for_batch(n, merged_entities), ensure_ascii=False),
-            "HARD_FACTS_BATCH_N_JSON": json.dumps(merged_hf, ensure_ascii=False),
-            "PERYFRAZY_BATCH_N_JSON": json.dumps(periphrases, ensure_ascii=False),
-            "DLUGOSC_SEKCJI": str(section_length),
-            "MIN_PERYFRAZ": "2",
-        }
-
-        system = fill_template(BATCH_N_SYSTEM, batch_vars)
-        user = fill_template(BATCH_N_PROMPT, batch_vars)
-
-        text = self._llm_call(system, user, max_tokens=3000, label=f"batch_{n}")
-
-        # Validate forbidden phrases
-        issues = check_forbidden_phrases(text)
-        if issues:
-            print(f"[ORCHESTRATOR] Batch {n}: {len(issues)} forbidden phrases, retrying...")
-            retry_prompt = user + f"\n\nUWAGA: Przepisz bez zakazanych fraz: {', '.join(issues)}"
-            text = self._llm_call(system, retry_prompt, max_tokens=3000)
-
-        word_count = len(text.split())
-        print(f"[ORCHESTRATOR] Batch {n}: {word_count} words")
-
-        self.batch_texts.append(text)
-        self.bridge_sentences.append(_get_last_sentence(text))
-
-        # Update phrase budget after each H2 section
-        self.keyword_tracker.update_after_batch(text, batch_label=f"batch_{n}")
-
-        return text
-
-    def _build_covered_summary(self) -> str:
-        """Build summary of already covered content for deduplication."""
-        if not self.batch_texts:
-            return ""
-
-        covered_facts = set()
-        covered_topics = set()
-        for prev_text in self.batch_texts:
-            numbers = re.findall(
-                r'\d[\d\s,.]*(?:promil[aei]|zł|złotych|lat|roku|lat[a]?|%|tys|mies)',
-                prev_text.lower()
-            )
-            covered_facts.update(n.strip() for n in numbers[:10])
-            h2s = re.findall(r'^##\s+(.+)', prev_text, re.MULTILINE)
-            covered_topics.update(h2s)
-
-        if not covered_facts and not covered_topics:
-            return ""
-
-        parts = ["TEMATY JUŻ OPISANE (NIE POWTARZAJ):"]
-        if covered_topics:
-            parts.append("Sekcje: " + ", ".join(covered_topics))
-        if covered_facts:
-            parts.append("Fakty użyte: " + ", ".join(list(covered_facts)[:15]))
-        return "\n".join(parts)
-
-    def _filter_faq_questions(self, questions: list, max_faq: int = 4) -> list:
-        """
-        Filter FAQ questions to only those NOT already answered in article batches.
-        Returns up to max_faq questions that represent content gaps.
-        """
-        if not questions or not self.batch_texts:
-            return questions[:max_faq]
-
-        # Build text of all existing batches (lowered)
-        existing_text = " ".join(self.batch_texts).lower()
-
-        # Extract key phrases from each question (3+ char words)
-        def _question_covered(q: str) -> bool:
-            words = [w.strip("?.,!") for w in q.lower().split() if len(w.strip("?.,!")) > 3]
-            if not words:
-                return False
-            # If >= 60% of significant words appear in existing text, question is covered
-            found = sum(1 for w in words if w in existing_text)
-            return found >= len(words) * 0.6
-
-        uncovered = [q for q in questions if not _question_covered(q)]
-        covered = [q for q in questions if _question_covered(q)]
-
-        # Prefer uncovered (content gaps), fill remaining from covered if needed
-        result = uncovered[:max_faq]
-        if len(result) < max_faq:
-            result.extend(covered[:max_faq - len(result)])
-
-        print(f"[FAQ] Filtered {len(questions)} → {len(result)} questions ({len(uncovered)} uncovered content gaps)")
-        return result
-
-    def run_batch_faq(self) -> str:
-        """
-        Step 4: Generate FAQ section.
-        Limited to max 4 questions that represent content gaps (not covered in H2 sections).
-        """
-        pre = self.pre_batch_map or {}
-        faq_data = (pre.get("batches") or {}).get("batch_faq", {})
-        ymyl = self.variables.get("YMYL_KLASYFIKACJA", "none")
-        disclaimer = DISCLAIMERS.get(ymyl, "")
-        pubmed = self.variables.get("PUBMED_CYTAT", "")
-        if pubmed and ymyl in ("zdrowie",):
-            disclaimer += f" (źródło: {pubmed})"
-
-        # Collect all candidate FAQ questions (priority order)
-        all_candidates = []
-        paa_priority = self.variables.get("_paa_unanswered", [])
-        paa_standard = faq_data.get("pytania_standardowe", self.variables.get("_paa_standard", []))
-        related = self.variables.get("_related_searches", [])
-
-        all_candidates.extend(paa_priority)
-        all_candidates.extend(paa_standard)
-        for rs in related[:5]:
-            text = rs if isinstance(rs, str) else str(rs)
-            if not text.endswith("?"):
-                text = f"Czym jest {text}?" if len(text.split()) <= 3 else f"{text}?"
-            all_candidates.append(text)
-
-        # Deduplicate
-        seen = set()
-        unique = []
-        for q in all_candidates:
-            q_lower = q.lower().strip()
-            if q_lower not in seen:
-                seen.add(q_lower)
-                unique.append(q)
-
-        # Filter to max 4 content-gap questions
-        faq_questions = self._filter_faq_questions(unique, max_faq=4)
-
-        batch_vars = {
-            **self.variables,
-            "PAA_BEZ_ODPOWIEDZI": json.dumps(faq_questions, ensure_ascii=False),
-            "PAA_STANDARDOWE": "[]",  # Already merged into single prioritized list
-            "RELATED_AS_QUESTIONS": "[]",
-            "NGRAMY_FAQ": "\n".join(faq_data.get("ngramy", [])),
-            "HARD_FACTS_FAQ": json.dumps(_hard_facts_values(self.variables.get("_hard_facts", [])), ensure_ascii=False),
-            "DISCLAIMER_SECTION": disclaimer if disclaimer else "Brak wymagań YMYL — pomiń disclaimer.",
-        }
-
-        system = fill_template(BATCH_N_SYSTEM, batch_vars)
-        user = fill_template(BATCH_FAQ_PROMPT, batch_vars)
-
-        text = self._llm_call(system, user, max_tokens=2000, label="batch_faq")
-
-        # Prepend FAQ header if not already present
-        kw = self.variables.get("HASLO_GLOWNE", "")
-        faq_header = f"## Najczęściej zadawane pytania o {kw}" if kw else "## Najczęściej zadawane pytania"
-        if not text.strip().startswith("## Najczęściej zadawane pytania"):
-            text = faq_header + "\n\n" + text
-
-        self.batch_texts.append(text)
-        return text
-
-    def assemble_article(self) -> str:
-        """Assemble all batches into final article."""
-        self.full_article = "\n\n".join(self.batch_texts)
-
-        # Structure validation
-        h1_found = bool(re.search(r'^# .+', self.full_article, re.MULTILINE))
-        h2_found = re.findall(r'^## .+', self.full_article, re.MULTILINE)
-        h2_plan = self.variables.get("_h2_plan_list", [])
-        total_words = len(self.full_article.split())
-        target_length = int(self.variables.get("DLUGOSC_CEL", 0) or 0)
-
-        if not h1_found:
-            print("[ORCHESTRATOR] WARNING: No H1 found in assembled article")
-        if len(h2_found) < len(h2_plan):
-            print(f"[ORCHESTRATOR] WARNING: Expected {len(h2_plan)} H2s, found {len(h2_found)}")
-        if target_length > 0 and total_words < target_length * 0.5:
-            print(f"[ORCHESTRATOR] WARNING: Article too short ({total_words}/{target_length} words)")
-
-        return self.full_article
-
-    # Regex for repeated-word n-grams: "menu menu", "void void void"
-    _RE_REPEATED_WORD_NGRAM = re.compile(r'^(\w+)(\s+\1)+$', re.IGNORECASE)
-
-    def run_coverage_check(self) -> dict:
-        """
-        Porównuje tekst artykułu z zakresami freq_min/freq_max z S1 ngrams.
-        Zwraca raport: missing, under, over, ok.
-        Bez LLM — czysto lokalne liczenie.
-        """
-        import re as _re
-
-        article = self.full_article.lower()
-        if not article:
-            return {}
-
-        s1_full = self._s1_full
-        ngrams = (s1_full.get("ngrams") or []) + (s1_full.get("extended_terms") or [])
-
-        missing, under, over, ok = [], [], [], []
-
-        for ng in ngrams:
-            term = (ng.get("ngram") or ng.get("text") or "").lower().strip()
-            if not term or len(term) < 3:
-                continue
-            # Skip repeated-word n-grams (garbage from HTML nav: "menu menu")
-            if self._RE_REPEATED_WORD_NGRAM.match(term):
-                continue
-            freq_min = ng.get("freq_min", 1)
-            freq_max = ng.get("freq_max", 99)
-            weight   = ng.get("weight", 0)
-
-            actual = len(_re.findall(_re.escape(term), article))
-
-            entry = {
-                "term":   ng.get("ngram") or ng.get("text"),
-                "actual": actual,
-                "min":    freq_min,
-                "max":    freq_max,
-                "weight": round(weight, 3),
-            }
-
-            if actual == 0 and freq_min >= 1:
-                missing.append(entry)
-            elif 0 < actual < freq_min:
-                under.append(entry)
-            elif freq_max and actual > freq_max:
-                over.append(entry)
-            else:
-                ok.append(entry)
-
-        missing.sort(key=lambda x: x["weight"], reverse=True)
-        under.sort(key=lambda x: x["min"] - x["actual"], reverse=True)
-        over.sort(key=lambda x: x["actual"] - x["max"], reverse=True)
-
-        result = {
-            "missing": missing,
-            "under":   under,
-            "over":    over,
-            "ok":      ok,
-            "stats": {
-                "total":        len(ngrams),
-                "missing":      len(missing),
-                "under":        len(under),
-                "over":         len(over),
-                "ok":           len(ok),
-                "coverage_pct": round(len(ok) / max(len(ngrams), 1) * 100),
-            }
-        }
-        self.coverage_result = result
-        print(f"[COVERAGE] {result['stats']}")
-        return result
-
-    def run_entity_compliance(self) -> dict:
-        """
-        Run Entity SEO Compliance analysis on the assembled article.
-        Zero LLM calls — purely local analysis.
-        Reuses coverage_result for ngram_budget if available.
-        """
-        if not self.full_article:
-            return {"error": "No article to analyze", "overall_score": 0}
-
-        # Try to load spaCy for subject_ratio analysis
-        nlp = None
-        try:
-            from src.common.nlp_singleton import get_nlp
-            nlp = get_nlp()
-            print(f"[COMPLIANCE] spaCy loaded: {nlp.meta.get('name', 'unknown')}")
-        except Exception as e:
-            print(f"[COMPLIANCE] spaCy not available ({e}) — subject_ratio will be 0%")
-
-        return run_entity_seo_compliance(
-            article_text=self.full_article,
-            s1_data=self._s1_full,
-            ngram_coverage=getattr(self, "coverage_result", None),
-            nlp=nlp,
-        )
-
-    def run_post_processing(self) -> dict:
-        """
-        Step 5: Validate the full article.
-        Returns validation result with score.
-        """
-        if not self.full_article:
-            self.assemble_article()
-
-        post_vars = {
-            **self.variables,
-            "PELNY_TEKST_ARTYKULU": self.full_article,
-        }
-
-        system = "Jesteś walidatorem tekstu SEO. Analizujesz artykuły pod kątem zgodności z wytycznymi."
-        user = fill_template(POST_PROCESSING_PROMPT, post_vars)
-
-        response = self._llm_call(system, user, max_tokens=3000)
-        parsed = _safe_json_parse(response)
-
-        if parsed:
-            self.validation_result = parsed
-        else:
-            # Local validation fallback
-            self.validation_result = validate_global(self.full_article, self.variables)
-
-        return self.validation_result
+        self.prompt_log.append({
+            "label": label,
+            "system_preview": system[:200],
+            "user_preview": user[:200],
+            "response_preview": response[:200],
+            "usage": usage,
+        })
+        return response
 
     def run_full_pipeline(self) -> Generator[dict, None, None]:
         """
-        Run the complete article generation pipeline with SSE-compatible events.
-        Yields status events for each step.
+        Run the complete v2.0 pipeline with SSE events.
+
+        Steps:
+        1. YMYL detection (Haiku)
+        2. Search variants (Haiku)
+        3. H2 plan (Sonnet)
+        4. Brief compilation (code)
+        5. Article writing (Sonnet) <- THE MAIN CALL
+        6. N-gram check + patch (code + optional Haiku)
+        7. Compliance check (code)
         """
-        # H2 plan is unknown before Claude generates it — estimate 6 sections, update after
-        h2_count_est = 6
-        # Steps: YMYL + variants + H2 plan + pre-batch + batch0 + H2s + FAQ + post-processing
-        total_steps = 7 + h2_count_est
+        total_steps = 7
 
-        # Step 1: YMYL detection
-        yield {"event": "step_start", "step": 1, "total": total_steps, "label": "YMYL: detekcja kategorii"}
-        ymyl = self.run_ymyl_detection()
-        yield {"event": "step_done", "step": 1, "data": {"ymyl": ymyl}}
+        # -- Step 1: YMYL --
+        yield {"event": "step_start", "step": 1, "total": total_steps,
+               "label": "YMYL: detekcja kategorii"}
+        ymyl_class = self._detect_ymyl()
+        ymyl_context = self._enrich_ymyl(ymyl_class)
+        yield {"event": "step_done", "step": 1,
+               "data": {"ymyl": ymyl_class}}
 
-        # Step 2: Search variants
-        yield {"event": "step_start", "step": 2, "total": total_steps, "label": "Warianty wyszukiwania"}
-        variants = self.run_search_variants()
-        yield {"event": "step_done", "step": 2, "data": {"variants_count": sum(len(v) for v in variants.values())}}
+        # -- Step 2: Search variants --
+        yield {"event": "step_start", "step": 2, "total": total_steps,
+               "label": "Warianty jezykowe"}
+        variants = self._generate_variants()
+        yield {"event": "step_done", "step": 2,
+               "data": {"variants_count": sum(len(v) for v in variants.values() if isinstance(v, list))}}
 
-        # Step 3: H2 plan — Claude generates article structure based on scored candidates
-        yield {"event": "step_start", "step": 3, "total": total_steps, "label": "Plan H2: struktura artykułu"}
-        h2_plan = self.run_h2_plan()
-        h2_count = len(h2_plan)
-        total_steps = 7 + h2_count  # recalculate with actual H2 count
-        yield {"event": "step_done", "step": 3, "data": {
-            "h2_plan": getattr(self, "_h2_plan_full", h2_plan),
-            "faq_plan": getattr(self, "_faq_plan", []),
-            "coverage_check": getattr(self, "_h2_coverage_check", {}),
-            "h2_count": h2_count,
-        }}
+        # -- Step 3: H2 plan --
+        yield {"event": "step_start", "step": 3, "total": total_steps,
+               "label": "Plan artykulu"}
+        plan = self._generate_h2_plan()
+        h2_plan = plan.get("h2_plan", [])
+        faq_plan = plan.get("faq", [])
+        h1 = plan.get("h1_suggestion", self.variables.get("HASLO_GLOWNE", "") + " - kompletny przewodnik")
+        yield {"event": "step_done", "step": 3,
+               "data": {"h2_plan": h2_plan, "faq": faq_plan, "h1": h1}}
 
-        # Build PLAN_FAQ from faq_plan or PAA questions
-        faq_plan = getattr(self, "_faq_plan", [])
-        if faq_plan:
-            faq_questions = [f.get("question", "") for f in faq_plan if f.get("question")]
-        else:
-            faq_questions = (
-                self.variables.get("_paa_unanswered", [])[:4]
-                + self.variables.get("_paa_standard", [])[:3]
-            )
-        self.variables["PLAN_FAQ"] = "\n".join(f"- {q}" for q in faq_questions)
+        # -- Step 4: Brief compilation --
+        yield {"event": "step_start", "step": 4, "total": total_steps,
+               "label": "Kompilacja briefu"}
 
-        # Populate JSON data placeholders for ARTICLE_WRITER_PROMPT
-        self.variables["ENCJE_KRYTYCZNE_JSON"] = self.variables.get("ENCJE_KRYTYCZNE", "[]")
-        self.variables["NGRAMY_Z_LIMITAMI_JSON"] = self.variables.get("NGRAMY_Z_LIMITAMI", "[]")
-        self.variables["LANCUCHY_KAUZALNE_JSON"] = self.variables.get("LANCUCHY_KAUZALNE", "[]")
-        self.variables["HARD_FACTS_JSON"] = json.dumps(
-            _hard_facts_values(self.variables.get("_hard_facts", [])), ensure_ascii=False
+        brief_text = compile_brief(
+            s1_data=self._s1_full,
+            variables=self.variables,
+            h2_plan=h2_plan,
+            faq_plan=faq_plan,
+            h1=h1,
+            search_variants=variants,
+            ymyl_class=ymyl_class,
+            ymyl_context=ymyl_context,
         )
-        self.variables["PERYFRAZY_JSON"] = self.variables.get("PERYFRAZY", "[]")
-        self.variables["WARIANTY_POTOCZNE_JSON"] = self.variables.get("WARIANTY_POTOCZNE", "[]")
-        # H1 placeholder — will be filled by batch_0, set default for now
-        if "H1" not in self.variables:
-            kw = self.variables.get("HASLO_GLOWNE", "")
-            self.variables["H1"] = f"{kw} — kompletny przewodnik"
 
-        # Snapshot all input variables after H2 plan is ready
-        self.input_variables = {k: v for k, v in self.variables.items() if not k.startswith("_")}
+        example = build_example_paragraph(
+            keyword=self.variables.get("HASLO_GLOWNE", ""),
+            hard_facts=self.variables.get("_hard_facts", []),
+            ymyl_class=ymyl_class,
+        )
 
-        # Step 4: Pre-batch
-        yield {"event": "step_start", "step": 4, "total": total_steps, "label": "Pre-Batch: mapa rozmieszczeń"}
-        self.run_pre_batch()
-        # Generate brief (after pre-batch, all data ready)
-        brief_data = None
+        # Snapshot input variables for panel
+        self.input_variables = {k: v for k, v in self.variables.items()
+                                 if not k.startswith("_")}
+
+        yield {"event": "step_done", "step": 4,
+               "data": {"brief_preview": brief_text[:500],
+                        "brief": brief_text}}
+
+        # -- Step 5: WRITE ARTICLE (main Sonnet call) --
+        yield {"event": "step_start", "step": 5, "total": total_steps,
+               "label": "Pisanie artykulu"}
+
+        user_prompt = WRITER_USER.format(
+            brief_text=brief_text,
+            example_paragraph=example,
+        )
+
+        article = self._llm_call(
+            system=WRITER_SYSTEM,
+            user=user_prompt,
+            max_tokens=8000,
+            label="write_article",
+            temperature=0.7,
+        )
+
+        # Clean up
+        article = article.strip()
+
+        # Local validation (forbidden phrases)
+        issues = check_forbidden_phrases(article)
+        if issues:
+            print(f"[WRITER] Found {len(issues)} forbidden phrases - removing")
+            for phrase in issues:
+                article = re.sub(
+                    re.escape(phrase), "", article, flags=re.IGNORECASE
+                )
+
+        self.full_article = article
+
+        yield {"event": "step_done", "step": 5,
+               "data": {"text": article,
+                         "word_count": len(article.split())}}
+        yield {"event": "article_assembled",
+               "data": {"full_text": article,
+                        "total_words": len(article.split())}}
+
+        # -- Step 6: N-gram check + patch --
+        yield {"event": "step_start", "step": 6, "total": total_steps,
+               "label": "Sprawdzenie fraz kluczowych"}
+
+        from src.article_pipeline.ngram_patcher import check_ngram_coverage, patch_missing_ngrams
+
+        ngrams = (self._s1_full.get("ngrams") or []) + (self._s1_full.get("extended_terms") or [])
+        coverage = check_ngram_coverage(article, ngrams)
+
+        patches_applied = []
+        important_missing = coverage.get("important_missing", [])
+        if len(important_missing) >= 3:
+            print(f"[PATCHER] {len(important_missing)} important phrases missing - patching")
+            article, patches_applied = patch_missing_ngrams(
+                article, important_missing, max_patches=5
+            )
+            if patches_applied:
+                self.full_article = article
+                # Recheck coverage
+                coverage = check_ngram_coverage(article, ngrams)
+
+        yield {"event": "step_done", "step": 6,
+               "data": {"coverage": coverage,
+                         "patches": len(patches_applied)}}
+
+        # -- Step 7: Compliance --
+        yield {"event": "step_start", "step": 7, "total": total_steps,
+               "label": "Compliance check"}
+
+        entity_compliance = None
         try:
-            from src.article_pipeline.brief_generator import generate_brief
-            brief_data = generate_brief(
+            from src.article_pipeline.entity_seo_compliance import run_entity_seo_compliance
+            nlp = None
+            try:
+                from src.common.nlp_singleton import get_nlp
+                nlp = get_nlp()
+            except Exception:
+                pass
+            entity_compliance = run_entity_seo_compliance(
+                article_text=article,
                 s1_data=self._s1_full,
-                variables=self.variables,
-                pre_batch_map=self.pre_batch_map,
+                ngram_coverage=coverage,
+                nlp=nlp,
             )
         except Exception as e:
-            print(f"[BRIEF] Error generating brief: {e}")
+            print(f"[COMPLIANCE] Error: {e}")
 
-        yield {"event": "step_done", "step": 4, "data": {
-            "pre_batch_keys": list((self.pre_batch_map or {}).keys()),
-            "pre_batch_map": self.pre_batch_map or {},
-            "input_variables": self.input_variables,
-            "brief": brief_data,
-        }}
+        yield {"event": "step_done", "step": 7,
+               "data": {"compliance_score": (entity_compliance or {}).get("overall_score", 0)}}
 
-        # Step 5: Batch 0
-        yield {"event": "step_start", "step": 5, "total": total_steps, "label": "Batch 0: H1 + wstęp"}
-        intro = self.run_batch_0()
-        yield {"event": "step_done", "step": 5, "data": {
-            "text": intro, "word_count": len(intro.split()),
-            "keyword_budget": self.keyword_tracker.get_summary(),
-        }}
-
-        # Steps 6..N: H2 sections
-        h2_plan = self.variables.get("_h2_plan_list", [])
-        for i, h2 in enumerate(h2_plan):
-            step = 6 + i
-            yield {"event": "step_start", "step": step, "total": total_steps, "label": f"Batch {i+1}: {h2[:50]}"}
-            section = self.run_batch_n(i + 1, h2, h2)
-            yield {"event": "step_done", "step": step, "data": {
-                "text": section, "word_count": len(section.split()),
-                "keyword_budget": self.keyword_tracker.get_summary(),
-            }}
-
-        # FAQ
-        faq_step = 6 + h2_count
-        yield {"event": "step_start", "step": faq_step, "total": total_steps, "label": "Batch FAQ"}
-        faq = self.run_batch_faq()
-        yield {"event": "step_done", "step": faq_step, "data": {"text": faq, "word_count": len(faq.split())}}
-
-        # Assemble
-        article = self.assemble_article()
-        yield {"event": "article_assembled", "data": {
-            "full_text": article,
-            "total_words": len(article.split()),
-            "total_batches": len(self.batch_texts),
-        }}
-
-        # Editorial proofreading — runs as separate /api/proofread call from frontend
-        # (removed from pipeline to avoid Render SIGTERM killing the worker)
-        proofread_result = None
-
-        # Post-processing validation
-        yield {"event": "step_start", "step": total_steps, "total": total_steps, "label": "Post-Processing: walidacja"}
-        validation = self.run_post_processing()
-
-        # Coverage check — bez LLM, czysto lokalne
-        coverage = self.run_coverage_check()
-
-        # Entity SEO Compliance — czysto lokalne
-        entity_compliance = self.run_entity_compliance()
-
-        yield {"event": "step_done", "step": total_steps, "data": {"validation": validation}}
-
+        # -- Complete --
         yield {"event": "complete", "data": {
             "full_text": article,
             "total_words": len(article.split()),
-            "validation_score": validation.get("score", 0) if validation else 0,
-            "ymyl": self.ymyl_result,
+            "validation_score": (entity_compliance or {}).get("overall_score", 0),
+            "ymyl": ymyl_class,
             "prompt_log": self.prompt_log,
             "input_variables": self.input_variables,
-            "pre_batch_map": self.pre_batch_map or {},
             "coverage": coverage,
             "entity_compliance": entity_compliance,
-            "keyword_budget": self.keyword_tracker.get_summary(),
-            "keyword_reports": self.keyword_tracker.batch_reports,
-            "proofreading": proofread_result,
-            "brief": brief_data,
+            "brief": brief_text,
             "s1_data": self._s1_full,
+            "h2_plan": h2_plan,
+            "faq_plan": faq_plan,
         }}
+
+    # ==============================================================
+    # Helper methods
+    # ==============================================================
+
+    def _detect_ymyl(self) -> str:
+        """Detect YMYL category."""
+        try:
+            from src.article_pipeline.ymyl_detector import detect_ymyl
+            result = detect_ymyl(self.variables.get("HASLO_GLOWNE", ""))
+            return result.get("category", "none")
+        except Exception:
+            return "none"
+
+    def _enrich_ymyl(self, ymyl_class: str) -> str:
+        """Get YMYL context (legal/medical enrichment)."""
+        if ymyl_class == "none":
+            return ""
+        try:
+            if ymyl_class == "prawo":
+                from src.ymyl.legal_enricher import enrich_legal
+                result = enrich_legal(self.variables.get("HASLO_GLOWNE", ""), self._s1_full)
+                ctx = result.get("context_block", "")
+                self.variables["YMYL_CONTEXT"] = ctx
+                return ctx
+            elif ymyl_class == "zdrowie":
+                from src.ymyl.medical_enricher import enrich_medical
+                result = enrich_medical(self.variables.get("HASLO_GLOWNE", ""), self._s1_full)
+                ctx = result.get("context_block", "")
+                self.variables["YMYL_CONTEXT"] = ctx
+                return ctx
+        except Exception as e:
+            print(f"[YMYL] Enrichment error: {e}")
+        return ""
+
+    def _generate_variants(self) -> dict:
+        """Generate search variants via existing search_variants module."""
+        keyword = self.variables.get("HASLO_GLOWNE", "")
+        try:
+            from src.article_pipeline.search_variants import generate_search_variants
+            result = generate_search_variants(keyword)
+            # Normalize structure for brief_compiler
+            mf = result.get("mention_forms", {})
+            return {
+                "peryfrazy": result.get("peryfrazy", []),
+                "warianty_potoczne": result.get("warianty_potoczne", []),
+                "warianty_formalne": result.get("warianty_formalne", []),
+                "named_forms": [mf.get("named", keyword)] if isinstance(mf.get("named"), str) else mf.get("named", [keyword]),
+                "nominal_forms": mf.get("nominal", []),
+                "pronominal_cues": mf.get("pronominal", []),
+                "mention_forms": mf,
+            }
+        except Exception as e:
+            print(f"[VARIANTS] Error: {e}")
+            return {"peryfrazy": [], "named_forms": [keyword]}
+
+    def _generate_h2_plan(self) -> dict:
+        """Generate H2 plan via Sonnet."""
+        keyword = self.variables.get("HASLO_GLOWNE", "")
+        target_length = int(self.variables.get("DLUGOSC_CEL", 800) or 800)
+
+        # Determine H2 count from target length
+        h2_count = max(2, min(5, target_length // 300))
+        faq_count = max(3, min(7, 4 + len(self.variables.get("_paa_unanswered", []))))
+
+        # Scored H2 candidates from S1
+        h2_candidates = self._s1_full.get("h2_scored_candidates", {})
+        all_candidates = (
+            h2_candidates.get("must_have", []) +
+            h2_candidates.get("high_priority", []) +
+            h2_candidates.get("optional", [])
+        )
+        # Also try flat list
+        if not all_candidates and isinstance(h2_candidates, list):
+            all_candidates = h2_candidates
+
+        scored = json.dumps(all_candidates[:15], ensure_ascii=False) if all_candidates else "[]"
+
+        must_cover = json.dumps(
+            self.variables.get("_must_cover", [])[:12], ensure_ascii=False
+        )
+
+        paa = self.variables.get("_paa_unanswered", []) + self.variables.get("_paa_standard", [])
+        paa_str = "\n".join(f"- {q}" for q in paa[:10])
+
+        # Use user-provided H2 structure if available
+        if self._h2_keywords:
+            return {
+                "h2_plan": self._h2_keywords,
+                "faq": paa[:faq_count],
+                "h1_suggestion": f"{keyword} - kompletny przewodnik",
+            }
+
+        prompt = H2_PLAN_USER.format(
+            keyword=keyword,
+            scored_h2=scored,
+            must_cover=must_cover,
+            paa_questions=paa_str,
+            h2_count=h2_count,
+            faq_count=faq_count,
+        )
+
+        try:
+            response = self._llm_call(
+                system=H2_PLAN_SYSTEM,
+                user=prompt,
+                max_tokens=2000,
+                label="h2_plan",
+                temperature=0.3,
+            )
+            parsed = _safe_json_parse(response)
+            if parsed and "h2_plan" in parsed:
+                return parsed
+        except Exception:
+            pass
+
+        # Fallback
+        fallback_h2 = []
+        for c in all_candidates[:h2_count]:
+            if isinstance(c, dict):
+                fallback_h2.append(c.get("text", c.get("h2", str(c))))
+            else:
+                fallback_h2.append(str(c))
+
+        # If still empty, use _h2_plan_list from variables
+        if not fallback_h2:
+            fallback_h2 = self.variables.get("_h2_plan_list", [f"Czym jest {keyword}", f"Jak dziala {keyword}"])
+
+        return {
+            "h2_plan": fallback_h2,
+            "faq": paa[:faq_count],
+            "h1_suggestion": f"{keyword} - kompletny przewodnik",
+        }
