@@ -738,6 +738,37 @@ function renderBrief(data) {
     if (!c) return;
     let h = '';
 
+    // v2.0: brief is a plain text string
+    if (typeof data === 'string') {
+        h += '<div class="card"><div class="card-title">BRIEF REDAKCYJNY v2.0</div>';
+        // Parse sections from the text brief
+        var lines = data.split('\n');
+        var currentSection = '';
+        lines.forEach(function(line) {
+            if (line.startsWith('TEMAT:') || line.startsWith('DLUGOSC:') || line.startsWith('FRAZA GLOWNA:')) {
+                h += '<p style="font-size:14px;margin:4px 0"><b>' + esc(line.split(':')[0]) + ':</b> ' + esc(line.substring(line.indexOf(':') + 1).trim()) + '</p>';
+            } else if (line.startsWith('---')) {
+                h += '</div><div class="card" style="border-left:3px solid #4fc3f7;margin-top:8px">';
+            } else if (line.startsWith('SEKCJA ') || line.startsWith('NAJCZESCIEJ') || line.startsWith('H1:') || line.startsWith('INTRO')) {
+                h += '<div class="card-title" style="color:#4fc3f7;font-size:13px;margin-top:8px">' + esc(line) + '</div>';
+            } else if (line.startsWith('WARIANTY') || line.startsWith('FRAZY KLUCZOWE') || line.startsWith('STYL:') || line.startsWith('KONTEKST') || line.startsWith('DISCLAIMER')) {
+                h += '<div class="card-title" style="color:var(--yl);font-size:12px;margin-top:8px">' + esc(line) + '</div>';
+            } else if (line.trim().startsWith('- ')) {
+                h += '<div style="font-size:12px;color:var(--lg);padding-left:12px;margin:2px 0">' + esc(line.trim()) + '</div>';
+            } else if (line.trim()) {
+                h += '<p style="font-size:12px;color:var(--lg);margin:2px 0">' + esc(line) + '</p>';
+            }
+        });
+        h += '</div>';
+        // Copy button
+        h += '<div style="text-align:center;margin:16px 0">';
+        h += '<button class="btn-secondary" onclick="copyBriefMarkdown()">Kopiuj brief (tekst)</button>';
+        h += '</div>';
+        c.innerHTML = h;
+        return;
+    }
+
+    // v1.0 backward compat: brief is a dict object
     // Header
     const hdr = data.header || {};
     h += '<div class="card"><div class="card-title">BRIEF CONTENTOWY</div>';
@@ -1050,6 +1081,11 @@ function renderProofreading(data) {
 function copyBriefMarkdown() {
     if (!window._briefData) { alert('Brak danych briefu'); return; }
     var b = window._briefData;
+    // v2.0: brief is already a string
+    if (typeof b === 'string') {
+        navigator.clipboard.writeText(b).then(function() { alert('Brief skopiowany!'); });
+        return;
+    }
     var md = '';
 
     // 1. Header
@@ -2268,10 +2304,6 @@ async function startWorkflow() {
                     setStepDone(d.step, d.data || {});
                     const wc = d.data ? d.data.word_count : null;
                     log('Step ' + d.step + ' done' + (wc ? ' (' + wc + ' slow)' : ''), 'ok');
-                    // Render pre-batch tab when pre-batch data arrives
-                    if (d.data && d.data.pre_batch_map) {
-                        renderPreBatch(d.data.pre_batch_map, d.data.input_variables || {}, []);
-                    }
                     // Render proofreading when step data arrives
                     if (d.data && d.data.proofreading) {
                         proofFlagged = (d.data.proofreading.flagged || []);
@@ -2296,9 +2328,13 @@ async function startWorkflow() {
                         if (d.data.validation_score !== undefined || d.data.validation) {
                             showValidation(d.data.validation || { score: d.data.validation_score });
                         }
-                        // Update pre-batch tab with full data including prompt log
-                        if (d.data.pre_batch_map) {
-                            renderPreBatch(d.data.pre_batch_map, d.data.input_variables || {}, d.data.prompt_log || []);
+                        // Input variables for pre-batch tab
+                        if (d.data.input_variables) {
+                            renderPreBatch({}, d.data.input_variables || {}, d.data.prompt_log || []);
+                        }
+                        // Coverage report
+                        if (d.data.coverage) {
+                            renderCoverage(d.data.coverage);
                         }
                         // Brief
                         if (d.data.brief) {
@@ -3054,6 +3090,28 @@ function toggleAnnLayer(id) {
     if (annLayers.has(id)) annLayers.delete(id);
     else annLayers.add(id);
     renderAnnotationView();
+}
+
+function renderCoverage(coverage) {
+    if (!coverage) return;
+    var el = document.getElementById('prebatchContent');
+    if (!el) return;
+    var h = '<div class="card"><div class="card-title">Pokrycie fraz kluczowych</div>';
+    h += '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;font-size:13px;text-align:center;margin-bottom:12px">';
+    h += '<div><b style="font-size:20px;color:var(--gn)">' + (coverage.coverage_pct || 0) + '%</b><br>Pokrycie</div>';
+    h += '<div><b style="font-size:20px;color:var(--yl)">' + (coverage.missing || []).length + '</b><br>Brakujace</div>';
+    h += '<div><b style="font-size:20px;color:var(--cyan)">' + (coverage.present || []).length + '</b><br>Obecne</div>';
+    h += '</div>';
+    var imp = coverage.important_missing || [];
+    if (imp.length > 0) {
+        h += '<div style="margin-top:8px"><b style="color:var(--rd);font-size:12px">Wazne brakujace frazy:</b><ul style="padding-left:16px;margin:4px 0">';
+        imp.forEach(function(m) {
+            h += '<li style="font-size:12px;color:var(--lg)">' + esc(m.term) + ' <span style="color:var(--mg)">(waga: ' + m.weight.toFixed(2) + ')</span></li>';
+        });
+        h += '</ul></div>';
+    }
+    h += '</div>';
+    el.innerHTML = h + el.innerHTML;
 }
 
 function renderAnnotationView() {

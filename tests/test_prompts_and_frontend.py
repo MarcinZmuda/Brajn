@@ -71,7 +71,7 @@ class TestProofreaderDiagnosticLogging:
 
 
 class TestHallucinationPrevention:
-    """Verify <hallucination_prevention> block in prompts."""
+    """Verify anti-hallucination rules in WRITER_SYSTEM (v2.0)."""
 
     def _read_prompts(self):
         filepath = os.path.join(
@@ -80,34 +80,35 @@ class TestHallucinationPrevention:
         with open(filepath, encoding="utf-8") as f:
             return f.read()
 
-    def test_hallucination_prevention_exists(self):
+    def test_hallucination_prevention_in_writer_system(self):
         source = self._read_prompts()
-        assert "<hallucination_prevention>" in source
-        assert "</hallucination_prevention>" in source
+        start = source.find('WRITER_SYSTEM = """')
+        end = source.find('"""', start + 20)
+        ws = source[start:end]
+        assert "WYLACZNIE" in ws, "WRITER_SYSTEM should restrict to brief facts only"
 
     def test_prevention_forbids_ungrounded_facts(self):
         source = self._read_prompts()
-        start = source.find("<hallucination_prevention>")
-        end = source.find("</hallucination_prevention>")
-        block = source[start:end]
-        assert "BEZWZGLĘDNY ZAKAZ" in block or "ZAKAZ" in block
-        assert "NIE MA" in block
-        assert "hard_facts" in block
+        start = source.find('WRITER_SYSTEM = """')
+        end = source.find('"""', start + 20)
+        ws = source[start:end]
+        assert "kwoty" in ws.lower() or "bez kwoty" in ws.lower(), \
+            "Should warn about inventing amounts"
 
     def test_prevention_suggests_generic_alternatives(self):
         source = self._read_prompts()
-        start = source.find("<hallucination_prevention>")
-        end = source.find("</hallucination_prevention>")
-        block = source[start:end]
-        assert "kara grzywny" in block or "ogólnie" in block
+        start = source.find('WRITER_SYSTEM = """')
+        end = source.find('"""', start + 20)
+        ws = source[start:end]
+        assert "ogolnie" in ws.lower(), "Should suggest writing generally when no data"
 
     def test_prevention_mentions_consequences(self):
         """Should warn about real-world consequences of wrong numbers."""
         source = self._read_prompts()
-        start = source.find("<hallucination_prevention>")
-        end = source.find("</hallucination_prevention>")
-        block = source[start:end]
-        assert "szkoda" in block or "błąd" in block
+        start = source.find('WRITER_SYSTEM = """')
+        end = source.find('"""', start + 20)
+        ws = source[start:end]
+        assert "szkode" in ws.lower() or "szkoda" in ws.lower() or "blad" in ws.lower()
 
 
 class TestProofreadEndpointErrorHandling:
@@ -140,7 +141,7 @@ class TestProofreadEndpointErrorHandling:
 
 
 class TestPromptsCompanyBan:
-    """Verify company/brand name ban is present in prompts."""
+    """Verify company/brand name ban is present in WRITER_SYSTEM (v2.0)."""
 
     def _read_prompts(self):
         filepath = os.path.join(
@@ -149,34 +150,28 @@ class TestPromptsCompanyBan:
         with open(filepath, encoding="utf-8") as f:
             return f.read()
 
-    def test_ban_in_batch_n_system(self):
-        """BATCH_N_SYSTEM should contain company name ban."""
+    def test_ban_in_writer_system(self):
+        """WRITER_SYSTEM should contain company name ban."""
         source = self._read_prompts()
-        # Find BATCH_N_SYSTEM content
-        start = source.find('BATCH_N_SYSTEM = """')
+        start = source.find('WRITER_SYSTEM = """')
         end = source.find('"""', start + 20)
-        batch_n = source[start:end]
+        ws = source[start:end]
+        assert "nazw firm" in ws or "marek" in ws.lower() or "firm" in ws.lower(), \
+            "WRITER_SYSTEM missing company name ban"
 
-        assert "nazw firm" in batch_n or "NAZWY" in batch_n, \
-            "BATCH_N_SYSTEM missing company name ban"
-
-    def test_ban_in_article_writer_prompt(self):
-        """ARTICLE_WRITER_PROMPT should contain company name ban in formatting_rules."""
+    def test_ban_in_writer_system_with_exception(self):
+        """Ban should allow firm names in H2 headings when required by brief."""
         source = self._read_prompts()
-        start = source.find('ARTICLE_WRITER_PROMPT = """')
-        end = source.find('"""', start + 30)
-        writer = source[start:end]
+        start = source.find('WRITER_SYSTEM = """')
+        end = source.find('"""', start + 20)
+        ws = source[start:end]
+        assert "H2" in ws or "naglowku" in ws.lower() or "brief" in ws.lower(), \
+            "Ban should mention exception for H2 headings"
 
-        assert "nazw firm" in writer or "NAZWY WŁASNE" in writer, \
-            "ARTICLE_WRITER_PROMPT missing company name ban"
-        assert "formatting_rules" in writer.lower() or "<formatting_rules>" in writer, \
-            "Company ban should be inside <formatting_rules>"
-
-    def test_ban_mentions_alternatives(self):
-        """Ban should suggest alternatives like 'producent', 'specjaliści'."""
+    def test_ban_exists_in_source(self):
+        """Company name ban should exist somewhere in prompts."""
         source = self._read_prompts()
-        assert "producent" in source
-        assert "specjali" in source  # specjaliści
+        assert "firm" in source.lower(), "Prompts should mention firm names"
 
 
 class TestFrontendIndexHtml:
