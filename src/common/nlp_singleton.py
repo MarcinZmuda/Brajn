@@ -1,8 +1,8 @@
 """
 Shared spaCy NLP singleton — prevents loading model multiple times.
 Tries pl_core_news_lg first (better NER), falls back to sm.
+Lazy import: spaCy is only imported when get_nlp() is first called.
 """
-import spacy
 
 _PREFERRED_MODEL = "pl_core_news_lg"
 _FALLBACK_MODEL = "pl_core_news_sm"
@@ -15,6 +15,8 @@ def get_nlp():
     global _nlp
     if _nlp is not None:
         return _nlp
+
+    import spacy
 
     for model in (_PREFERRED_MODEL, _FALLBACK_MODEL):
         try:
