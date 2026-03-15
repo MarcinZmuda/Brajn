@@ -5,7 +5,7 @@ sentence rhythm, passive voice, and lexical diversity.
 """
 import re
 from collections import Counter
-from src.article_pipeline.prompts import (
+from src.article_pipeline.validators import (
     FORBIDDEN_PHRASES,
     BANNED_OPENERS,
     BANNED_ANYWHERE,

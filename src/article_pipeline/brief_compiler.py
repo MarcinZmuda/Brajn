@@ -207,41 +207,72 @@ def compile_brief(
 
 
 def build_example_paragraph(
-    keyword: str, hard_facts: list, ymyl_class: str
+    keyword: str,
+    hard_facts: list,
+    ymyl_class: str,
+    causal_data=None,
+    entity_seo: dict = None,
 ) -> str:
     """
-    Build an example paragraph for the writer prompt.
-    Shows desired style: concrete facts, active voice, bridge sentence.
+    Build example paragraph from REAL S1 data of this article.
+    Falls back to style template if no data available.
     """
-    examples = {
-        "prawo": (
-            f'Temat: "{keyword}"\n\n'
-            f'"Przekroczenie 0,5 promila alkoholu we krwi zmienia kwalifikacje z wykroczenia '
-            f"na przestepstwo. Sad orzeka wtedy zakaz prowadzenia pojazdow na minimum 3 lata "
-            f"i naklada swiadczenie pieniezne na Fundusz Pomocy Pokrzywdzonym. Prowadzenie "
-            f"w takim stanie konczy sie wpisem do Krajowego Rejestru Karnego, co utrudnia "
-            f"znalezienie pracy wymagajacej zaswiadczenia o niekaralnosci. Jesli kierowca "
-            f'spowoduje wypadek, kary rosna drastycznie - o tym w kolejnej sekcji."'
-        ),
-        "zdrowie": (
-            f'Temat: "{keyword}"\n\n'
-            f'"Koldra obciazeniowa dziala na zasadzie glebokiego ucisku - rownomierny nacisk '
-            f"na cialo stymuluje receptory proprioceptywne w skorze i miesniach. Ten mechanizm "
-            f"obniza poziom kortyzolu i wspiera produkcje melatoniny, co przyspiesza zasypianie. "
-            f"Badania wskazuja na poprawe jakosci snu u osob z bezsennoscia napieciowa. Dobor "
-            f'odpowiedniej wagi koldry zalezy od masy ciala uzytkownika - szczegoly w kolejnej sekcji."'
-        ),
-        "none": (
-            f'Temat: "{keyword}"\n\n'
-            f'"Kurs barberski od podstaw trwa zazwyczaj dwa intensywne dni warsztatowe. '
-            f"Program laczy teorie - anatomie wlosa, dobor fryzury do ksztaltu twarzy - "
-            f"z praktyka przy profesjonalnym fotelu. Uczysz sie klasycznych ciec, fade'ow "
-            f"i pracy brzytwa pod okiem instruktora, ktory dopasowuje tempo do twoich "
-            f"umiejetnosci. Po zdaniu egzaminu koncowego otrzymujesz certyfikat potwierdzajacy "
-            f'kwalifikacje - o tym, jak go wykorzystac w pracy, przeczytasz dalej."'
-        ),
-    }
-    return examples.get(ymyl_class, examples["none"])
+    # Extract first hard fact
+    fact_str = ""
+    if hard_facts:
+        f = hard_facts[0]
+        fact_str = f.get("value", str(f)) if isinstance(f, dict) else str(f)
+
+    # Extract first causal relation
+    cause, effect = "", ""
+    if causal_data:
+        if isinstance(causal_data, dict):
+            singles = causal_data.get("singles") or causal_data.get("relations") or []
+        elif isinstance(causal_data, list):
+            singles = causal_data
+        else:
+            singles = []
+        if singles and isinstance(singles[0], dict):
+            cause = singles[0].get("cause", "")
+            effect = singles[0].get("effect", "")
+
+    # Full data — fact + causal relation
+    if fact_str and cause and effect:
+        return (
+            f'Ponizej przyklad akapitu w oczekiwanym stylu —\n'
+            f'konkretne fakty z briefu, aktywna strona, przejscie do nastepnej sekcji:\n\n'
+            f'Temat: \u201e{keyword}\u201d\n'
+            f'Uzyty fakt: {fact_str}\n'
+            f'Uzyta relacja: {cause} \u2192 {effect}\n\n'
+            f'Dobry akapit zawiera:\n'
+            f'  Zdanie 1: konkretny fakt z briefu (liczba, prog, wartosc)\n'
+            f'  Zdanie 2: mechanizm — DLACZEGO tak jest (spojnik: dlatego/poniewaz)\n'
+            f'  Zdanie 3: konsekwencja dla czytelnika\n'
+            f'  Zdanie 4: przejscie do tematu nastepnej sekcji'
+        )
+
+    # Partial data — fact only
+    if fact_str:
+        return (
+            f'Ponizej przyklad akapitu w oczekiwanym stylu:\n\n'
+            f'Temat: \u201e{keyword}\u201d\n'
+            f'Uzyty fakt: {fact_str}\n\n'
+            f'Dobry akapit zawiera:\n'
+            f'  Zdanie 1: konkretny fakt z briefu\n'
+            f'  Zdanie 2: wyjasnienie mechanizmu — DLACZEGO tak jest\n'
+            f'  Zdanie 3: konsekwencja dla czytelnika\n'
+            f'  Zdanie 4: przejscie do tematu nastepnej sekcji'
+        )
+
+    # Fallback — style template without specific data
+    return (
+        f'Wzorzec dobrego akapitu na temat \u201e{keyword}\u201d:\n\n'
+        f'  Zdanie 1: konkretny fakt z briefu (liczba, prog, wartosc).\n'
+        f'  Zdanie 2: mechanizm — DLACZEGO tak jest.\n'
+        f'  Zdanie 3: konsekwencja dla czytelnika.\n'
+        f'  Zdanie 4: przejscie do tematu nastepnej sekcji.\n\n'
+        f'Kazde zdanie wnosi nowa informacje. Bez ogolnikow.'
+    )
 
 
 # ==============================================================

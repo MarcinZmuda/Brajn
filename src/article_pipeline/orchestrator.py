@@ -155,6 +155,8 @@ class ArticleOrchestrator:
             keyword=self.variables.get("HASLO_GLOWNE", ""),
             hard_facts=self.variables.get("_hard_facts", []),
             ymyl_class=ymyl_class,
+            causal_data=self._s1_full.get("causal_triplets", {}),
+            entity_seo=self._s1_full.get("entity_seo", {}),
         )
 
         # Snapshot input variables for panel

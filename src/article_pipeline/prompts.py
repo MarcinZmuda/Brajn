@@ -143,49 +143,13 @@ Zwroc JSON: {{
 # LISTY: Zakazane frazy (walidacja lokalna, bez LLM)
 # ==============================================================
 
-FORBIDDEN_PHRASES = [
-    "warto zaznaczyc", "warto podkreslic", "nalezy zaznaczyc",
-    "nalezy podkreslic", "jest to wazne", "w dzisiejszym artykule",
-    "kluczowym aspektem", "podsumowujac powyzsze", "jak wspomniano wczesniej",
-    "co wiecej,", "ponadto,", "niemniej jednak,", "w zwiazku z powyzszym,",
-    "majac na uwadze", "nie sposob nie wspomniec", "wiele osob blednie",
-]
-
-BANNED_OPENERS = [
-    # Czasowe
-    "w dzisiejszych czasach", "w obecnych czasach", "wspolczesnie",
-    "w dzisiejszym swiecie", "w dynamicznie zmieniajacym sie swiecie",
-    # Hedge
-    "nie ulega watpliwosci", "nie da sie ukryc", "jak wiadomo",
-    "kazdy z nas", "coraz wiecej osob",
-    # Warto-frazy
-    "warto wiedziec", "warto zauwazyc", "warto podkreslic",
-    "warto pamietac", "warto dodac", "warto wspomniec",
-    # Nalezy-frazy
-    "nalezy podkreslic", "nalezy zauwazyc", "nalezy zaznaczyc",
-    "nalezy pamietac", "nalezy miec na uwadze",
-    # Waznosc
-    "istotne jest", "kluczowe jest", "wazne jest, aby",
-]
-
-BANNED_ANYWHERE = [
-    # Connectory / podsumowania
-    "co wiecej", "podsumowujac", "reasumujac", "w podsumowaniu",
-    "to prowadzi nas do wniosku", "w skrocie", "ogolnie rzecz biorac",
-    "mam nadzieje, ze", "oczywiscie", "to jeszcze", "to juz",
-    # Kalki / anglicyzmy
-    "posiadac", "zaadresowac", "zaimplementowac", "targetowac",
-    # Hiperbole AI
-    "niesamowity", "niezwykly", "wyjatkowy", "rewolucyjny",
-    "przelomowy", "game changer", "holistyczny", "kompleksowy",
-    # Pseudo-prawnicze
-    "na podstawie dostepnych danych", "w swietle obowiazujacych przepisow",
-    "zgodnie z litera prawa", "ustawodawca przewidzial",
-]
-
-BANNED_CHARS = [
-    "\u2014",  # em dash — zakazany, uzywaj krotkiego myslnika lub przecinka
-]
+# Validation lists moved to validators.py — re-exported for backward compatibility
+from src.article_pipeline.validators import (
+    FORBIDDEN_PHRASES,
+    BANNED_OPENERS,
+    BANNED_ANYWHERE,
+    BANNED_CHARS,
+)
 
 DISCLAIMERS = {
     "prawo": "Artykul ma charakter wylacznie informacyjny i nie stanowi porady prawnej. "
