@@ -339,18 +339,19 @@ class ArticleOrchestrator:
             )
         else:
             strong = len(h2_candidates) if isinstance(h2_candidates, list) else 0
-        sig2 = max(2, strong)
+        sig2 = max(4, strong)
 
         # Signal 3: Entity coverage needs (1 section per 3 entities)
         must_cover = self.variables.get("_must_cover", [])
-        sig3 = max(2, -(-len(must_cover) // 3))  # ceil division
+        sig3 = max(4, -(-len(must_cover) // 3))  # ceil division
 
         # Signal 4: Length hard limit (max 1 section per 250 words)
-        sig4 = max(2, target_length // 250)
+        sig4 = max(4, target_length // 250)
 
         # Result: median of signals 1-3, clamped by signal 4
+        # Min 4 H2 sections (intro + 4 sections + FAQ is the minimum structure)
         base = int(statistics.median([sig1, sig2, sig3]))
-        return max(2, min(base, sig4, 8))
+        return max(4, min(base, sig4, 8))
 
     def _generate_h2_plan(self) -> dict:
         """Generate H2 plan via Sonnet."""
