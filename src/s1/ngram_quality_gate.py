@@ -28,7 +28,7 @@ _RE_REPEATED_WORD = re.compile(r'^(\w+)(\s+\1)+$', re.IGNORECASE)
 
 # Rule 3: CSS/JS/HTML first-word tokens
 _CSS_JS_FIRST_WORDS = {
-    "font", "border", "margin", "padding", "display", "position",
+    "font", "fonts", "border", "margin", "padding", "display", "position",
     "background", "color", "text", "line", "flex", "grid",
     "overflow", "visibility", "opacity", "transition", "animation",
     "transform", "cursor", "pointer", "box", "object", "align",
@@ -40,6 +40,10 @@ _CSS_JS_FIRST_WORDS = {
     # CSS font stacks (catches "system blinkmacsystemfont", "segoe ui" etc.)
     "system", "blinkmacsystemfont", "segoe", "roboto", "helvetica",
     "arial", "sans", "serif", "monospace", "apple",
+    # CSS/web layout terms (catches "content themes", "gallery blocks" etc.)
+    "content", "gallery", "blocks", "sidebar", "widget", "wrapper",
+    "container", "layout", "template", "modules", "themes", "plugin",
+    "slider", "carousel", "modal", "dropdown", "tooltip", "popover",
 }
 
 # Rule 5: E-commerce UI patterns
@@ -183,6 +187,11 @@ def is_garbage_ngram(text: str) -> Tuple[bool, str]:
             "online", "biuletyn", "publicznej", "deklaracja",
             "inne", "powrót", "góry", "policja", "policji",
             "najważniejsze", "najwazniejsze", "serwisu",
+            # Blog/CMS navigation
+            "nawigacja", "wpisy", "wpisach", "wpisów", "wpis",
+            "kategoria", "kategorii", "kategorie", "tagi", "tagów",
+            "komentarze", "komentarzy", "sidebar", "widget",
+            "poprzedni", "następny", "starsze", "nowsze",
         }
         if all(w in _NAV_WORDS for w in words):
             return True, "nav_footer_vocabulary"
@@ -210,6 +219,19 @@ def filter_ngrams_quality(ngrams: list) -> list:
 
 def filter_entities_quality(entities: list) -> list:
     """Filter entities using lighter rules (preserve proper nouns). Returns clean list."""
+    _ENTITY_NAV_WORDS = {
+        "nawigacja", "wpisy", "wpisach", "wpisów", "sidebar", "widget",
+        "serwis", "serwisu", "portal", "menu", "mapa", "kontakt",
+        "archiwum", "redakcja", "newsletter", "biuletyn", "deklaracja",
+        "kategoria", "kategorii", "komentarze", "tagi",
+    }
+    _ENTITY_CSS_WORDS = {
+        "gallery", "blocks", "block", "content", "themes", "theme",
+        "modules", "module", "template", "wrapper", "container",
+        "slider", "carousel", "widget", "layout", "grid",
+        "fonts", "icons", "plugin", "plugins",
+    }
+
     clean = []
     removed = []
     for e in entities:
@@ -233,6 +255,18 @@ def filter_entities_quality(entities: list) -> list:
                 if pat.search(text):
                     is_garbage, reason = True, "ecommerce_ui"
                     break
+
+        # Entity-specific: nav/CMS vocabulary
+        if not is_garbage:
+            words = text.lower().split()
+            if len(words) <= 4 and words:
+                if all(w in _ENTITY_NAV_WORDS for w in words):
+                    is_garbage, reason = True, "nav_entity"
+                elif all(w in _ENTITY_CSS_WORDS for w in words):
+                    is_garbage, reason = True, "css_entity"
+                # Dot-prefixed CSS class names: "gallery .blocks", ".ast header"
+                elif any(w.startswith('.') for w in text.split()):
+                    is_garbage, reason = True, "css_class_entity"
 
         if is_garbage:
             removed.append((text, reason))

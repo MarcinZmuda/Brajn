@@ -668,11 +668,27 @@ def compute_salience_topical(
     h2_lower = [(h["text"].lower() if isinstance(h, dict) else h.lower()) for h in h2_patterns]
     h1_lower = [(h["text"].lower() if isinstance(h, dict) else h.lower()) for h in h1_patterns]
 
+    # Garbage words — skip topical entities that are nav/CSS boilerplate
+    _GARBAGE_TOPICAL = {
+        "nawigacja", "sidebar", "widget", "gallery", "blocks", "block",
+        "content", "themes", "theme", "modules", "module", "template",
+        "wrapper", "container", "slider", "carousel", "layout",
+        "fonts", "icons", "plugin", "plugins", "menu", "footer",
+        "header", "serwis", "serwisu", "portal", "archiwum",
+    }
+
     # Init signals
     entity_signals: Dict[str, SalienceSignals] = {}
     for e in entities:
         key = e.text.lower()
         if not key or len(key) < 3:
+            continue
+        # Skip garbage topical entities
+        key_words = set(key.replace('.', ' ').split())
+        if key_words and all(w in _GARBAGE_TOPICAL for w in key_words):
+            continue
+        # Skip dot-prefixed CSS class names
+        if '.' in key and any(w.startswith('.') for w in e.text.split()):
             continue
         display = getattr(e, "display_text", "") or e.text
         entity_signals[key] = SalienceSignals(

@@ -376,6 +376,27 @@ def extract_entities(
     except Exception:
         entities = entities[:50]
 
+    # ── Filter single-source ORG/brand names without keyword overlap ──
+    # "EXIGO Quality" from one scraped page shouldn't be an entity
+    if total_sources >= 3:
+        kw_words = set((urls[0] if urls else "").lower().split())  # fallback
+        # Use main_keyword if passed through extract call
+        _main_kw = ""
+        for e in entities[:1]:
+            # Try to infer keyword from most common entity
+            pass
+        before_brand = len(entities)
+        entities = [
+            e for e in entities
+            if not (
+                e.sources_count == 1
+                and e.type in ("ORGANIZATION", "PERSON", "ORG", "PER")
+                and e.frequency <= 3
+            )
+        ]
+        if len(entities) < before_brand:
+            print(f"[ENTITY] Removed {before_brand - len(entities)} single-source brand entities")
+
     return entities
 
 
