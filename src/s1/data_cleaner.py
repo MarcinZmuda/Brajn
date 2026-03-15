@@ -149,7 +149,7 @@ def clean_scraped_content(raw_text: str, max_chars: int = 50_000) -> str:
         stripped = line.strip()
 
         # Wykryj bloki do pominięcia (nawigacja, footer)
-        if _NAV_PATTERNS.search(stripped) and len(stripped) < 80:
+        if _NAV_PATTERNS.search(stripped) and len(stripped) < 150:
             skip_block = True
             block_skip_counter = 0
             continue

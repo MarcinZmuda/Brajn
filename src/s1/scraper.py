@@ -132,6 +132,7 @@ def _extract_content_from_html(html: str) -> str | None:
 
     if TRAFILATURA_AVAILABLE:
         try:
+            # Try precision=True first (cleaner boilerplate removal)
             content = trafilatura.extract(
                 html[:500_000],
                 include_comments=False,
@@ -139,6 +140,15 @@ def _extract_content_from_html(html: str) -> str | None:
                 no_fallback=False,
                 favor_precision=True,
             )
+            # If too short — fallback to recall mode
+            if not content or len(content) < 300:
+                content = trafilatura.extract(
+                    html[:500_000],
+                    include_comments=False,
+                    include_tables=True,
+                    no_fallback=False,
+                    favor_precision=False,
+                )
         except Exception as e:
             print(f"[SCRAPER] trafilatura failed: {e}")
             content = None
@@ -160,6 +170,11 @@ def _extract_content_from_html(html: str) -> str | None:
         # Remove elements with navigation/banner ARIA roles
         raw = re.sub(
             r'<[^>]+role\s*=\s*["\'](?:navigation|banner|contentinfo|complementary)["\'][^>]*>.*?</\w+>',
+            "", raw, flags=re.DOTALL | re.IGNORECASE,
+        )
+        # Remove common nav/footer/sidebar CSS classes
+        raw = re.sub(
+            r'<[^>]+class\s*=\s*["\'][^"\']*(?:sidebar|breadcrumb|pagination|cookie|social-share|related-posts|menu-item|footer-widget|site-footer|site-header)[^"\']*["\'][^>]*>.*?</\w+>',
             "", raw, flags=re.DOTALL | re.IGNORECASE,
         )
         raw = re.sub(r"<[^>]+>", " ", raw)

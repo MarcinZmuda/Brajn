@@ -198,7 +198,7 @@ def analyze_ngrams(
                 else (non_zero[mid - 1] + non_zero[mid]) // 2
             )
         else:
-            freq_min = freq_median = freq_max = 0
+            freq_min = freq_median = freq_max = 1  # minimum 1 to avoid NaN% in panel
 
         results.append({
             "ngram": display_ngram,
