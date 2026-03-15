@@ -320,13 +320,45 @@ class ArticleOrchestrator:
             print(f"[VARIANTS] Error: {e}")
             return {"peryfrazy": [], "named_forms": [keyword]}
 
+    def _determine_h2_count(self) -> int:
+        """Determine optimal H2 count from 4 signals."""
+        import statistics
+
+        target_length = int(self.variables.get("DLUGOSC_CEL", 800) or 800)
+
+        # Signal 1: Median H2 count from SERP competitors
+        serp_h2_counts = self._s1_full.get("serp_h2_counts", [])
+        sig1 = int(statistics.median(serp_h2_counts)) if serp_h2_counts else 4
+
+        # Signal 2: Strong H2 candidates (must_have + high_priority)
+        h2_candidates = self._s1_full.get("h2_scored_candidates", {})
+        if isinstance(h2_candidates, dict):
+            strong = (
+                len(h2_candidates.get("must_have", []))
+                + len(h2_candidates.get("high_priority", []))
+            )
+        else:
+            strong = len(h2_candidates) if isinstance(h2_candidates, list) else 0
+        sig2 = max(2, strong)
+
+        # Signal 3: Entity coverage needs (1 section per 3 entities)
+        must_cover = self.variables.get("_must_cover", [])
+        sig3 = max(2, -(-len(must_cover) // 3))  # ceil division
+
+        # Signal 4: Length hard limit (max 1 section per 250 words)
+        sig4 = max(2, target_length // 250)
+
+        # Result: median of signals 1-3, clamped by signal 4
+        base = int(statistics.median([sig1, sig2, sig3]))
+        return max(2, min(base, sig4, 8))
+
     def _generate_h2_plan(self) -> dict:
         """Generate H2 plan via Sonnet."""
         keyword = self.variables.get("HASLO_GLOWNE", "")
         target_length = int(self.variables.get("DLUGOSC_CEL", 800) or 800)
 
-        # Determine H2 count from target length
-        h2_count = max(2, min(5, target_length // 300))
+        # Determine H2 count dynamically from 4 signals
+        h2_count = self._determine_h2_count()
         faq_count = max(3, min(7, 4 + len(self.variables.get("_paa_unanswered", []))))
 
         # Scored H2 candidates from S1

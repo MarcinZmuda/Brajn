@@ -115,11 +115,12 @@ def _fuzzy_find(text: str, phrase: str, min_prefix: int = 4) -> bool:
 
 
 def _stem_word(word: str, min_len: int = 4) -> str:
-    """Get stem of a Polish word (first 75% of chars, min 4)."""
+    """Get stem of a Polish word (first 60% of chars, min 4).
+    Aggressive stemming to handle Polish inflection (odmiana)."""
     w = word.lower().strip()
     if len(w) < min_len:
         return w
-    return w[:max(min_len, int(len(w) * 0.75))]
+    return w[:max(min_len, int(len(w) * 0.6))]
 
 
 def _fuzzy_count_in_sentences(text: str, phrase: str) -> int:
@@ -235,35 +236,77 @@ def analyze_entity_salience(
             h2_with_entity.append(h2)
     in_h2_count = len(h2_with_entity)
 
-    # --- Subject ratio (spaCy) ---
+    # --- Subject ratio (spaCy dep parse with positional heuristic fallback) ---
     subject_ratio = 0.0
     as_subject = 0
     as_object = 0
     subject_examples = []
     object_examples = []
+    used_dep_parse = False
 
     if nlp and main_entity:
+        # Check if parser component is available
+        pipe_names = []
+        try:
+            pipe_names = [p if isinstance(p, str) else getattr(p, 'name', '')
+                          for p in nlp.pipe_names]
+        except Exception:
+            pass
+
+        if 'parser' in pipe_names:
+            used_dep_parse = True
+            sentences = re.split(r'[.!?]+\s+', full_text)
+            entity_sentences = [s for s in sentences if main_entity.lower() in s.lower() or main_keyword.lower() in s.lower()]
+            for sent in entity_sentences[:50]:
+                try:
+                    doc = nlp(sent[:500])
+                    for ent in doc.ents:
+                        ent_lower = ent.text.lower()
+                        if main_entity.lower() in ent_lower or main_keyword.lower() in ent_lower:
+                            root = ent.root
+                            if root.dep_ in ("nsubj", "nsubj:pass"):
+                                as_subject += 1
+                                if len(subject_examples) < 3:
+                                    subject_examples.append(sent[:100])
+                            elif root.dep_ in ("obj", "iobj", "obl", "obl:arg"):
+                                as_object += 1
+                                if len(object_examples) < 3:
+                                    object_examples.append(sent[:100])
+                except Exception:
+                    continue
+            total_roles = as_subject + as_object
+            subject_ratio = round(as_subject / total_roles, 2) if total_roles > 0 else 0.0
+
+    # Positional heuristic fallback (when dep parser unavailable or found 0)
+    if not used_dep_parse or (as_subject == 0 and as_object == 0):
+        entity_lower = (main_entity or main_keyword).lower()
+        entity_words = [w for w in entity_lower.split() if len(w) > 3]
+        entity_stem = _stem_word(entity_words[0]) if entity_words else entity_lower[:4]
+
         sentences = re.split(r'[.!?]+\s+', full_text)
-        entity_sentences = [s for s in sentences if main_entity.lower() in s.lower() or main_keyword.lower() in s.lower()]
-        for sent in entity_sentences[:50]:
-            try:
-                doc = nlp(sent[:500])
-                for ent in doc.ents:
-                    ent_lower = ent.text.lower()
-                    if main_entity.lower() in ent_lower or main_keyword.lower() in ent_lower:
-                        root = ent.root
-                        if root.dep_ in ("nsubj", "nsubj:pass"):
-                            as_subject += 1
-                            if len(subject_examples) < 3:
-                                subject_examples.append(sent[:100])
-                        elif root.dep_ in ("obj", "iobj", "obl", "obl:arg"):
-                            as_object += 1
-                            if len(object_examples) < 3:
-                                object_examples.append(sent[:100])
-            except Exception:
+        total_mentions = 0
+        subj_count = 0
+
+        for sent in sentences:
+            sent_lower = sent.lower().strip()
+            if not sent_lower or entity_stem not in sent_lower:
                 continue
-        total_roles = as_subject + as_object
-        subject_ratio = round(as_subject / total_roles, 2) if total_roles > 0 else 0.0
+            total_mentions += 1
+            # Entity in first 5 words -> likely subject
+            words = sent_lower.split()[:5]
+            first_chunk = " ".join(words)
+            if entity_stem in first_chunk:
+                subj_count += 1
+                if len(subject_examples) < 3:
+                    subject_examples.append(sent[:100])
+            else:
+                if len(object_examples) < 3:
+                    object_examples.append(sent[:100])
+
+        if total_mentions > 0:
+            as_subject = subj_count
+            as_object = total_mentions - subj_count
+            subject_ratio = round(subj_count / total_mentions, 2)
 
     # --- Expected subject ratio from S1 ---
     expected_subject_ratio = 0.0
@@ -772,12 +815,26 @@ def analyze_naming_consistency(
 # 8. HARD FACTS
 # ================================================================
 
+def _normalize_number_format(text: str) -> str:
+    """Normalize number formats for comparison.
+    "2 500" -> "2500", "2.500" -> "2500", "2,500" -> "2500"
+    """
+    # Remove spaces inside numbers: "2 500" -> "2500"
+    normalized = re.sub(r'(\d)\s+(\d)', r'\1\2', text)
+    # Remove thousand separators (. or ,) when followed by 3 digits:
+    # "2.500" -> "2500", "2,500" -> "2500"
+    normalized = re.sub(r'(\d)[.,](\d{3})\b', r'\1\2', normalized)
+    return normalized.lower().strip()
+
+
 def analyze_hard_facts(
     parsed: Dict,
     s1_data: Dict,
 ) -> Dict[str, Any]:
     """Check if hard facts from SERP are present in article."""
-    full_lower = parsed["full_text"].lower()
+    full_text = parsed["full_text"]
+    full_lower = full_text.lower()
+    full_normalized = _normalize_number_format(full_text)
     variables = s1_data.get("_variables") or {}
     hard_facts_raw = s1_data.get("hard_facts") or variables.get("_hard_facts") or []
 
@@ -797,7 +854,11 @@ def analyze_hard_facts(
         if not value or len(value) < 2:
             continue
 
+        # Try exact match first, then normalized number match
         found = value.lower() in full_lower
+        if not found:
+            val_normalized = _normalize_number_format(value)
+            found = val_normalized in full_normalized
         results.append({
             "value": value,
             "category": category,

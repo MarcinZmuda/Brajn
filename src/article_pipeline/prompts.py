@@ -22,6 +22,12 @@ Kazda sekcja H2 wnosi NOWA informacje. Jesli fakt opisales w jednej sekcji, w ko
 
 Fraze glowna z briefu wplatasz naturalnie, maksymalnie 2 razy w jednej sekcji. W pozostalych zdaniach uzywasz wariantow i zaimkow z briefu.
 
+Przyklad rotacji wzmianek (stosuj ten wzorzec):
+  "Koldra obciazeniowa poprawia jakosc snu." -> pelna nazwa
+  "Ten rodzaj okrycia stosuje sie w terapii bezsennosci." -> opis zastepczy
+  "Wazy od 5 do 12 kg i dostosowuje sie ja do masy ciala." -> zaimek
+  (nowy akapit = znow pelna nazwa)
+
 Sekcje konczysz zdaniem prowadzacym do nastepnej.
 
 Nie uzywaj nazw firm ani marek - chyba ze brief wymaga ich w naglowku H2.
