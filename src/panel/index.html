@@ -1744,9 +1744,9 @@ function renderS1(data) {
         html += buildSection('coverage', 'Pokrycie tematyczne', topicalCoverage.length, function() {
             let t = '';
             topicalCoverage.forEach(function(tc) {
-                const total = tc.total_sources || 1;
-                const covered = tc.covered_by || 0;
-                const pct = Math.round((covered / total) * 100);
+                var total = parseInt(tc.total_sources, 10) || 1;
+                var covered = parseInt(tc.covered_by, 10) || 0;
+                var pct = tc.coverage_percent != null ? tc.coverage_percent : Math.round((covered / total) * 100);
                 const color = pct >= 70 ? 'var(--gn)' : pct >= 40 ? 'var(--yl)' : 'var(--rd)';
                 t += '<div class="coverage-row">';
                 t += '<div class="coverage-label">' + esc(tc.subtopic || '') + '</div>';

@@ -64,7 +64,18 @@ _NAV_PATTERNS = re.compile(
     r"facebook|twitter|instagram|linkedin|youtube|tiktok|"
     r"udostępnij|share|podziel się|komentarze|comments|"
     r"tagi:|kategorie:|tag:|category:|autor:|author:|"
-    r"czytaj więcej|read more|dowiedz się więcej|sprawdź|kliknij tutaj)",
+    r"czytaj więcej|read more|dowiedz się więcej|sprawdź|kliknij tutaj|"
+    # Gov/institutional site boilerplate
+    r"mapa serwisu|mapa strony|nota prawna|redakcja serwisu|redakcja strony|"
+    r"deklaracja dostępności|dostępność cyfrowa|wersja kontrastowa|"
+    r"biuletyn informacji publicznej|biuletyn informacji|bip|"
+    r"inne wersje portalu|inne wersje serwisu|wersja mobilna|"
+    r"najważniejsze informacje|informacje o serwisie|o portalu|"
+    r"kontakt z redakcją|zespół redakcyjny|"
+    r"kanały rss|kanał rss|archiwum serwisu|archiwum bip|"
+    r"wróć na górę|powrót do góry|do góry|przejdź do treści|skip to content|"
+    r"powiększ czcionkę|pomniejsz czcionkę|rozmiar czcionki|"
+    r"drukuj|wydrukuj|wersja do druku)",
     re.IGNORECASE
 )
 
@@ -243,6 +254,13 @@ def clean_ngrams(
         # ── Garbage patterns (CSS/JS) ──
         if _NGRAM_GARBAGE_PATTERNS.search(text_lower):
             continue
+
+        # ── Navigation / boilerplate n-gram ──
+        if _NAV_PATTERNS.search(text_lower):
+            # Allow if keyword overlap exists (topic might genuinely include nav words)
+            ngram_words = set(re.findall(r'\b[a-ząćęłńóśźż]+\b', text_lower))
+            if not (ngram_words & kw_words):
+                continue
 
         # ── Generyczne frazy ──
         if text_lower in _GENERIC_NGRAMS:
