@@ -107,9 +107,11 @@ class ArticleOrchestrator:
         4. Brief compilation (code)
         5. Article writing (Sonnet) <- THE MAIN CALL
         6. N-gram check + patch (code + optional Haiku)
-        7. Compliance check (code)
+        7. Structural Rewriter — Entity SEO (Sonnet)
+        8. LanguageTool Polish grammar (API, free)
+        9. Compliance check (code) <- AFTER all fixes
         """
-        total_steps = 7
+        total_steps = 9
 
         # -- Step 1: YMYL --
         yield {"event": "step_start", "step": 1, "total": total_steps,
@@ -270,8 +272,56 @@ class ArticleOrchestrator:
                "data": {"coverage": coverage,
                          "patches": len(patches_applied)}}
 
-        # -- Step 7: Compliance --
+        # -- Step 7: Structural Rewriter (Entity SEO) --
         yield {"event": "step_start", "step": 7, "total": total_steps,
+               "label": "Poprawa struktury Entity SEO"}
+
+        rewriter_stats = {"skipped": True, "reason": "init"}
+        try:
+            from src.article_pipeline.structural_rewriter import rewrite_structure
+
+            mention_forms = self._s1_full.get("mention_forms") or {}
+            must_cover = self.variables.get("_must_cover", [])
+
+            article, rewriter_stats = rewrite_structure(
+                article_text=article,
+                main_entity=self.variables.get("HASLO_GLOWNE", ""),
+                nominal_forms=mention_forms.get("nominal", []),
+                pronominal_forms=mention_forms.get("pronominal", []),
+                supporting_entities=must_cover[:5],
+            )
+            if not rewriter_stats.get("skipped"):
+                self.full_article = article
+        except Exception as e:
+            print(f"[REWRITER] Error: {e}")
+            rewriter_stats = {"skipped": True, "reason": f"error: {e}"}
+
+        yield {"event": "step_done", "step": 7,
+               "data": {"rewriter": rewriter_stats}}
+
+        # -- Step 8: LanguageTool Polish Grammar --
+        yield {"event": "step_start", "step": 8, "total": total_steps,
+               "label": "Sprawdzanie gramatyki (LanguageTool)"}
+
+        lt_result = {"issues": [], "stats": {"total": 0}, "skipped": True}
+        try:
+            from src.article_pipeline.language_checker import check_polish_grammar, auto_fix_grammar
+
+            lt_result = check_polish_grammar(article)
+            if lt_result.get("issues"):
+                article, lt_fixes = auto_fix_grammar(article, lt_result)
+                if lt_fixes > 0:
+                    self.full_article = article
+                    lt_result["auto_fixed"] = lt_fixes
+        except Exception as e:
+            print(f"[LANGUAGETOOL] Error: {e}")
+            lt_result = {"issues": [], "stats": {"total": 0}, "error": str(e)}
+
+        yield {"event": "step_done", "step": 8,
+               "data": {"language_check": lt_result.get("stats", {})}}
+
+        # -- Step 9: Compliance (AFTER all fixes) --
+        yield {"event": "step_start", "step": 9, "total": total_steps,
                "label": "Compliance check"}
 
         entity_compliance = None
@@ -292,7 +342,7 @@ class ArticleOrchestrator:
         except Exception as e:
             print(f"[COMPLIANCE] Error: {e}")
 
-        yield {"event": "step_done", "step": 7,
+        yield {"event": "step_done", "step": 9,
                "data": {"compliance_score": (entity_compliance or {}).get("overall_score", 0)}}
 
         # -- Complete --
@@ -305,6 +355,8 @@ class ArticleOrchestrator:
             "input_variables": self.input_variables,
             "coverage": coverage,
             "entity_compliance": entity_compliance,
+            "language_check": lt_result,
+            "rewriter_stats": rewriter_stats,
             "brief": brief_text,
             "s1_data": self._s1_full,
             "h2_plan": h2_plan,

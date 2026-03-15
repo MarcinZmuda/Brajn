@@ -89,6 +89,14 @@ class ArticleEditRequest(BaseModel):
     engine: str = Field(default="claude")
 
 
+class FixIssueRequest(BaseModel):
+    article_text: str = Field(..., min_length=50, description="Full article text")
+    issue_text: str = Field(..., min_length=1, description="Original problematic text fragment")
+    issue_type: str = Field(..., description="Type: hallucination, duplicate, fact, ai_artifact, unfulfilled_promise, language")
+    issue_reason: str = Field(default="", description="Why this is flagged")
+    issue_action: str = Field(default="", description="Suggested action from proofreader")
+
+
 class ArticleValidateRequest(BaseModel):
     text: str = Field(..., min_length=1)
     s1_data: Optional[dict] = Field(default=None)
@@ -320,7 +328,7 @@ async def export_article(job_id: str, fmt: str):
 
 @app.post("/api/proofread", dependencies=[Depends(require_api_key)])
 async def proofread_article_endpoint(req: ProofreadRequest):
-    """Run editorial proofreader on article text. Separate from pipeline to avoid timeout."""
+    """Run editorial proofreader on article text. Re-runs compliance after fixes."""
     try:
         from src.article_pipeline.editorial_proofreader import proofread_article
         result = proofread_article(
@@ -329,6 +337,36 @@ async def proofread_article_endpoint(req: ProofreadRequest):
             variables=req.variables or {},
             auto_fix=req.auto_fix,
         )
+
+        # Re-run compliance on corrected text so stats reflect final state
+        corrected = result.get("corrected_text") or req.text
+        if result.get("stats", {}).get("auto_fixed", 0) > 0 and req.s1_data:
+            try:
+                from src.article_pipeline.entity_seo_compliance import run_entity_seo_compliance
+                from src.article_pipeline.ngram_patcher import check_ngram_coverage
+
+                nlp = None
+                try:
+                    from src.common.nlp_singleton import get_nlp
+                    nlp = get_nlp()
+                except Exception:
+                    pass
+
+                ngrams = (req.s1_data.get("ngrams") or []) + (req.s1_data.get("extended_terms") or [])
+                coverage = check_ngram_coverage(corrected, ngrams) if ngrams else None
+
+                compliance = run_entity_seo_compliance(
+                    article_text=corrected,
+                    s1_data=req.s1_data,
+                    ngram_coverage=coverage,
+                    nlp=nlp,
+                )
+                result["updated_compliance"] = compliance
+                result["compliance_score"] = compliance.get("overall_score", 0)
+                print(f"[PROOFREAD] Compliance re-calculated after fixes: {compliance.get('overall_score', 0)}")
+            except Exception as e:
+                print(f"[PROOFREAD] Compliance re-run error: {e}")
+
         return result
     except Exception as e:
         import traceback
@@ -363,6 +401,143 @@ async def edit_article(req: ArticleEditRequest):
     )
 
     return {"edited_text": result, "usage": usage}
+
+
+@app.post("/api/fix_issue", dependencies=[Depends(require_api_key)])
+async def fix_issue(req: FixIssueRequest):
+    """Fix a single proofreader-flagged issue using AI."""
+    from src.common.llm import claude_call
+
+    # Extract context: find the problematic fragment in the article
+    # and grab surrounding text (±300 chars) for context
+    issue_lower = req.issue_text.lower().strip()
+    article_lower = req.article_text.lower()
+    idx = article_lower.find(issue_lower[:60])
+
+    if idx >= 0:
+        ctx_start = max(0, idx - 300)
+        ctx_end = min(len(req.article_text), idx + len(req.issue_text) + 300)
+        context = req.article_text[ctx_start:ctx_end]
+    else:
+        context = req.issue_text
+
+    # Type-specific prompts for optimal fixes
+    type_instructions = {
+        "hallucination": (
+            "Fragment zawiera informacje bez pokrycia w danych referencyjnych. "
+            "USUN caly fragment lub zastap go bezpiecznym, ogolnym stwierdzeniem. "
+            "NIE wymyslaj nowych faktow."
+        ),
+        "duplicate": (
+            "Fragment powtarza informacje z innej czesci artykulu. "
+            "Przepisz go tak, by wniosl NOWA wartosc informacyjna albo usun go calkowicie. "
+            "Zachowaj plynnosc tekstu."
+        ),
+        "fact": (
+            "Fragment zawiera twierdzenie bez potwierdzenia w danych referencyjnych. "
+            "Zlagodz sformulowanie (dodaj: 'moze', 'w wielu przypadkach', 'co do zasady') "
+            "lub usun konkretna wartosc ktora nie jest potwierdzona."
+        ),
+        "ai_artifact": (
+            "Fragment to artefakt AI: nienaturalna skladnia, zlepek fraz SEO lub sztuczne "
+            "przejscie narracyjne. Przepisz na naturalny, czytelny polski tekst."
+        ),
+        "unfulfilled_promise": (
+            "Naglowek obiecuje cos, czego tekst nie dostarcza. "
+            "Uzupelnij tekst o brakujace elementy lub zmien naglowek na dokladniejszy."
+        ),
+        "language": (
+            "Fragment zawiera blad jezykowy, gramatyczny lub stylistyczny. "
+            "Popraw jezyk zachowujac sens i styl artykulu."
+        ),
+    }
+
+    instruction = type_instructions.get(req.issue_type, type_instructions["language"])
+
+    system = (
+        "Jestes redaktorem polskiego tekstu SEO. Naprawiasz JEDEN konkretny problem.\n"
+        "Zwroc TYLKO naprawiony fragment (ten sam zakres tekstu co 'FRAGMENT DO NAPRAWY').\n"
+        "NIE dodawaj komentarzy, NIE zmieniaj reszty tekstu.\n"
+        "Jesli najlepsza opcja to USUNAC fragment — zwroc pusty string.\n"
+        "Odpowiedz TYLKO naprawionym tekstem, bez zadnych dodatkow."
+    )
+
+    user = (
+        f"TYP PROBLEMU: {req.issue_type}\n"
+        f"INSTRUKCJA: {instruction}\n"
+        f"POWOD FLAGI: {req.issue_reason}\n"
+        f"SUGEROWANA AKCJA: {req.issue_action}\n\n"
+        f"KONTEKST (artykul wokol fragmentu):\n{context}\n\n"
+        f"FRAGMENT DO NAPRAWY:\n{req.issue_text}"
+    )
+
+    try:
+        result, usage = claude_call(
+            system_prompt=system,
+            user_prompt=user,
+            model="claude-haiku-4-5-20251001",
+            max_tokens=1000,
+            temperature=0.3,
+        )
+
+        fixed_text = result.strip()
+        # Clean up potential markdown wrappers
+        if fixed_text.startswith("```"):
+            lines = fixed_text.split("\n")
+            lines = [l for l in lines if not l.strip().startswith("```")]
+            fixed_text = "\n".join(lines).strip()
+
+        return {
+            "original": req.issue_text,
+            "fixed": fixed_text,
+            "type": req.issue_type,
+            "usage": usage,
+            "was_deleted": len(fixed_text.strip()) < 10,
+        }
+    except Exception as e:
+        return {"error": str(e), "original": req.issue_text, "fixed": req.issue_text}
+
+
+class RecheckComplianceRequest(BaseModel):
+    text: str = Field(..., min_length=50, description="Article text after proofreading")
+    s1_data: Optional[dict] = Field(default=None, description="S1 data for context")
+
+
+@app.post("/api/recheck_compliance", dependencies=[Depends(require_api_key)])
+async def recheck_compliance(req: RecheckComplianceRequest):
+    """Re-run compliance check on corrected article text (after proofreader)."""
+    try:
+        from src.article_pipeline.entity_seo_compliance import run_entity_seo_compliance
+        from src.article_pipeline.ngram_patcher import check_ngram_coverage
+
+        s1 = req.s1_data or {}
+
+        # Re-check n-gram coverage on corrected text
+        ngrams = (s1.get("ngrams") or []) + (s1.get("extended_terms") or [])
+        coverage = check_ngram_coverage(req.text, ngrams) if ngrams else None
+
+        nlp = None
+        try:
+            from src.common.nlp_singleton import get_nlp
+            nlp = get_nlp()
+        except Exception:
+            pass
+
+        compliance = run_entity_seo_compliance(
+            article_text=req.text,
+            s1_data=s1,
+            ngram_coverage=coverage,
+            nlp=nlp,
+        )
+
+        return {
+            "entity_compliance": compliance,
+            "overall_score": compliance.get("overall_score", 0),
+        }
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return {"error": str(e), "overall_score": 0}
 
 
 @app.post("/api/validate", dependencies=[Depends(require_api_key)])

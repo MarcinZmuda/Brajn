@@ -442,6 +442,7 @@
 
             <!-- ═══ ARTICLE TAB ═══ -->
             <div class="tab-content" id="tab-article">
+                <div id="articlePhaseIndicator" style="display:none"></div>
                 <div class="article-bar" id="articleActions" style="display:none">
                     <button class="btn-secondary" onclick="exportArticle('html')">Export HTML</button>
                     <button class="btn-secondary" onclick="exportArticle('txt')">Export TXT</button>
@@ -998,18 +999,176 @@ function runProofreader(pipelineData) {
         proofFlagged = result.flagged || [];
         // If proofreader fixed things — update article in panel
         if (result.stats && result.stats.auto_fixed > 0 && result.corrected_text) {
-            renderArticle(result.corrected_text);
+            articleText = result.corrected_text;
+            renderArticle(articleText);
             log('Korektor naprawił ' + result.stats.auto_fixed + ' problemów', 'ok');
         } else {
             renderArticle(articleText); // re-render to apply highlights
             log('Korektor: brak poprawek do zastosowania', 'ok');
         }
         renderProofreading(result);
+
+        // Update compliance with post-correction scores (inline from proofreader)
+        if (result.updated_compliance) {
+            var newScore = result.updated_compliance.overall_score || 0;
+            var oldScore = (window._entityCompliance || {}).overall_score || 0;
+            window._entityCompliance = result.updated_compliance;
+            renderCompliance(result.updated_compliance);
+            renderAnnotationView();
+            updatePhaseIndicator('final');
+            var diff = newScore - oldScore;
+            log('Compliance po korekcie: ' + oldScore + ' → ' + newScore + ' (' + (diff >= 0 ? '+' : '') + diff + ')', diff >= 0 ? 'ok' : 'warn');
+        } else {
+            // Fallback: separate recheck call
+            recheckCompliance();
+        }
     })
     .catch(function(err) {
         el.innerHTML = '<div style="color:#ef4444;padding:16px">Błąd: ' + esc(err.message) + '</div>';
         log('Korektor: ' + err.message, 'err');
     });
+}
+
+// ── Compliance Recheck (after proofreader) ──
+function recheckCompliance() {
+    if (!articleText || !s1Data) {
+        log('Brak danych do przeliczenia compliance', 'warn');
+        return;
+    }
+
+    // Show "recalculating" indicator
+    var complianceEl = document.querySelector('[data-compliance-score]') ||
+                       document.getElementById('complianceSection');
+    var indicator = document.createElement('div');
+    indicator.id = 'compliance-recheck-indicator';
+    indicator.innerHTML =
+        '<div style="padding:12px;margin:8px 0;border-radius:8px;background:rgba(99,102,241,.1);' +
+        'border:1px solid rgba(99,102,241,.3);text-align:center;font-size:13px;color:#818cf8">' +
+        '<span style="display:inline-block;animation:spin 1s linear infinite;margin-right:8px">&#9881;</span>' +
+        'Przeliczanie compliance po korekcie...' +
+        '</div>';
+
+    // Insert indicator near compliance display
+    if (complianceEl) {
+        complianceEl.parentNode.insertBefore(indicator, complianceEl);
+    } else {
+        var proofEl = document.getElementById('proofreadingContent');
+        if (proofEl) proofEl.appendChild(indicator);
+    }
+
+    log('Przeliczanie compliance po korekcie...', 'info');
+
+    var apiKey = getApiKey();
+    fetch('/api/recheck_compliance', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + apiKey },
+        body: JSON.stringify({
+            text: articleText,
+            s1_data: s1Data,
+        }),
+    })
+    .then(function(resp) {
+        if (!resp.ok) throw new Error('HTTP ' + resp.status);
+        return resp.json();
+    })
+    .then(function(data) {
+        // Remove indicator
+        var ind = document.getElementById('compliance-recheck-indicator');
+        if (ind) ind.remove();
+
+        if (data.error) {
+            log('Compliance recheck error: ' + data.error, 'err');
+            return;
+        }
+
+        var newScore = data.overall_score || 0;
+        var oldScore = (window._entityCompliance || {}).overall_score || 0;
+        var diff = newScore - oldScore;
+        var diffStr = diff > 0 ? '+' + diff : '' + diff;
+
+        // Update stored compliance
+        window._entityCompliance = data.entity_compliance;
+
+        // Re-render compliance display
+        renderCompliance(data.entity_compliance);
+        renderAnnotationView();
+
+        // Show score change notification
+        var changeColor = diff > 0 ? '#22c55e' : (diff < 0 ? '#ef4444' : '#94a3b8');
+        var notification = document.createElement('div');
+        notification.id = 'compliance-change-note';
+        notification.innerHTML =
+            '<div style="padding:8px 12px;margin:8px 0;border-radius:6px;' +
+            'background:rgba(34,197,94,.08);border:1px solid ' + changeColor + ';' +
+            'font-size:12px;color:' + changeColor + ';text-align:center">' +
+            '&#9989; Compliance przeliczone po korekcie: ' + oldScore + ' → <strong>' + newScore + '</strong> (' + diffStr + ')' +
+            '</div>';
+
+        if (complianceEl) {
+            complianceEl.parentNode.insertBefore(notification, complianceEl);
+        }
+
+        log('Compliance po korekcie: ' + oldScore + ' → ' + newScore + ' (' + diffStr + ')', diff >= 0 ? 'ok' : 'warn');
+
+        // Auto-remove notification after 15 seconds
+        setTimeout(function() {
+            var note = document.getElementById('compliance-change-note');
+            if (note) note.remove();
+        }, 15000);
+    })
+    .catch(function(err) {
+        var ind = document.getElementById('compliance-recheck-indicator');
+        if (ind) ind.remove();
+        log('Compliance recheck failed: ' + err.message, 'err');
+    });
+}
+
+// ── Article Phase Indicator ──
+function updatePhaseIndicator(phase) {
+    var el = document.getElementById('articlePhaseIndicator');
+    if (!el) return;
+
+    var phases = {
+        generating: {
+            icon: '&#9998;', text: 'Generowanie artykułu...',
+            bg: 'rgba(234,179,8,.08)', border: 'rgba(234,179,8,.3)', color: '#eab308'
+        },
+        rewriting: {
+            icon: '&#128295;', text: 'Poprawa struktury Entity SEO (Sonnet)...',
+            bg: 'rgba(99,102,241,.08)', border: 'rgba(99,102,241,.3)', color: '#818cf8'
+        },
+        grammar: {
+            icon: '&#128221;', text: 'Sprawdzanie gramatyki polskiej (LanguageTool)...',
+            bg: 'rgba(99,102,241,.08)', border: 'rgba(99,102,241,.3)', color: '#818cf8'
+        },
+        compliance: {
+            icon: '&#128202;', text: 'Obliczanie compliance score...',
+            bg: 'rgba(99,102,241,.08)', border: 'rgba(99,102,241,.3)', color: '#818cf8'
+        },
+        proofreading: {
+            icon: '&#128269;', text: 'Korekta redakcyjna w toku — statystyki zostaną przeliczone po poprawkach',
+            bg: 'rgba(234,179,8,.08)', border: 'rgba(234,179,8,.3)', color: '#eab308'
+        },
+        final: {
+            icon: '&#9989;', text: 'Artykuł gotowy — compliance score uwzględnia wszystkie poprawki',
+            bg: 'rgba(34,197,94,.06)', border: 'rgba(34,197,94,.25)', color: '#22c55e'
+        },
+        fixing: {
+            icon: '&#9889;', text: 'Trwa poprawianie — statystyki zostaną przeliczone po zakończeniu',
+            bg: 'rgba(234,179,8,.08)', border: 'rgba(234,179,8,.3)', color: '#eab308'
+        },
+    };
+
+    var p = phases[phase];
+    if (!p) { el.style.display = 'none'; return; }
+
+    el.style.display = 'block';
+    el.innerHTML =
+        '<div style="padding:10px 16px;margin:0 0 12px 0;border-radius:8px;' +
+        'background:' + p.bg + ';border:1px solid ' + p.border + ';' +
+        'font-size:13px;color:' + p.color + ';display:flex;align-items:center;gap:8px">' +
+        '<span style="font-size:16px;' + (phase !== 'final' ? 'animation:spin 1s linear infinite;display:inline-block' : '') + '">' + p.icon + '</span>' +
+        '<span>' + p.text + '</span></div>';
 }
 
 // ── Proofreading Render ──
@@ -1054,16 +1213,26 @@ function renderProofreading(data) {
     var flagged = data.flagged || [];
     if (flagged.length > 0) {
         h += '<div class="card"><div class="card-title" style="color:var(--yl)">Wymaga uwagi copywritera (' + flagged.length + ')</div>';
-        flagged.forEach(function(flag) {
+        flagged.forEach(function(flag, idx) {
             var sevColor = flag.severity === 'high' ? 'var(--rd)' : (flag.severity === 'medium' ? 'var(--yl)' : 'var(--gn)');
             var icons = {hallucination: '&#128308;', duplicate: '&#128993;', unfulfilled_promise: '&#128992;', language: '&#128994;'};
             var icon = icons[flag.type] || '&#9898;';
-            h += '<div style="padding:6px 0;border-bottom:1px solid var(--b1);font-size:13px">';
+            h += '<div id="flag-item-' + idx + '" style="padding:8px 0;border-bottom:1px solid var(--b1);font-size:13px">';
+            h += '<div style="display:flex;justify-content:space-between;align-items:flex-start">';
+            h += '<div style="flex:1">';
             h += '<span>' + icon + '</span> ';
             h += '<span style="display:inline-block;padding:1px 6px;border-radius:4px;font-size:11px;background:rgba(255,255,255,.05);color:' + sevColor + '">' + esc(flag.type || '') + '</span> ';
             h += '<span>' + esc((flag.text || '').substring(0, 80)) + '</span>';
             h += '<br><span style="color:var(--mg);font-size:11px">' + esc(flag.reason || '') + '</span>';
             if (flag.action) h += '<br><span style="color:var(--yl);font-size:11px">&rarr; ' + esc(flag.action) + '</span>';
+            h += '</div>';
+            h += '<button onclick="fixIssueAI(' + idx + ')" id="fix-btn-' + idx + '" ';
+            h += 'style="flex-shrink:0;margin-left:8px;padding:4px 10px;border:1px solid var(--ac);background:transparent;color:var(--ac);border-radius:6px;font-size:11px;cursor:pointer;white-space:nowrap" ';
+            h += 'onmouseover="this.style.background=\'var(--ac)\';this.style.color=\'#000\'" ';
+            h += 'onmouseout="this.style.background=\'transparent\';this.style.color=\'var(--ac)\'">';
+            h += '&#9889; Popraw AI</button>';
+            h += '</div>';
+            h += '<div id="fix-result-' + idx + '" style="display:none;margin-top:8px"></div>';
             h += '</div>';
         });
         h += '</div>';
@@ -1076,6 +1245,141 @@ function renderProofreading(data) {
 
     target.innerHTML = h;
     target.style.display = 'block';
+}
+
+function fixIssueAI(idx) {
+    var flag = proofFlagged[idx];
+    if (!flag) { alert('Brak danych flagi'); return; }
+    if (!articleText) { alert('Brak tekstu artykulu'); return; }
+
+    var btn = document.getElementById('fix-btn-' + idx);
+    var resultDiv = document.getElementById('fix-result-' + idx);
+    if (!btn || !resultDiv) return;
+
+    // Show loading state
+    btn.disabled = true;
+    btn.innerHTML = '&#9881; Naprawiam...';
+    btn.style.opacity = '0.5';
+    updatePhaseIndicator('fixing');
+    resultDiv.style.display = 'block';
+    resultDiv.innerHTML = '<span style="color:var(--mg);font-size:12px">Analizuje i naprawia...</span>';
+
+    var apiKey = getApiKey();
+    fetch('/api/fix_issue', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + apiKey },
+        body: JSON.stringify({
+            article_text: articleText,
+            issue_text: flag.text || '',
+            issue_type: flag.type || 'language',
+            issue_reason: flag.reason || '',
+            issue_action: flag.action || '',
+        }),
+    })
+    .then(function(resp) {
+        if (!resp.ok) throw new Error('HTTP ' + resp.status);
+        return resp.json();
+    })
+    .then(function(data) {
+        if (data.error) {
+            resultDiv.innerHTML = '<span style="color:var(--rd);font-size:12px">Blad: ' + esc(data.error) + '</span>';
+            btn.innerHTML = '&#9889; Popraw AI';
+            btn.disabled = false;
+            btn.style.opacity = '1';
+            return;
+        }
+
+        var h = '';
+        if (data.was_deleted) {
+            h += '<div style="padding:8px;border-radius:6px;background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.3)">';
+            h += '<div style="font-size:11px;color:var(--rd);margin-bottom:4px">&#128465; AI sugeruje USUNIĘCIE fragmentu</div>';
+            h += '<div style="font-size:12px;color:var(--mg);text-decoration:line-through">' + esc((data.original || '').substring(0, 150)) + '</div>';
+            h += '</div>';
+        } else {
+            h += '<div style="padding:8px;border-radius:6px;background:rgba(34,197,94,.06);border:1px solid rgba(34,197,94,.2)">';
+            h += '<div style="font-size:11px;color:var(--gn);margin-bottom:4px">&#9998; Propozycja AI:</div>';
+            h += '<div style="font-size:12px;color:var(--fg)">' + esc((data.fixed || '').substring(0, 300)) + '</div>';
+            h += '</div>';
+        }
+        h += '<div style="margin-top:6px;display:flex;gap:6px">';
+        h += '<button onclick="acceptFix(' + idx + ',this)" style="padding:3px 10px;border:1px solid var(--gn);background:transparent;color:var(--gn);border-radius:4px;font-size:11px;cursor:pointer">&#10004; Akceptuj</button>';
+        h += '<button onclick="rejectFix(' + idx + ')" style="padding:3px 10px;border:1px solid var(--rd);background:transparent;color:var(--rd);border-radius:4px;font-size:11px;cursor:pointer">&#10008; Odrzuć</button>';
+        h += '</div>';
+
+        resultDiv.innerHTML = h;
+        // Store fix data on the result div for accept action
+        resultDiv.dataset.original = data.original || '';
+        resultDiv.dataset.fixed = data.fixed || '';
+        resultDiv.dataset.wasDeleted = data.was_deleted ? '1' : '0';
+
+        btn.innerHTML = '&#10004; Gotowe';
+        btn.disabled = true;
+    })
+    .catch(function(err) {
+        resultDiv.innerHTML = '<span style="color:var(--rd);font-size:12px">Blad: ' + esc(err.message) + '</span>';
+        btn.innerHTML = '&#9889; Popraw AI';
+        btn.disabled = false;
+        btn.style.opacity = '1';
+    });
+}
+
+function acceptFix(idx, btnEl) {
+    var resultDiv = document.getElementById('fix-result-' + idx);
+    if (!resultDiv) return;
+
+    var original = resultDiv.dataset.original || '';
+    var fixed = resultDiv.dataset.fixed || '';
+    var wasDeleted = resultDiv.dataset.wasDeleted === '1';
+
+    if (!original) return;
+
+    // Apply fix to article text
+    if (wasDeleted) {
+        // Find and remove the sentence/fragment containing the original text
+        var escaped = original.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        var pattern = new RegExp('[^.!?]*' + escaped.substring(0, 60).replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '[^.!?]*[.!?]\\s*', 'i');
+        articleText = articleText.replace(pattern, '');
+    } else if (articleText.indexOf(original.substring(0, 60)) >= 0) {
+        // Direct replacement: find original fragment and replace
+        var searchStr = original.substring(0, Math.min(original.length, 80));
+        var pos = articleText.indexOf(searchStr);
+        if (pos >= 0) {
+            // Find the full sentence/paragraph boundary
+            var sentStart = articleText.lastIndexOf('.', pos);
+            if (sentStart < pos - 200) sentStart = pos;
+            else sentStart += 1;
+            var sentEnd = articleText.indexOf('.', pos + searchStr.length);
+            if (sentEnd < 0 || sentEnd > pos + 500) sentEnd = pos + original.length;
+            else sentEnd += 1;
+
+            var before = articleText.substring(0, sentStart);
+            var after = articleText.substring(sentEnd);
+            articleText = before + (sentStart > 0 ? ' ' : '') + fixed + after;
+        }
+    }
+
+    // Re-render article
+    renderArticle(articleText);
+
+    // Update UI
+    resultDiv.innerHTML = '<span style="color:var(--gn);font-size:12px">&#10004; Poprawka zaakceptowana i zastosowana</span>';
+    updatePhaseIndicator('final');
+    log('Poprawka AI #' + (idx+1) + ' zaakceptowana', 'ok');
+}
+
+function rejectFix(idx) {
+    var resultDiv = document.getElementById('fix-result-' + idx);
+    var btn = document.getElementById('fix-btn-' + idx);
+    if (resultDiv) {
+        resultDiv.style.display = 'none';
+        resultDiv.innerHTML = '';
+    }
+    if (btn) {
+        btn.innerHTML = '&#9889; Popraw AI';
+        btn.disabled = false;
+        btn.style.opacity = '1';
+    }
+    updatePhaseIndicator('final');
 }
 
 function copyBriefMarkdown() {
@@ -2299,6 +2603,9 @@ async function startWorkflow() {
                 if (d.event === 'step_start') {
                     setStepRunning(d.step, d.total || null, d.label || null);
                     log('Step ' + d.step + ': ' + (d.label || ''));
+                    // Update phase indicator
+                    var phaseMap = {5: 'generating', 7: 'rewriting', 8: 'grammar', 9: 'compliance'};
+                    if (phaseMap[d.step]) updatePhaseIndicator(phaseMap[d.step]);
                 }
                 else if (d.event === 'step_done') {
                     setStepDone(d.step, d.data || {});
@@ -2342,6 +2649,7 @@ async function startWorkflow() {
                             renderBrief(d.data.brief);
                         }
                         // Proofreading — run as separate API call (avoids Render timeout)
+                        updatePhaseIndicator('proofreading');
                         runProofreader(d.data);
                         // Store entity compliance for annotation view
                         if (d.data.entity_compliance) {
