@@ -333,6 +333,12 @@ Zglos kazdy taki defekt jako type: "ai_artifact", severity: "medium".
 Jesli mozesz zaproponowac poprawke -- podaj replacement.
 Jesli zdanie jest zbyt zepsute -- podaj "__PRZEREDAGUJ__".
 
+POZIOM 6 -- OBCE ZNAKI (severity: critical)
+Jesli w tekscie znajduja sie znaki cyrylicy (а-я, А-Я), chinskie, arabskie lub inne
+non-Latin -- oznacz jako critical error. Artykul musi byc w 100% po polsku
+(dozwolone: polskie znaki diakrytyczne, cyfry, interpunkcja, skroty lacinskie).
+Zglos kazdy taki defekt jako type: "foreign_charset", severity: "critical".
+
 CZEGO NIE ROBISZ:
 - NIE zmieniasz fraz kluczowych SEO (lista w danych) nawet jesli sie powtarzaja
   (ale ZGLASZAJ jesli fraza SEO jest wstawiona tak ze lamie gramatyke!)
