@@ -127,6 +127,184 @@ def check_list_overuse(text: str) -> int:
     return list_count
 
 
+# ================================================================
+# C1. Foreign characters (Cyrillic, CJK, Arabic)
+# ================================================================
+
+def check_foreign_characters(text: str) -> list[dict]:
+    """Detect non-Polish/non-Latin characters (Cyrillic, CJK, Arabic, etc.)."""
+    issues = []
+
+    # Cyrylica
+    cyrillic = re.findall(r'[а-яА-ЯёЁ]+', text)
+    if cyrillic:
+        for match in cyrillic[:5]:
+            issues.append({
+                "type": "FOREIGN_CHARSET",
+                "severity": "critical",
+                "text": match,
+                "script": "cyrillic",
+                "detail": f"Rosyjski/cyrylica w polskim tekście: '{match}'",
+            })
+
+    # CJK (chiński/japoński/koreański)
+    cjk = re.findall(r'[\u4e00-\u9fff\u3040-\u309f\u30a0-\u30ff]+', text)
+    if cjk:
+        for match in cjk[:3]:
+            issues.append({
+                "type": "FOREIGN_CHARSET",
+                "severity": "critical",
+                "text": match,
+                "script": "cjk",
+                "detail": f"Znaki CJK w polskim tekście: '{match}'",
+            })
+
+    # Arabski
+    arabic = re.findall(r'[\u0600-\u06ff]+', text)
+    if arabic:
+        for match in arabic[:3]:
+            issues.append({
+                "type": "FOREIGN_CHARSET",
+                "severity": "critical",
+                "text": match,
+                "script": "arabic",
+                "detail": f"Znaki arabskie w polskim tekście: '{match}'",
+            })
+
+    return issues
+
+
+# ================================================================
+# C2. Brand names detection
+# ================================================================
+
+def check_brand_names(text: str, allowed_brands: list[str] = None) -> list[dict]:
+    """Detect potential brand/company names not in allowed list."""
+    allowed = set(b.lower() for b in (allowed_brands or []))
+    issues = []
+
+    # Szukaj nazw własnych w FAQ (najczęstsze miejsce)
+    faq_section = ""
+    for marker in ["najczęściej zadawane", "## FAQ", "## Najczęściej"]:
+        idx = text.lower().find(marker.lower())
+        if idx >= 0:
+            faq_section = text[idx:]
+            break
+
+    faq_headings = re.findall(r'^##\s+(.+)$', faq_section, re.MULTILINE)
+    for heading in faq_headings:
+        words = heading.split()
+        for i, word in enumerate(words):
+            if i == 0 or not word or not word[0].isalpha():
+                continue
+            # Słowo z wielkiej litery w środku pytania, nie jest akronimem ≤4 znaków
+            if word[0].isupper() and len(word) > 4 and word.upper() != word:
+                candidate = word
+                if i + 1 < len(words) and words[i + 1][0:1].isupper():
+                    candidate = f"{word} {words[i + 1]}"
+                if candidate.lower() not in allowed:
+                    issues.append({
+                        "type": "BRAND_NAME",
+                        "severity": "critical",
+                        "text": candidate,
+                        "location": f"FAQ: {heading[:60]}",
+                        "detail": f"Nazwa firmy '{candidate}' nie jest w dozwolonych — usuń z artykułu.",
+                    })
+
+    return issues
+
+
+# ================================================================
+# C3. Meta-comments detection
+# ================================================================
+
+_META_COMMENT_PATTERNS = [
+    re.compile(r"bez podania źródła", re.IGNORECASE),
+    re.compile(r"brak danych (?:na temat|dotyczących|referencyjnych)", re.IGNORECASE),
+    re.compile(r"nie (?:znaleziono|udało się|podano) (?:informacji|danych|źródła)", re.IGNORECASE),
+    re.compile(r"(?:dane|informacje) referencyjne", re.IGNORECASE),
+    re.compile(r"(?:wymaga|potrzebuje) weryfikacji", re.IGNORECASE),
+    re.compile(r"(?:tu|tutaj) (?:wstaw|dodaj|uzupełnij)", re.IGNORECASE),
+    re.compile(r"(?:TODO|FIXME|XXX|UWAGA DLA AUTORA)", re.IGNORECASE),
+    re.compile(r"\[(?:źródło|citation|ref)\s*(?:needed|potrzebne)?\]", re.IGNORECASE),
+    re.compile(r"(?:patrz|zob\.|por\.|cf\.)\s+(?:sekcja|rozdział|punkt)", re.IGNORECASE),
+]
+
+
+def check_meta_comments(text: str) -> list[dict]:
+    """Detect editorial meta-comments that LLM left in article text."""
+    issues = []
+    for pattern in _META_COMMENT_PATTERNS:
+        for match in pattern.finditer(text):
+            start = max(0, match.start() - 30)
+            end = min(len(text), match.end() + 30)
+            context = text[start:end].replace("\n", " ")
+            issues.append({
+                "type": "META_COMMENT",
+                "severity": "high",
+                "text": match.group(),
+                "context": f"...{context}...",
+                "detail": "LLM wstawił komentarz redakcyjny do treści artykułu.",
+            })
+    return issues
+
+
+# ================================================================
+# C4. Keyword stuffing detection
+# ================================================================
+
+def check_keyword_stuffing(text: str, main_keyword: str = "",
+                            max_per_section: int = 2) -> list[dict]:
+    """Check if keyword appears more than max_per_section times in any H2 section."""
+    if not main_keyword:
+        return []
+
+    issues = []
+    kw_lower = main_keyword.lower()
+
+    # Podziel na sekcje (po ## nagłówkach)
+    sections = re.split(r'^##\s+', text, flags=re.MULTILINE)
+
+    for i, section in enumerate(sections):
+        if not section.strip():
+            continue
+        section_lower = section.lower()
+        count = section_lower.count(kw_lower)
+        if count > max_per_section:
+            first_line = section.split('\n')[0].strip()[:60]
+            issues.append({
+                "type": "KEYWORD_STUFFING",
+                "severity": "medium",
+                "keyword": main_keyword,
+                "count": count,
+                "max": max_per_section,
+                "section": first_line,
+                "detail": f"'{main_keyword}' × {count} w sekcji (max {max_per_section})",
+            })
+
+    # Sprawdź powtarzające się trigramy 3+ słowowe
+    from collections import Counter
+    words = text.lower().split()
+    if len(words) > 5:
+        trigrams = [' '.join(words[i:i+3]) for i in range(len(words) - 2)]
+        trigram_counts = Counter(trigrams)
+        _STOP = {'i', 'w', 'na', 'z', 'do', 'się', 'nie', 'to', 'jest', 'za',
+                 'po', 'od', 'jak', 'ale', 'co', 'ten', 'czy', 'dla', 'lub', 'tak'}
+        for trigram, cnt in trigram_counts.most_common(10):
+            if cnt >= 4 and len(trigram) > 10:
+                stop_heavy = all(w in _STOP for w in trigram.split())
+                if not stop_heavy:
+                    issues.append({
+                        "type": "PHRASE_REPETITION",
+                        "severity": "low",
+                        "phrase": trigram,
+                        "count": cnt,
+                        "detail": f"Fraza '{trigram}' powtórzona {cnt}x",
+                    })
+
+    return issues
+
+
 def check_bold_in_prose(text: str) -> list[str]:
     """Check for bold text inside narrative paragraphs."""
     issues = []

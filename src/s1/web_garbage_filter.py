@@ -134,6 +134,10 @@ _CSS_VALUES = {
     # Overflow
     "hidden", "scroll", "visible", "clip",
     
+    # Alignment compounds
+    "vertically-aligned", "horizontally-aligned",
+    "center-aligned", "left-aligned", "right-aligned",
+
     # Flexbox values
     "nowrap", "wrap", "wrap-reverse",
     "flex-start", "flex-end", "space-between", "space-around", "space-evenly",

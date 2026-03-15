@@ -20,7 +20,11 @@ from src.article_pipeline.prompts import (
     FORBIDDEN_PHRASES,
 )
 from src.article_pipeline.variables import extract_global_variables
-from src.article_pipeline.validators import check_forbidden_phrases, validate_global
+from src.article_pipeline.validators import (
+    check_forbidden_phrases, validate_global,
+    check_foreign_characters, check_brand_names,
+    check_meta_comments, check_keyword_stuffing,
+)
 from src.article_pipeline.brief_compiler import compile_brief, build_example_paragraph
 
 
@@ -189,6 +193,34 @@ class ArticleOrchestrator:
                 article = re.sub(
                     re.escape(phrase), "", article, flags=re.IGNORECASE
                 )
+
+        # C1: Foreign characters — autofix
+        foreign = check_foreign_characters(article)
+        if foreign:
+            print(f"[WRITER] WARNING: Foreign characters found: {[f['text'] for f in foreign]}")
+            article = re.sub(r'[а-яА-ЯёЁ]+', '', article)  # cyrylica
+            article = re.sub(r'[\u4e00-\u9fff\u3040-\u309f\u30a0-\u30ff]+', '', article)  # CJK
+            article = re.sub(r'[\u0600-\u06ff]+', '', article)  # arabski
+            article = re.sub(r'\s{2,}', ' ', article)  # cleanup podwójnych spacji
+
+        # C2: Brand names — log warning
+        brands = check_brand_names(article, allowed_brands=[])
+        if brands:
+            print(f"[WRITER] WARNING: Brand names found: {[b['text'] for b in brands]}")
+
+        # C3: Meta-comments — autofix (remove sentences with meta-comments)
+        meta = check_meta_comments(article)
+        if meta:
+            print(f"[WRITER] WARNING: Meta-comments found: {[m['text'] for m in meta]}")
+            for m in meta:
+                pattern = re.compile(r'[^.!?]*' + re.escape(m['text']) + r'[^.!?]*[.!?]\s*')
+                article = pattern.sub('', article, count=1)
+
+        # C4: Keyword stuffing — log warning
+        main_kw = self.variables.get("HASLO_GLOWNE", "")
+        stuffing = check_keyword_stuffing(article, main_keyword=main_kw)
+        if stuffing:
+            print(f"[WRITER] WARNING: Keyword stuffing: {[s['detail'] for s in stuffing]}")
 
         self.full_article = article
 

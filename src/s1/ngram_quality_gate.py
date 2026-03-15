@@ -37,6 +37,9 @@ _CSS_JS_FIRST_WORDS = {
     "const", "let", "class", "import", "export", "default",
     "div", "span", "section", "header", "footer", "nav",
     "input", "button", "select", "option", "form", "label",
+    # CSS font stacks (catches "system blinkmacsystemfont", "segoe ui" etc.)
+    "system", "blinkmacsystemfont", "segoe", "roboto", "helvetica",
+    "arial", "sans", "serif", "monospace", "apple",
 }
 
 # Rule 5: E-commerce UI patterns
