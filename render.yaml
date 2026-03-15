@@ -6,7 +6,7 @@ services:
     buildCommand: |
       pip install --no-cache-dir -r requirements.txt
       python -m spacy download pl_core_news_lg
-    startCommand: gunicorn main:app -k uvicorn.workers.UvicornWorker -w 2 -b 0.0.0.0:$PORT --timeout 300
+    startCommand: gunicorn main:app -k uvicorn.workers.UvicornWorker -w 1 --threads 4 -b 0.0.0.0:$PORT --timeout 300
     envVars:
       - key: PORT
         value: "10000"

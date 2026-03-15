@@ -132,28 +132,52 @@ class TopicalEntity:
 # 🔧 HELPER FUNCTIONS
 # ================================================================
 
+_CHUNK_NAV_WORDS = {
+    "nawigacja", "wpisy", "wpisach", "wpisów", "sidebar", "widget",
+    "serwis", "serwisu", "portal", "menu", "mapa", "kontakt",
+    "archiwum", "redakcja", "newsletter", "biuletyn", "deklaracja",
+}
+_CHUNK_CSS_WORDS = {
+    "gallery", "blocks", "block", "content", "themes", "theme",
+    "modules", "module", "template", "wrapper", "container",
+    "slider", "carousel", "layout", "grid", "fonts", "icons",
+    "plugin", "plugins",
+}
+
+
 def _is_chunk_garbage(text: str) -> bool:
     """Sprawdza czy noun chunk to CSS/JS/HTML garbage."""
     if not text or len(text) < 2:
         return True
-    
+
     # Use comprehensive filter if available
     if WEB_FILTER_AVAILABLE and _is_web_garbage(text):
         return True
-    
+
     # Fallback: Garbage pattern check
     if _GARBAGE_CHUNK_PATTERNS.search(text):
         return True
-    
+
     # Alpha ratio check
     alpha_count = sum(1 for c in text if c.isalpha())
     if len(text) > 0 and alpha_count / len(text) < _MIN_ALPHA_RATIO:
         return True
-    
+
     # Too short or too long
     if len(text) < 3 or len(text) > 80:
         return True
-    
+
+    # Nav/CMS boilerplate chunks
+    words = text.lower().split()
+    if len(words) <= 4 and words:
+        if all(w in _CHUNK_NAV_WORDS for w in words):
+            return True
+        if all(w in _CHUNK_CSS_WORDS for w in words):
+            return True
+        # Dot-prefixed CSS class names: ".blocks", "gallery .blocks"
+        if any(w.startswith('.') for w in text.split()):
+            return True
+
     return False
 
 
