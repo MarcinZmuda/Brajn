@@ -224,10 +224,12 @@ class TopicalCoverage:
     sample_h2: str = ""
     
     def to_dict(self) -> Dict:
-        coverage_pct = self.covered_by / self.total_sources if self.total_sources > 0 else 0
+        total = max(self.total_sources, 1)
+        coverage_pct = self.covered_by / total
         return {
             "subtopic": self.subtopic,
-            "covered_by": f"{self.covered_by}/{self.total_sources}",
+            "covered_by": self.covered_by,
+            "total_sources": total,
             "coverage_percent": round(coverage_pct * 100),
             "priority": self.priority,
             "sample_h2": self.sample_h2

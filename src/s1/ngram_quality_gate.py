@@ -168,6 +168,22 @@ def is_garbage_ngram(text: str) -> Tuple[bool, str]:
     if _RE_DIGIT_HEAVY.match(t):
         return True, "digit_heavy"
 
+    # Rule 10: Navigation/footer vocabulary — short n-grams (≤4 words)
+    # composed entirely of site-chrome words
+    if len(words) <= 4:
+        _NAV_WORDS = {
+            "serwis", "strona", "portal", "wersja", "wydanie",
+            "redakcja", "archiwum", "kontakt", "mapa", "menu",
+            "szukaj", "wyszukiwarka", "newsletter", "rss",
+            "drukuj", "kontrast", "czcionka", "czcionki",
+            "nota", "prawna", "informacje", "informacji",
+            "online", "biuletyn", "publicznej", "deklaracja",
+            "inne", "powrót", "góry", "policja", "policji",
+            "najważniejsze", "najwazniejsze", "serwisu",
+        }
+        if all(w in _NAV_WORDS for w in words):
+            return True, "nav_footer_vocabulary"
+
     return False, ""
 
 

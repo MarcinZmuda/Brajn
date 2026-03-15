@@ -132,13 +132,23 @@ def _extract_content_from_html(html: str) -> str | None:
 
     if TRAFILATURA_AVAILABLE:
         try:
+            # Try precision=True first (cleaner boilerplate removal)
             content = trafilatura.extract(
                 html[:500_000],
                 include_comments=False,
                 include_tables=True,
                 no_fallback=False,
-                favor_precision=False,
+                favor_precision=True,
             )
+            # If too short — fallback to recall mode
+            if not content or len(content) < 300:
+                content = trafilatura.extract(
+                    html[:500_000],
+                    include_comments=False,
+                    include_tables=True,
+                    no_fallback=False,
+                    favor_precision=False,
+                )
         except Exception as e:
             print(f"[SCRAPER] trafilatura failed: {e}")
             content = None
@@ -147,11 +157,26 @@ def _extract_content_from_html(html: str) -> str | None:
         raw = html
         if len(raw) > MAX_CONTENT_SIZE * 2:
             raw = raw[: MAX_CONTENT_SIZE * 2]
-        raw = re.sub(r"<script[^>]*>.*?</script>", "", raw, flags=re.DOTALL | re.IGNORECASE)
-        raw = re.sub(r"<style[^>]*>.*?</style>", "", raw, flags=re.DOTALL | re.IGNORECASE)
-        raw = re.sub(r"<nav[^>]*>.*?</nav>", "", raw, flags=re.DOTALL | re.IGNORECASE)
-        raw = re.sub(r"<footer[^>]*>.*?</footer>", "", raw, flags=re.DOTALL | re.IGNORECASE)
-        raw = re.sub(r"<header[^>]*>.*?</header>", "", raw, flags=re.DOTALL | re.IGNORECASE)
+        # Remove boilerplate elements before stripping tags
+        _REMOVE_TAGS = [
+            "script", "style", "nav", "footer", "header", "aside",
+            "noscript", "iframe",
+        ]
+        for tag in _REMOVE_TAGS:
+            raw = re.sub(
+                rf"<{tag}[^>]*>.*?</{tag}>", "", raw,
+                flags=re.DOTALL | re.IGNORECASE,
+            )
+        # Remove elements with navigation/banner ARIA roles
+        raw = re.sub(
+            r'<[^>]+role\s*=\s*["\'](?:navigation|banner|contentinfo|complementary)["\'][^>]*>.*?</\w+>',
+            "", raw, flags=re.DOTALL | re.IGNORECASE,
+        )
+        # Remove common nav/footer/sidebar CSS classes
+        raw = re.sub(
+            r'<[^>]+class\s*=\s*["\'][^"\']*(?:sidebar|breadcrumb|pagination|cookie|social-share|related-posts|menu-item|footer-widget|site-footer|site-header)[^"\']*["\'][^>]*>.*?</\w+>',
+            "", raw, flags=re.DOTALL | re.IGNORECASE,
+        )
         raw = re.sub(r"<[^>]+>", " ", raw)
         content = re.sub(r"\s+", " ", raw).strip()
 

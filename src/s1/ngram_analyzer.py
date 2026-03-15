@@ -160,6 +160,20 @@ def analyze_ngrams(
             if not (_ngram_words & _kw_words):
                 continue  # single-source high-freq without keyword overlap = CSS garbage
         page_presence_set = {s for s in ngram_presence[ngram] if s != HIGH_SIGNAL_LABEL}
+
+        # ── Cross-page boilerplate filter ──
+        # N-gram appearing on ≥80% of pages with low per-page freq (≤3)
+        # and no keyword overlap = likely nav/footer boilerplate
+        if num_sources >= 3 and len(page_presence_set) >= num_sources * 0.8:
+            _per_src = ngram_per_source.get(ngram, {})
+            _src_counts = [_per_src.get(i, 0) for i in range(num_sources) if _per_src.get(i, 0) > 0]
+            _max_per_src = max(_src_counts) if _src_counts else 0
+            if _max_per_src <= 3:
+                _kw_words = set(main_keyword.lower().split()) if main_keyword else set()
+                _ngram_words = set(re.findall(r"[a-ząćęłńóśźż]+", display_ngram.lower()))
+                if not (_ngram_words & _kw_words):
+                    continue  # cross-page low-freq without keyword = boilerplate
+
         freq_norm = page_freq / max_freq if max_freq else 0
         site_score = len(page_presence_set) / num_sources if num_sources else 0
         weight = round(freq_norm * 0.5 + site_score * 0.5, 4)
@@ -184,7 +198,7 @@ def analyze_ngrams(
                 else (non_zero[mid - 1] + non_zero[mid]) // 2
             )
         else:
-            freq_min = freq_median = freq_max = 0
+            freq_min = freq_median = freq_max = 1  # minimum 1 to avoid NaN% in panel
 
         results.append({
             "ngram": display_ngram,
