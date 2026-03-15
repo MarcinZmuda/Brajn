@@ -698,12 +698,14 @@ def perform_entity_seo_analysis(
             print(f"[ENTITY] ✅ Salience: computed for {len(salience_data)} topical entities (top: {salience_data[0].get('entity', '')}={salience_data[0].get('salience_score', 0):.3f})" if salience_data else "[ENTITY] ✅ Salience: 0 entities")
             
             # 6b. Co-occurrence pairs — też na Topical Entities
+            # Adaptive threshold: use 1 for small SERPs (≤4 sources), 2 for larger
+            _min_cooc = 1 if len(texts) <= 4 else 2
             cooccurrence_results = extract_cooccurrence(
                 nlp=nlp,
                 texts=texts,
                 entities=salience_input,
                 max_pairs=20,
-                min_cooccurrences=2,
+                min_cooccurrences=_min_cooc,
             )
             cooccurrence_data = [p.to_dict() for p in cooccurrence_results]
             print(f"[ENTITY] ✅ Co-occurrence: {len(cooccurrence_results)} pairs found")

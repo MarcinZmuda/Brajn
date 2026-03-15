@@ -123,6 +123,18 @@ class ArticleOrchestrator:
         yield {"event": "step_start", "step": 2, "total": total_steps,
                "label": "Warianty jezykowe"}
         variants = self._generate_variants()
+
+        # Write mention_forms to s1_full so compliance module can read them
+        if variants.get("mention_forms"):
+            self._s1_full["mention_forms"] = variants["mention_forms"]
+            mf = variants["mention_forms"]
+            print(f"[VARIANTS] mention_forms written to s1_full: "
+                  f"named={mf.get('named', '?')}, "
+                  f"nominal={len(mf.get('nominal', []))} forms, "
+                  f"pronominal={len(mf.get('pronominal', []))} forms")
+        else:
+            print("[VARIANTS] WARNING: No mention_forms in variants output")
+
         yield {"event": "step_done", "step": 2,
                "data": {"variants_count": sum(len(v) for v in variants.values() if isinstance(v, list))}}
 
@@ -352,7 +364,13 @@ class ArticleOrchestrator:
             }
         except Exception as e:
             print(f"[VARIANTS] Error: {e}")
-            return {"peryfrazy": [], "named_forms": [keyword]}
+            return {
+                "peryfrazy": [],
+                "named_forms": [keyword],
+                "nominal_forms": [],
+                "pronominal_cues": [],
+                "mention_forms": {"named": keyword, "nominal": [], "pronominal": []},
+            }
 
     def _determine_h2_count(self) -> int:
         """Determine optimal H2 count from 4 signals."""

@@ -17,11 +17,18 @@ from typing import Dict, List, Tuple
 def check_ngram_coverage(article_text: str, ngrams: list) -> dict:
     """
     Check how many n-grams from S1 appear in the article.
-    Returns coverage report.
+
+    Returns coverage report with keys matching compliance expectations:
+      ok      — present, count within freq_min..freq_min*3 range
+      under   — present but below freq_min
+      over    — present but above freq_min*3
+      missing — not found at all (count == 0)
     """
     article_lower = article_text.lower()
+    ok = []
+    under = []
+    over = []
     missing = []
-    present = []
 
     for ng in ngrams:
         if not isinstance(ng, dict):
@@ -31,25 +38,41 @@ def check_ngram_coverage(article_text: str, ngrams: list) -> dict:
             continue
 
         weight = float(ng.get("weight", 0))
-        freq_min = int(ng.get("freq_min", 1))
+        freq_min = max(int(ng.get("freq_min", 1)), 1)
+        freq_max = int(ng.get("freq_max", freq_min * 3))
         count = len(re.findall(re.escape(term.lower()), article_lower))
 
-        entry = {"term": term, "count": count, "weight": weight, "freq_min": freq_min}
+        entry = {"term": term, "count": count, "weight": weight,
+                 "freq_min": freq_min, "freq_max": freq_max}
 
-        if count == 0 and freq_min >= 1:
+        if count == 0:
             missing.append(entry)
+        elif count < freq_min:
+            under.append(entry)
+        elif count > freq_max:
+            over.append(entry)
         else:
-            present.append(entry)
+            ok.append(entry)
 
     # Sort missing by weight (most important first)
     missing.sort(key=lambda x: x["weight"], reverse=True)
 
-    total = len(missing) + len(present)
+    total = len(ok) + len(under) + len(over) + len(missing)
     return {
+        "ok": ok,
+        "under": under,
+        "over": over,
         "missing": missing,
-        "present": present,
+        "stats": {
+            "total": total,
+            "ok": len(ok),
+            "under": len(under),
+            "over": len(over),
+            "missing": len(missing),
+            "coverage_pct": round(len(ok) / max(total, 1) * 100),
+        },
         "total": total,
-        "coverage_pct": round(len(present) / max(total, 1) * 100),
+        "coverage_pct": round((len(ok) + len(under)) / max(total, 1) * 100),
         "important_missing": [m for m in missing if m["weight"] >= 0.3],
     }
 
